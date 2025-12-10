@@ -240,7 +240,7 @@ def check_path(**kwargs):
 
 
 def check_boundaries(ndim, **kwargs):
-    valid_boundary_types = ("periodic",)
+    valid_boundary_types = ("periodic","physical")
     boundary_types = kwargs.get("boundary_types", ["periodic"] * ndim)
     phare_utilities.check_iterables(boundary_types)
 
@@ -265,6 +265,27 @@ def check_boundaries(ndim, **kwargs):
         )
 
     return boundary_types
+
+
+# ------------------------------------------------------------------------------
+
+def check_boundary_conditions(ndim, **kwargs):
+    valid_bc_types = ("open", "reflective")
+    directions = "x", "y", "z"
+    sides = "lower", "upper"
+    valid_boundary_names = [f"{directions[i]}{side}" for side in sides for i in range(ndim)]
+    default_boundary_conditions = {name: {"type": "open"}
+                                        for name in valid_boundary_names}
+    boundary_conditions = kwargs.get(
+        "boundary_conditions", default_boundary_conditions)
+    for name, condition in boundary_conditions.items():
+        if not name in valid_boundary_names:
+            raise ValueError(f"Wrong boundary name {name}: should belong to {valid_boundary_names}")
+        condition_type = condition["type"]
+        if not condition_type in valid_bc_types:
+            raise ValueError(
+                f"Non-existing boundary condition type {condition_type}.")
+    return boundary_conditions
 
 
 # ------------------------------------------------------------------------------
@@ -716,6 +737,7 @@ def checker(func):
             "layout",
             "interp_order",
             "boundary_types",
+            "boundary_conditions",
             "refined_particle_nbr",
             "path",
             "nesting_buffer",
@@ -786,6 +808,7 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
+        kwargs["boundary_conditions"] = check_boundary_conditions(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
         kwargs["diag_export_format"] = kwargs.get("diag_export_format", "hdf5")
@@ -1070,9 +1093,7 @@ class Simulation(object):
         self.ndim = compute_dimension(self.cells)
 
         self.diagnostics = {}
-        self.uniform_model = None
-        self.maxwellian_fluid_model = None
-        self.mhd_model = None
+        self.model = None
         self.electrons = None
         self.load_balancer = None
 
@@ -1187,21 +1208,7 @@ class Simulation(object):
 
         :meta private:
         """
-        self.uniform_model = mhd_model
-
-    def set_maxwellian_fluid_model(self, maxwellian_fluid_model):
-        """
-
-        :meta private:
-        """
-        self.maxwellian_fluid_model = maxwellian_fluid_model
-
-    def set_mhd_model(self, mhd_model):
-        """
-
-        :meta private:
-        """
-        self.mhd_model = mhd_model
+        self.model = model
 
     def set_electrons(self, electrons):
         """

@@ -18,6 +18,8 @@ namespace PHARE::core
 template<typename Type, std::size_t dim>
 class box_iterator;
 
+template<typename Type, std::size_t dim>
+class box_reverse_iterator;
 
 
 /** Represents a 1D, 2D or 3D box of integer or floating point
@@ -28,6 +30,7 @@ struct Box
 {
     using value_type                = Type;
     using iterator                  = box_iterator<Type, dim>;
+    using reverse_iterator          = box_reverse_iterator<Type, dim>;
     static constexpr auto dimension = dim;
 
 
@@ -140,6 +143,46 @@ struct Box
         }
     }
 
+    NO_DISCARD auto rbegin() { return reverse_iterator{this, upper}; }
+    NO_DISCARD auto rbegin() const { return reverse_iterator{this, upper}; }
+
+    NO_DISCARD auto rend()
+    {
+        static_assert(dim <= 3 and dim > 0);
+        // The "end" of a reverse iterator is one step before the lower bound
+        if constexpr (dim == 1)
+        {
+            return reverse_iterator{this, {lower[0] - 1}};
+        }
+        else if constexpr (dim == 2)
+        {
+            return reverse_iterator{this, {lower[0] - 1, lower[1] - 1}};
+        }
+        else
+        {
+            return reverse_iterator{this, {lower[0] - 1, lower[1] - 1, lower[2] - 1}};
+        }
+    }
+
+
+    NO_DISCARD auto rend() const
+    {
+        static_assert(dim <= 3 and dim > 0);
+        // The "end" of a reverse iterator is one step before the lower bound
+        if constexpr (dim == 1)
+        {
+            return reverse_iterator{this, {lower[0] - 1}};
+        }
+        else if constexpr (dim == 2)
+        {
+            return reverse_iterator{this, {lower[0] - 1, lower[1] - 1}};
+        }
+        else
+        {
+            return reverse_iterator{this, {lower[0] - 1, lower[1] - 1, lower[2] - 1}};
+        }
+    }
+
 
     NO_DISCARD constexpr static std::size_t nbrRemainBoxes()
     {
@@ -195,6 +238,53 @@ public:
         return box_ != other.box_ or index_ != other.index_;
     }
 
+
+private:
+    Box<Type, dim> const* box_;
+    Point<Type, dim> index_;
+};
+
+
+template<typename Type, std::size_t dim>
+class box_reverse_iterator
+{
+public:
+    box_reverse_iterator(Box<Type, dim> const* box, Point<Type, dim> index = Point<Type, dim>{})
+        : box_{box}
+        , index_{index}
+    {
+    }
+
+    auto& operator*() const { return index_; }
+    auto operator->() const { return &index_; }
+
+    // Reverse increment logic: starts at upper, moves toward lower
+    void decrement(std::size_t idim)
+    {
+        index_[idim]--;
+        if (idim == 0)
+            return;
+
+        // If we go below the lower bound of the current dimension
+        if (index_[idim] < box_->lower[idim])
+        {
+            decrement(idim - 1);
+            // If the parent dimension is still valid, reset current to upper
+            if (index_[idim - 1] >= box_->lower[idim - 1])
+                index_[idim] = box_->upper[idim];
+        }
+    }
+
+    box_reverse_iterator& operator++()
+    {
+        decrement(dim - 1);
+        return *this;
+    }
+
+    bool operator!=(box_reverse_iterator const& other) const
+    {
+        return box_ != other.box_ or index_ != other.index_;
+    }
 
 private:
     Box<Type, dim> const* box_;

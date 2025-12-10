@@ -1,26 +1,35 @@
 #ifndef PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 #define PHARE_HYBRID_HYBRID_MESSENGER_STRATEGY_HPP
 
-
-#include "core/def.hpp" // IWYU pragma: keep
+#include "core/def.hpp"
 #include "core/logger.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
 #include "core/utilities/types.hpp"
 #include "core/hybrid/hybrid_quantities.hpp"
 #include "core/numerics/interpolator/interpolator.hpp"
+#include "core/utilities/types.hpp"
 
+#include "core/utilities/types.hpp"
+#include "refiner_pool.hpp"
+#include "synchronizer_pool.hpp"
+
+#include "amr/data/field/coarsening/moments_coarsener.hpp"
 #include "amr/types/amr_types.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/field/refine/field_refiner.hpp"
+#include "amr/data/field/refine/field_moments_refiner.hpp"
 #include "amr/messengers/hybrid_messenger_info.hpp"
 #include "amr/messengers/hybrid_messenger_strategy.hpp"
+#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "amr/data/field/coarsening/moments_coarsener.hpp"
 #include "amr/data/field/refine/field_moments_refiner.hpp"
 #include "amr/data/field/refine/field_refine_operator.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
+#include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/data/field/refine/magnetic_field_regrider.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/refine/magnetic_field_init_refiner.hpp"
@@ -30,15 +39,21 @@
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
 
-#include "refiner_pool.hpp"
-#include "synchronizer_pool.hpp"
+#include "core/utilities/index/index.hpp"
+#include "core/numerics/interpolator/interpolator.hpp"
+#include "core/hybrid/hybrid_quantities.hpp"
+#include "core/data/particles/particle_array.hpp"
+#include "core/data/vecfield/vecfield.hpp"
+#include "core/utilities/point/point.hpp"
 
-#include <SAMRAI/hier/IntVector.h>
-#include <SAMRAI/hier/Patch.h>
-#include <SAMRAI/xfer/RefineSchedule.h>
-#include <SAMRAI/xfer/RefineAlgorithm.h>
-#include <SAMRAI/hier/CoarseFineBoundary.h>
-#include <SAMRAI/xfer/BoxGeometryVariableFillPattern.h>
+#include "SAMRAI/xfer/RefineAlgorithm.h"
+#include "SAMRAI/xfer/RefineSchedule.h"
+#include "SAMRAI/xfer/CoarsenAlgorithm.h"
+#include "SAMRAI/xfer/CoarsenSchedule.h"
+#include "SAMRAI/xfer/BoxGeometryVariableFillPattern.h"
+#include "SAMRAI/hier/CoarseFineBoundary.h"
+#include "SAMRAI/hier/IntVector.h"
+
 
 #include <memory>
 #include <string>
@@ -74,6 +89,7 @@ namespace amr
         using FieldT            = VecFieldT::field_type;
         using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::HybridQuantity>;
         using ResourcesManagerT = HybridModel::resources_manager_type;
+        using BoundaryManagerT  = HybridModel::boundary_manager_type;
         using IPhysicalModel    = HybridModel::Interface;
 
         static constexpr std::size_t dimension   = GridLayoutT::dimension;
@@ -119,10 +135,12 @@ namespace amr
         static constexpr std::size_t rootLevelNumber = 0;
 
 
-        HybridHybridMessengerStrategy(std::shared_ptr<ResourcesManagerT> const& manager,
+        HybridHybridMessengerStrategy(std::shared_ptr<ResourcesManagerT> const& resourcesManager,
+                                      std::shared_ptr<BoundaryManagerT> const& boundaryManager,
                                       int const firstLevel)
             : HybridMessengerStrategy<HybridModel>{stratName}
-            , resourcesManager_{manager}
+            , resourcesManager_{resourcesManager}
+            , boundaryManager_{boundaryManager}
             , firstLevel_{firstLevel}
         {
             resourcesManager_->registerResources(Jold_);
@@ -385,7 +403,6 @@ namespace amr
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
-
         void fillElectricGhosts(VecFieldT& E, level_t const& level, double const fillTime) override
         {
             PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillElectricGhosts");
@@ -576,7 +593,6 @@ namespace amr
         //     velLevelGhostsRefiners_.fill(level.getLevelNumber(), afterPushTime);
         // }
 
-
         /**
          * @brief firstStep : in the HybridHybridMessengerStrategy, the firstStep method is
          * used to get level border ghost particles from the next coarser level. These
@@ -730,7 +746,6 @@ namespace amr
             ionBulkVelSynchronizers_.sync(levelNumber);
         }
 
-
         // this function coarsens the fluxSum onto the corresponding coarser fluxes (E in hybrid),
         // and fills the patch ghosts, making it ready for the faraday in the solver.reflux()
         void reflux(int const coarserLevelNumber, int const fineLevelNumber,
@@ -776,8 +791,8 @@ namespace amr
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
             magneticPatchStratPerGhostRefiner_ = [&]() {
-                std::vector<std::shared_ptr<
-                    MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
+                std::vector<std::shared_ptr<MagneticRefinePatchStrategy<
+                    ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>>>
                     result;
 
                 result.reserve(info->ghostMagnetic.size());
@@ -786,9 +801,9 @@ namespace amr
                 {
                     auto&& [id] = resourcesManager_->getIDsList(key);
 
-                    auto patch_strat = std::make_shared<
-                        MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>(
-                        *resourcesManager_);
+                    auto patch_strat = std::make_shared<MagneticRefinePatchStrategy<
+                        ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>>(*resourcesManager_,
+                                                                                *boundaryManager_);
 
                     patch_strat->registerIDs(id);
 
@@ -869,11 +884,13 @@ namespace amr
 
 
             for (auto const& vecfield : info->ghostFlux)
+            {
                 popFluxBorderSumRefiners_.emplace_back(resourcesManager_)
                     .addStaticRefiner(
                         sumVec_.name(), vecfield, nullptr, sumVec_.name(),
                         std::make_shared<
                             TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+            }
 
             for (auto const& field : info->sumBorderFields)
                 popDensityBorderSumRefiners_.emplace_back(resourcesManager_)
@@ -1023,6 +1040,8 @@ namespace amr
         //! ResourceManager shared with other objects (like the HybridModel)
         std::shared_ptr<ResourcesManagerT> resourcesManager_;
 
+        std::shared_ptr<BoundaryManagerT> boundaryManager_;
+
 
         int const firstLevel_;
         std::unordered_map<std::size_t, double> beforePushCoarseTime_;
@@ -1036,7 +1055,6 @@ namespace amr
 
         // these refiners are used to initialize electromagnetic fields when creating
         // a new level (initLevel) or regridding (regrid)
-
         using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
         using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
@@ -1167,11 +1185,11 @@ namespace amr
             std::make_shared<MomentsVecFieldCoarsenOp>()};
         CoarsenOperator_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
 
-        MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>
-            magneticRefinePatchStrategy_{*resourcesManager_};
+        MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>
+            magneticRefinePatchStrategy_{*resourcesManager_, *boundaryManager_};
 
-        std::vector<
-            std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT>>>
+        std::vector<std::shared_ptr<
+            MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>>>
             magneticPatchStratPerGhostRefiner_;
     };
 
