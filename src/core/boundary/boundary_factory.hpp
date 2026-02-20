@@ -66,6 +66,8 @@ public:
         // register the right boundary condition per physical quantity following the boundary type
         switch (type)
         {
+            case BoundaryType::None:
+                // do nothing
             case BoundaryType::Reflective:
                 register_reflective_conditions_(boundary, data, quantities);
                 break;

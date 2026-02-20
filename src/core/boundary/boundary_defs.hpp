@@ -10,7 +10,7 @@ namespace PHARE::core
 /**
  * @brief Physical behavior of a boundary.
  */
-enum class BoundaryType { Reflective, Inflow, Outflow, Open };
+enum class BoundaryType { None, Reflective, Inflow, Outflow, Open };
 
 /*
  * @brief Possible codimension of a boundary.
@@ -112,9 +112,8 @@ enum class Codim3BoundaryLocation {
 inline BoundaryType getBoundaryTypeFromString(std::string const& name)
 {
     static std::unordered_map<std::string, BoundaryType> const typeMap_ = {
-        {"open", BoundaryType::Open},
-        {"inflow", BoundaryType::Inflow},
-        {"reflective", BoundaryType::Reflective},
+        {"none", BoundaryType::None},       {"open", BoundaryType::Open},
+        {"inflow", BoundaryType::Inflow},   {"reflective", BoundaryType::Reflective},
         {"outflow", BoundaryType::Outflow},
     };
 

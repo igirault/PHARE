@@ -1,6 +1,7 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 
 #include "core/utilities/box/box.hpp"
 #include "core/utilities/point/point.hpp"
@@ -295,11 +296,11 @@ TEST(BoxReverseIterator, hasEnd)
     auto cactual         = std::rend(cb1);
     EXPECT_EQ(cexpected, *cactual);
 
-    auto expected2 = Point{0, 3};
+    auto expected2 = Point{0, 4};
     auto actual2   = std::rend(b2);
     EXPECT_EQ(expected2, *actual2);
 
-    auto expected3 = Point{0, 3, 8};
+    auto expected3 = Point{0, 4, 9};
     auto actual3   = std::rend(b3);
     EXPECT_EQ(expected3, *actual3);
 }
@@ -308,7 +309,7 @@ TEST(BoxReverseIterator, iterates)
 {
     Box<int, 1> b1{{1}, {10}};
     Box<int, 1> const cb1{{1}, {10}};
-    Box<int, 2> b2{{1, 4}, {10, 12}};
+    Box<int, 2> b2{{0, 0}, {10, 12}};
     Box<int, 3> b3{{1, 4, 9}, {10, 12, 24}};
 
     {
@@ -356,7 +357,7 @@ TEST(BoxReverseIterator, iterates)
         {
             dummy = *it;
         }
-        auto expected = Point{1, 4};
+        auto expected = Point{0, 0};
         EXPECT_EQ(expected, dummy);
     }
     {
@@ -369,6 +370,33 @@ TEST(BoxReverseIterator, iterates)
         EXPECT_EQ(expected, dummy3);
     }
 }
+
+TEST(BoxReverseIterator, handlesUnsignedInteger)
+{
+    Box<std::uint32_t, 2> b2{{0, 0}, {10, 12}};
+    Box<std::uint32_t, 3> b3{{0, 0, 0}, {12, 11, 34}};
+
+    {
+        auto dummy = Point<std::uint32_t, 2>{};
+        for (auto it = b2.rbegin(); it != b2.rend(); ++it)
+        {
+            dummy = *it;
+        }
+        auto expected = Point<std::uint32_t, 2>{0, 0};
+        EXPECT_EQ(expected, dummy);
+    }
+
+    {
+        auto dummy = Point<std::uint32_t, 3>{};
+        for (auto it = b3.rbegin(); it != b3.rend(); ++it)
+        {
+            dummy = *it;
+        }
+        auto expected = Point<std::uint32_t, 3>{0, 0, 0};
+        EXPECT_EQ(expected, dummy);
+    }
+}
+
 
 int main(int argc, char** argv)
 {

@@ -270,21 +270,51 @@ def check_boundaries(ndim, **kwargs):
 # ------------------------------------------------------------------------------
 
 def check_boundary_conditions(ndim, **kwargs):
-    valid_bc_types = ("open", "reflective")
-    directions = "x", "y", "z"
+    valid_bc_types = ("open", "reflective", "none")
+    all_directions = ["x", "y", "z"][:ndim]
     sides = "lower", "upper"
-    valid_boundary_names = [f"{directions[i]}{side}" for side in sides for i in range(ndim)]
-    default_boundary_conditions = {name: {"type": "open"}
-                                        for name in valid_boundary_names}
-    boundary_conditions = kwargs.get(
-        "boundary_conditions", default_boundary_conditions)
-    for name, condition in boundary_conditions.items():
-        if not name in valid_boundary_names:
-            raise ValueError(f"Wrong boundary name {name}: should belong to {valid_boundary_names}")
-        condition_type = condition["type"]
-        if not condition_type in valid_bc_types:
-            raise ValueError(
-                f"Non-existing boundary condition type {condition_type}.")
+    boundary_types = kwargs["boundary_types"]
+    physical_directions = []
+    periodic_directions = []
+    for dir, type in zip(all_directions, boundary_types):
+        if type == "physical":
+            physical_directions.append(dir)
+        elif type == "periodic":
+            periodic_directions.append(dir)
+    physical_boundary_locations = [f"{dir}{side}" for dir in physical_directions for side in sides]
+    all_boundary_locations = [f"{dir}{side}" for side in sides for dir in all_directions]
+    default_boundary_conditions = {location: {"type": "none"} for location in all_boundary_locations}
+    boundary_conditions = kwargs.get("boundary_conditions", {})
+    
+    if not isinstance(boundary_conditions, dict):
+        raise TypeError(f"A dict should be passed to argument 'boundary_conditions'")
+
+    # check first that all provided locations are valid
+    for location in boundary_conditions:
+        if not location in all_boundary_locations:
+            raise ValueError(f"Wrong boundary name {location}: should belong to {all_boundary_locations}")
+
+    # attribute a default 'none' type to all unspecified boundaries 
+    for location in all_boundary_locations:
+        if location not in boundary_conditions:
+            boundary_conditions[location] = {'type': 'none'}
+
+    # check that all boundaries have a dict, which contain a 'type' key in their dict associated to a valid value
+    for location in all_boundary_locations:
+        boundary_condition = boundary_conditions[location]
+        if not isinstance(boundary_condition, dict):
+            raise TypeError(f"A dict should be passed to the boundary {location} for specifying a boundary condition")
+        if 'type' not in boundary_condition:
+            raise KeyError(f"No key 'type' found in the boundary_condition dict passed to {location}")
+        boundary_type = boundary_condition['type']
+        if boundary_type not in valid_bc_types:
+            raise ValueError(f"Boundary type {boundary_type} is not valid: it should belong to {valid_bc_types}")
+
+    # now check that all physical boundary have a boundary type other than 'none'
+    for location in physical_boundary_locations:
+        if boundary_conditions[location]['type'] == 'none':
+            raise KeyError(f"{location} is a physical boundary and should be provided with a valid type other than 'none'.")
+
     return boundary_conditions
 
 
