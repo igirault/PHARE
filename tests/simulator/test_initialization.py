@@ -267,7 +267,7 @@ class InitializationTest(SimulatorTest):
 
         from pyphare.pharein import global_vars
 
-        model = global_vars.sim.maxwellian_fluid_model
+        model = global_vars.sim.model
 
         bx_fn = model.model_dict["bx"]
         by_fn = model.model_dict["by"]
@@ -361,7 +361,7 @@ class InitializationTest(SimulatorTest):
 
         from pyphare.pharein import global_vars
 
-        model = global_vars.sim.maxwellian_fluid_model
+        model = global_vars.sim.model
         # protons and beam have same bulk vel here so take only proton func.
         vx_fn = model.model_dict["protons"]["vx"]
         vy_fn = model.model_dict["protons"]["vy"]
@@ -430,7 +430,7 @@ class InitializationTest(SimulatorTest):
 
         from pyphare.pharein import global_vars
 
-        model = global_vars.sim.maxwellian_fluid_model
+        model = global_vars.sim.model
         proton_density_fn = model.model_dict["protons"]["density"]
         beam_density_fn = model.model_dict["beam"]["density"]
 
@@ -503,7 +503,7 @@ class InitializationTest(SimulatorTest):
 
             from pyphare.pharein import global_vars
 
-            model = global_vars.sim.maxwellian_fluid_model
+            model = global_vars.sim.model
             density_fn = model.model_dict["protons"]["density"]
 
             patch = hier.level(0).patches[0]
