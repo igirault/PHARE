@@ -73,7 +73,7 @@ public:
                            Box<std::uint32_t, dimension> const& localGhostBox,
                            GridLayoutT const& gridLayout, double const time)
     {
-        constexpr std::array<QtyCentering, N> centerings = {Centerings...};
+        constexpr std::array centerings = {Centerings...};
 
         auto fields = [&]() {
             if constexpr (is_scalar)

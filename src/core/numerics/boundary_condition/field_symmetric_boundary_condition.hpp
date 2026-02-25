@@ -2,9 +2,9 @@
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_SYMMETRIC_BOUNDARY_CONDITION_HPP
 
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
-#include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
 
 namespace PHARE::core
 {
@@ -66,7 +66,7 @@ public:
                            Box<std::uint32_t, dimension> const& localGhostBox,
                            GridLayoutT const& gridLayout, double const time)
     {
-        constexpr std::array<QtyCentering, N> centerings = {Centerings...};
+        constexpr std::array centerings = {Centerings...};
 
         // no other way than using a lambda builder
         auto fields = [&]() {

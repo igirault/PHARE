@@ -23,7 +23,6 @@ concept IsField = requires(T field) {
     { field.name() } -> std::convertible_to<std::string const&>;
     { field.physicalQuantity() } -> std::same_as<typename T::physical_quantity_type const&>;
 
-    { field.isUsable() } -> std::same_as<bool>;
     { field.data() } -> std::same_as<typename T::value_type*>; // Inherited from NdArrayView
 
     requires((T::dimension == 1 && requires(T f) {

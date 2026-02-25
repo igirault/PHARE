@@ -68,7 +68,7 @@ public:
     {
         using Index = Point<std::uint32_t, dimension>;
 
-        constexpr std::array<QtyCentering, N> centerings = {Centerings...};
+        constexpr std::array centerings = {Centerings...};
 
         // no other way than using a lambda builder
         auto fields = [&]() {

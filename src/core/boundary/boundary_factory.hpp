@@ -1,8 +1,8 @@
 #ifndef PHARE_CORE_BOUNDARY_BOUNDARY_FACTORY
 #define PHARE_CORE_BOUNDARY_BOUNDARY_FACTORY
 
-#include "core/boundary/boundary_defs.hpp"
 #include "core/boundary/boundary.hpp"
+#include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
 

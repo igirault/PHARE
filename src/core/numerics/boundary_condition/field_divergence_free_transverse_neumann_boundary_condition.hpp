@@ -2,8 +2,8 @@
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_DIVERGENCE_FREE_TRANSVERSE_NEUMANN_BOUNDARY_CONDITION_HPP
 
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
 
 #include <cstddef>
 
@@ -80,7 +80,7 @@ public:
     void apply_specialized(VecFieldT& vecField, Box<std::uint32_t, dimension> const& localGhostBox,
                            GridLayoutT const& gridLayout, double const time)
     {
-        constexpr std::array<QtyCentering, N> centerings = {Centerings...};
+        constexpr std::array centerings = {Centerings...};
 
         auto fields = vecField.components();
 

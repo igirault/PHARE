@@ -1,21 +1,18 @@
 #ifndef PHARE_AMR_FIELD_REFINE_PATCH_STRATEGY_HPP
 #define PHARE_AMR_FIELD_REFINE_PATCH_STRATEGY_HPP
 
-#include "SAMRAI/geom/CartesianPatchGeometry.h"
-#include "SAMRAI/hier/PatchGeometry.h"
+
 #include "core/boundary/boundary_defs.hpp"
-#include "core/boundary/boundary.hpp"
-#include "core/utilities/constants.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
 #include "amr/data/field/field_data_traits.hpp"
 #include "amr/data/tensorfield/tensor_field_data_traits.hpp"
 
-#include "SAMRAI/xfer/RefinePatchStrategy.h"
-#include "SAMRAI/hier/BoundaryBox.h"
 #include "SAMRAI/hier/Box.h"
 #include "SAMRAI/hier/IntVector.h"
+#include "SAMRAI/hier/BoundaryBox.h"
 #include "SAMRAI/hier/PatchGeometry.h"
+#include "SAMRAI/xfer/RefinePatchStrategy.h"
 #include "SAMRAI/geom/CartesianPatchGeometry.h"
 
 #include <cassert>
@@ -24,10 +21,6 @@
 
 namespace PHARE::amr
 {
-using core::dirX;
-using core::dirY;
-using core::dirZ;
-
 /**
  * @brief Strategy for filling physical boundary conditions and customizing patch refinment.
  *
@@ -177,11 +170,8 @@ public:
 
 
 protected:
-    /// Reference to the resources manager.
     ResMan& rm_;
-    /// Reference to the boundary manager.
     BoundaryManagerT& boundaryManager_;
-    /// SAMRAI patch data identifier.
     int data_id_;
 };
 

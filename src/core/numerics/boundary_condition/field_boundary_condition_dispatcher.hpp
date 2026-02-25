@@ -2,8 +2,8 @@
 #define PHARE_CORE_DATA_NUMERICS_BOUNDARY_CONDITION_FIELD_BOUNDARY_CONDITION_DISPATCHER
 
 #include "core/boundary/boundary_defs.hpp"
-#include "core/data/grid/gridlayout_traits.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/data/grid/gridlayout_traits.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
 
@@ -55,8 +55,7 @@ public:
      * Triggers the recursive dispatching of centerings, directions, and sides to
      * specialized implementations.
      */
-    void apply(ScalarOrTensorFieldT& scalarOrTensorField,
-               BoundaryLocation const boundaryLocation,
+    void apply(ScalarOrTensorFieldT& scalarOrTensorField, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
                double const time) override
     {

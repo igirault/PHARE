@@ -3,8 +3,8 @@
 
 #include "core/def.hpp"
 #include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/mhd/mhd_quantities.hpp"
 #include "core/models/mhd_state.hpp"
+#include "core/mhd/mhd_quantities.hpp"
 #include "core/boundary/boundary_manager.hpp"
 
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -13,10 +13,9 @@
 
 #include <SAMRAI/hier/PatchLevel.h>
 
-#include <initializer_list>
-#include <span>
 #include <string>
 #include <string_view>
+#include <initializer_list>
 
 
 namespace PHARE::solver

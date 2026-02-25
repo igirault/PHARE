@@ -4,8 +4,8 @@
 #include <array>
 #include <concepts>
 
-#include "SAMRAI/hier/PatchData.h"
 #include "SAMRAI/hier/Patch.h"
+#include "SAMRAI/hier/PatchData.h"
 
 namespace PHARE
 {

@@ -2,9 +2,9 @@
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_ANTISYMMETRIC_BOUNDARY_CONDITION_HPP
 
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
-#include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
 
 namespace PHARE::core
 {
@@ -67,7 +67,7 @@ public:
                            Box<std::uint32_t, dimension> const& localGhostBox,
                            GridLayoutT const& gridLayout, double const time)
     {
-        constexpr std::array<QtyCentering, N> centerings = {Centerings...};
+        constexpr std::array centerings = {Centerings...};
 
         // no other way than using a lambda builder
         auto fields = [&]() {
@@ -78,8 +78,8 @@ public:
         }();
 
         for_N<N>([&](auto i) {
-            constexpr QtyCentering centering = centerings[i];
-            field_type& field                = std::get<i>(fields);
+            constexpr auto centering = centerings[i];
+            field_type& field        = std::get<i>(fields);
             if constexpr ((i != static_cast<size_t>(direction)) || is_scalar)
             // if the component is tangent to the boundary, or if we are handling a scalar
             {

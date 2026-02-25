@@ -1,11 +1,11 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_BOUNDARY_CONDITION_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_BOUNDARY_CONDITION_HPP
 
+#include "core/utilities/box/box.hpp"
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
-#include "core/data/tensorfield/tensorfield_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
-#include "core/utilities/box/box.hpp"
+#include "core/data/tensorfield/tensorfield_traits.hpp"
 
 #include <compare>
 

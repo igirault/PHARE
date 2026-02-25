@@ -3,7 +3,7 @@
 
 #include "core/data/grid/gridlayoutdefs.hpp"
 
-#include "unordered_map"
+#include <unordered_map>
 
 namespace PHARE::core
 {
@@ -135,10 +135,9 @@ inline BoundaryLocation getBoundaryLocationFromString(std::string const& name)
         {"zlower", BoundaryLocation::ZLower}, {"zupper", BoundaryLocation::ZUpper},
     };
 
-    auto it = typeMap_.find(name);
-    if (it == typeMap_.end())
-        throw std::runtime_error("Wrong boundary location name = " + name);
-    return it->second;
+    if (typeMap_.count(name))
+        return typeMap_.at(name);
+    throw std::runtime_error("Wrong boundary location name = " + name);
 }
 
 } // namespace PHARE::core

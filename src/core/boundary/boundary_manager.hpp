@@ -3,21 +3,17 @@
 
 #include "core/boundary/boundary.hpp"
 #include "core/boundary/boundary_defs.hpp"
-#include "core/boundary/boundary_factory.hpp"
-#include "core/data/field/field_traits.hpp"
-#include "core/data/grid/gridlayout_traits.hpp"
 #include "core/data/vecfield/vecfield.hpp"
+#include "core/data/field/field_traits.hpp"
+#include "core/boundary/boundary_factory.hpp"
+#include "core/data/grid/gridlayout_traits.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_factory.hpp"
 
 #include "initializer/data_provider.hpp"
 
-#include <concepts>
 #include <memory>
-#include <initializer_list>
-#include <stdexcept>
+#include <concepts>
 #include <unordered_map>
-#include <variant>
 
 namespace PHARE::core
 {

@@ -1,13 +1,13 @@
 #ifndef PHARE_CORE_GRID_GRIDLAYOUT_TRAITS_HPP
 #define PHARE_CORE_GRID_GRIDLAYOUT_TRAITS_HPP
 
-#include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/utilities/box/box.hpp"
 #include "core/utilities/point/point.hpp"
+#include "core/data/grid/gridlayoutdefs.hpp"
 
-#include <concepts>
 #include <array>
 #include <tuple>
+#include <concepts>
 
 namespace PHARE::core
 {

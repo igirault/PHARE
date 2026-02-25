@@ -1,8 +1,8 @@
 #ifndef PHARE_CORE_NUMERICS_FIELD_BOUNDARY_CONDITION_FACTORY
 #define PHARE_CORE_NUMERICS_FIELD_BOUNDARY_CONDITION_FACTORY
 
-#include "core/data/tensorfield/tensorfield_traits.hpp"
 #include "core/data/vecfield/vecfield_traits.hpp"
+#include "core/data/tensorfield/tensorfield_traits.hpp"
 
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"

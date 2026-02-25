@@ -2,15 +2,15 @@
 #define PHARE_CORE_BOUNDARY_BOUNDARY_HPP
 
 #include "core/boundary/boundary_defs.hpp"
-#include "core/data/field/field_traits.hpp"
 #include "core/data/vecfield/vecfield.hpp"
+#include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition_factory.hpp"
 
-#include <concepts>
 #include <memory>
-#include <unordered_map>
 #include <utility>
+#include <concepts>
+#include <unordered_map>
 
 namespace PHARE::core
 {
