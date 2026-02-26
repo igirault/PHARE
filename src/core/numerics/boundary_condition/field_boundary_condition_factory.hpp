@@ -1,15 +1,15 @@
 #ifndef PHARE_CORE_NUMERICS_FIELD_BOUNDARY_CONDITION_FACTORY
 #define PHARE_CORE_NUMERICS_FIELD_BOUNDARY_CONDITION_FACTORY
 
-#include "core/data/vecfield/vecfield_traits.hpp"
 #include "core/data/tensorfield/tensorfield_traits.hpp"
-
-#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_symmetric_boundary_condition.hpp"
+#include "core/data/vecfield/vecfield_traits.hpp"
 #include "core/numerics/boundary_condition/field_antisymmetric_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_none_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_symmetric_boundary_condition.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -45,36 +45,41 @@ public:
     static std::unique_ptr<IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>
     create(Args&&... args)
     {
-        if constexpr (type == FieldBoundaryConditionType::Neumann)
+        if constexpr (type == FieldBoundaryConditionType::None)
+        {
+            return std::make_unique<FieldNoneBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+                std::forward(args)...);
+        }
+        else if constexpr (type == FieldBoundaryConditionType::Neumann)
         {
             return std::make_unique<
                 FieldNeumannBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
-                std::forward<Args>(args)...);
+                std::forward(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::Dirichlet)
         {
             return std::make_unique<
                 FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
-                std::forward<Args>(args)...);
+                std::forward(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::Symmetric)
         {
             return std::make_unique<
                 FieldSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
-                std::forward<Args>(args)...);
+                std::forward(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::AntiSymmetric)
         {
             return std::make_unique<
                 FieldAntiSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
-                std::forward<Args>(args)...);
+                std::forward(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::DivergenceFreeTransverseNeumann)
         {
             if constexpr (IsVecField<ScalarOrTensorFieldT>)
             {
                 return std::make_unique<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
-                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
+                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward(args)...);
             }
             else
             {
@@ -84,7 +89,7 @@ public:
         }
         else
         {
-            throw std::runtime_error("Unhandled FieldBoundaryConditionType");
+            static_assert(false, "Unhandled FieldBoundaryConditionType");
         };
     }
 };

@@ -1,25 +1,25 @@
 #ifndef PHARE_MHD_MESSENGER_HPP
 #define PHARE_MHD_MESSENGER_HPP
 
-#include "amr/messengers/refiner.hpp"
-#include "amr/messengers/messenger.hpp"
-#include "amr/messengers/refiner_pool.hpp"
-#include "amr/messengers/messenger_info.hpp"
-#include "amr/messengers/synchronizer_pool.hpp"
-#include "amr/messengers/mhd_messenger_info.hpp"
-#include "amr/data/field/refine/mhd_flux_refiner.hpp"
-#include "amr/data/field/refine/mhd_field_refiner.hpp"
-#include "amr/data/field/field_variable_fill_pattern.hpp"
-#include "amr/data/field/refine/field_refine_operator.hpp"
+#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
+#include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
+#include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
+#include "amr/data/field/refine/field_refine_operator.hpp"
+#include "amr/data/field/refine/field_refine_patch_strategy.hpp"
 #include "amr/data/field/refine/magnetic_field_refiner.hpp"
 #include "amr/data/field/refine/magnetic_field_regrider.hpp"
-#include "amr/data/field/coarsening/field_coarsen_operator.hpp"
-#include "amr/data/field/refine/field_refine_patch_strategy.hpp"
-#include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
+#include "amr/data/field/refine/mhd_field_refiner.hpp"
+#include "amr/data/field/refine/mhd_flux_refiner.hpp"
 #include "amr/data/field/time_interpolate/field_linear_time_interpolate.hpp"
+#include "amr/messengers/messenger.hpp"
+#include "amr/messengers/messenger_info.hpp"
+#include "amr/messengers/mhd_messenger_info.hpp"
+#include "amr/messengers/refiner.hpp"
+#include "amr/messengers/refiner_pool.hpp"
+#include "amr/messengers/synchronizer_pool.hpp"
 
 #include "core/mhd/mhd_quantities.hpp"
 
@@ -376,6 +376,7 @@ public:
         totalEnergyInitRefiners_.fill(levelNumber, initDataTime);
     }
 
+
     void firstStep(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
                    std::shared_ptr<SAMRAI::hier::PatchHierarchy> const& hierarchy,
                    double const currentTime, double const prevCoarserTIme,
@@ -523,41 +524,46 @@ private:
         // since we nan-initialise) and thus is is better to rely on static refinement, which
         // uses the state after computation of ampere or CT.
 
-        registerGhostRefinePatchStrategies_(currentPatchStratPerGhostRefiner_, info->ghostCurrent);
-        for (size_t i = 0; i < info->ghostCurrent.size(); ++i)
-            currentGhostsRefiners_.addStaticRefiner(
-                info->ghostCurrent[i], EfieldRefineOp_, info->ghostCurrent[i],
-                nonOverwriteInteriorTFfillPattern, currentPatchStratPerGhostRefiner_[i]);
-
-
-        registerGhostRefinePatchStrategies_(rhoPatchStratPerGhostRefiner_, info->ghostDensity);
+        // registerGhostRefinePatchStrategies_(currentPatchStrats,
+        //                                     info->ghostCurrent);
+        // for (size_t i = 0; i < info->ghostCurrent.size(); ++i)
+        //     currentGhostsRefiners_.addStaticRefiner(
+        //         info->ghostCurrent[i], EfieldRefineOp_, info->ghostCurrent[i],
+        //         nonOverwriteInteriorTFfillPattern, currentPatchStrats[i]);
+        registerGhostRefinePatchStrategies_(rhoPatchStrats, info->ghostDensity);
         for (size_t i = 0; i < info->ghostDensity.size(); ++i)
             rhoGhostsRefiners_.addTimeRefiner(info->ghostDensity[i], info->modelDensity,
                                               rhoOld_.name(), mhdFieldRefineOp_, fieldTimeOp_,
                                               info->ghostDensity[i], nonOverwriteFieldFillPattern,
-                                              rhoPatchStratPerGhostRefiner_[i]);
+                                              rhoPatchStrats[i]);
 
-        registerGhostRefinePatchStrategies_(momentumPatchStratPerGhostRefiner_,
-                                            info->ghostMomentum);
+        registerGhostRefinePatchStrategies_(momentumPatchStrats, info->ghostMomentum);
         for (size_t i = 0; i < info->ghostMomentum.size(); ++i)
             momentumGhostsRefiners_.addTimeRefiner(
                 info->ghostMomentum[i], info->modelMomentum, rhoVold_.name(), mhdVecFieldRefineOp_,
                 vecFieldTimeOp_, info->ghostMomentum[i], nonOverwriteInteriorTFfillPattern,
-                momentumPatchStratPerGhostRefiner_[i]);
+                momentumPatchStrats[i]);
 
-        registerGhostRefinePatchStrategies_(totalEnergyPatchStratPerGhostRefiner_,
-                                            info->ghostTotalEnergy);
+        registerGhostRefinePatchStrategies_(totalEnergyPatchStrats, info->ghostTotalEnergy);
         for (size_t i = 0; i < info->ghostTotalEnergy.size(); ++i)
             totalEnergyGhostsRefiners_.addTimeRefiner(
                 info->ghostTotalEnergy[i], info->modelTotalEnergy, EtotOld_.name(),
                 mhdFieldRefineOp_, fieldTimeOp_, info->ghostTotalEnergy[i],
-                nonOverwriteFieldFillPattern, totalEnergyPatchStratPerGhostRefiner_[i]);
+                nonOverwriteFieldFillPattern, totalEnergyPatchStrats[i]);
 
-        registerGhostRefinePatchStrategies_(magPatchStratPerGhostRefiner_, info->ghostMagnetic);
+        registerGhostRefinePatchStrategies_(magPatchStrats, info->ghostMagnetic);
         for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             magGhostsRefiners_.addStaticRefiner(
                 info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
-                nonOverwriteInteriorTFfillPattern, magPatchStratPerGhostRefiner_[i]);
+                nonOverwriteInteriorTFfillPattern, magPatchStrats[i]);
+
+        // The refiner for the electric field only serve for filling ghost at physical
+        // boundaries.
+        registerGhostRefinePatchStrategies_(elecPatchStrats, info->ghostElectric);
+        for (size_t i = 0; i < info->ghostElectric.size(); ++i)
+            elecGhostsRefiners_.addStaticRefiner(info->ghostElectric[i], nullptr,
+                                                 info->ghostElectric[i], nullptr,
+                                                 elecPatchStrats[i]);
     }
 
 
@@ -794,13 +800,14 @@ private:
     MagneticRefinePatchStrategyT magneticRefinePatchStrategy_{*resourcesManager_,
                                                               *boundaryManager_};
 
-    FieldRefinePatchStrategyList rhoPatchStratPerGhostRefiner_;
-    FieldRefinePatchStrategyList totalEnergyPatchStratPerGhostRefiner_;
-    VectorFieldRefinePatchStrategyList momentumPatchStratPerGhostRefiner_;
-    MagneticRefinePatchStrategyList magPatchStratPerGhostRefiner_;
+    FieldRefinePatchStrategyList rhoPatchStrats;
+    FieldRefinePatchStrategyList totalEnergyPatchStrats;
+    VectorFieldRefinePatchStrategyList momentumPatchStrats;
+    VectorFieldRefinePatchStrategyList elecPatchStrats;
+    MagneticRefinePatchStrategyList magPatchStrats;
 
-    VectorFieldRefinePatchStrategyList currentPatchStratPerGhostRefiner_;
+    VectorFieldRefinePatchStrategyList currentPatchStrats;
 };
-
 } // namespace PHARE::amr
+
 #endif

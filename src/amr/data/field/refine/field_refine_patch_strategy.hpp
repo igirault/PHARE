@@ -2,18 +2,18 @@
 #define PHARE_AMR_FIELD_REFINE_PATCH_STRATEGY_HPP
 
 
-#include "core/boundary/boundary_defs.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
-
 #include "amr/data/field/field_data_traits.hpp"
 #include "amr/data/tensorfield/tensor_field_data_traits.hpp"
 
+#include "core/boundary/boundary_defs.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
+
+#include "SAMRAI/geom/CartesianPatchGeometry.h"
+#include "SAMRAI/hier/BoundaryBox.h"
 #include "SAMRAI/hier/Box.h"
 #include "SAMRAI/hier/IntVector.h"
-#include "SAMRAI/hier/BoundaryBox.h"
 #include "SAMRAI/hier/PatchGeometry.h"
 #include "SAMRAI/xfer/RefinePatchStrategy.h"
-#include "SAMRAI/geom/CartesianPatchGeometry.h"
 
 #include <cassert>
 #include <memory>
@@ -106,9 +106,6 @@ public:
         std::shared_ptr<cartesian_patch_geometry_type> patchGeom
             = std::static_pointer_cast<cartesian_patch_geometry_type>(patch.getPatchGeometry());
 
-        std::vector<SAMRAI::hier::BoundaryBox> const& boundaries
-            = patchGeom->getCodimensionBoundaries(static_cast<int>(core::BoundaryCodim::One));
-
         auto scalarOrTensorField = [&]() {
             if constexpr (is_scalar)
             {
@@ -123,27 +120,51 @@ public:
         // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
         SAMRAI::hier::Box const& patch_box = patch.getBox();
 
-        for (SAMRAI::hier::BoundaryBox const& bBox : boundaries)
-        {
-            // Boundary definitions in PHARE matches those of SAMRAI
-            core::BoundaryLocation const bLoc
-                = static_cast<core::BoundaryLocation>(bBox.getLocationIndex());
+        // iterations on potential boundary codimensions in [[1, dim]]
+        core::for_N<dimension>([&](auto tag) {
+            constexpr auto codim = tag.value + 1;
 
-            SAMRAI::hier::Box samraiBoxToFill
-                = patchGeom->getBoundaryFillBox(bBox, patch_box, ghost_width_to_fill);
-            auto localBox = gridLayout.AMRToLocal(phare_box_from<dimension>(samraiBoxToFill));
+            // find all boundaries with the current codimension
+            std::vector<SAMRAI::hier::BoundaryBox> const& boundaries
+                = patchGeom->getCodimensionBoundaries(static_cast<int>(codim));
 
-            std::shared_ptr<boundary_type> boundary = boundaryManager_.getBoundary(bLoc);
-            if (!boundary)
-                throw std::runtime_error("boundary not found.");
-            std::shared_ptr<boundary_condition_type> bc
-                = boundary->getFieldCondition(scalarOrTensorField.physicalQuantity());
-            if (!bc)
-                throw std::runtime_error("boundary condition not found.");
+            // iterate on all found boundaries of given codimension
+            for (SAMRAI::hier::BoundaryBox const& bBox : boundaries)
+            {
+                // retrieve the localBox of ghost that must be filled
+                SAMRAI::hier::Box samraiBoxToFill
+                    = patchGeom->getBoundaryFillBox(bBox, patch_box, ghost_width_to_fill);
+                auto localBox = gridLayout.AMRToLocal(phare_box_from<dimension>(samraiBoxToFill));
 
-            bc->apply(scalarOrTensorField, bLoc, localBox, gridLayout, fill_time);
-        };
+                // get location of the currently treated boundary
+                auto const currentBoundaryLocation
+                    = static_cast<core::CodimNBoundaryLocation<codim>>(bBox.getLocationIndex());
+
+                // get the primary 1-codimensional boundary that applies at the currently treated
+                // boundary. If the current boundary is itself 1-codimensional, then
+                // masterBoundaryLocation = currentBoundaryLocation
+                core::BoundaryLocation const masterBoundaryLocation
+                    = boundaryManager_.getMasterBoundaryLocation(currentBoundaryLocation);
+                std::shared_ptr<boundary_type> masterBoundary
+                    = boundaryManager_.getBoundary(masterBoundaryLocation);
+                if (!masterBoundary)
+                    throw std::runtime_error("Boundary not found.");
+
+                // get the boundary condition for the current physical quantity
+                std::shared_ptr<boundary_condition_type> bc
+                    = masterBoundary->getFieldCondition(scalarOrTensorField.physicalQuantity());
+                if (!bc)
+                    throw std::runtime_error("Field boundary condition not found.");
+
+                // apply the boundary condition as if the current boundary was belonging to the
+                // primary boundary
+                bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
+                          fill_time);
+            }
+        });
     }
+
+
 
     SAMRAI::hier::IntVector
     getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override

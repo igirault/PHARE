@@ -7,14 +7,10 @@
 
 namespace PHARE::core
 {
-/**
- * @brief Physical behavior of a boundary.
- */
+/** @brief Physical behavior of a boundary. */
 enum class BoundaryType { None, Reflective, Inflow, Outflow, Open };
 
-/*
- * @brief Possible codimension of a boundary.
- */
+/** @brief Possible codimension of a boundary. */
 enum class BoundaryCodim { One = 1, Two = 2, Three = 3 };
 
 //@{
@@ -42,9 +38,11 @@ enum class BoundaryLocation {
     ZUpper = 5
 };
 
-/// @brief Return the side of a boundary location.
-/// @param boundaryLoc The boundary location.
-/// @return The boundary side.
+/**
+ * @brief Return the side of a boundary location.
+ * @param boundaryLoc The boundary location.
+ * @return The boundary side.
+ */
 constexpr Side getSide(BoundaryLocation boundaryLoc)
 {
     switch (boundaryLoc)
@@ -61,9 +59,10 @@ constexpr Side getSide(BoundaryLocation boundaryLoc)
     }
 };
 
-/// @brief Return the direction of a boundary location.
-/// @param boundaryLoc The boundary location.
-/// @return The boundary direction.
+/** @brief Return the direction of a boundary location.
+ * @param boundaryLoc The boundary location.
+ * @return The boundary direction.
+ */
 constexpr Direction getDirection(BoundaryLocation boundaryLoc)
 {
     switch (boundaryLoc)
@@ -81,29 +80,113 @@ constexpr Direction getDirection(BoundaryLocation boundaryLoc)
     }
 };
 
-/*
- * @brief Possible locations of a 2-codimensional boundary (an edge in 3D, a corner in 2D)
- */
+/** @brief Possible locations of a 2-codimensional boundary (an edge in 3D, a corner in 2D) */
 enum class Codim2BoundaryLocation {
     XLower_YLower = 0,
-    XHI_YLower    = 1,
+    XUpper_YLower = 1,
     XLower_YUpper = 2,
-    XHI_YUpper    = 3
+    XUpper_YUpper = 3,
+    XLower_ZLower = 4,
+    XUpper_ZLower = 5,
+    XLower_ZUpper = 6,
+    XUpper_ZUpper = 7,
+    YLower_ZLower = 8,
+    YUpper_ZLower = 9,
+    YLower_ZUpper = 10,
+    YUpper_ZUpper = 11
 };
 
-/*
- * @brief Possible locations of a 3-codimensional boundary (a corner in 3D)
+/**
+ * @brief Return the location of the two (1-codimensional) boundaries adjacent to a 2-codimensional
+ * boundary.
+ * @param The location of the 2-codimensional boundary.
+ * @return An array containing the two locations of the adjacent boundaries.
  */
+constexpr std::array<BoundaryLocation, 2>
+getAdjacentBoundaryLocations(Codim2BoundaryLocation location)
+{
+    switch (location)
+    {
+        // X-Y Edges
+        case Codim2BoundaryLocation::XLower_YLower:
+            return {BoundaryLocation::XLower, BoundaryLocation::YLower};
+        case Codim2BoundaryLocation::XUpper_YLower:
+            return {BoundaryLocation::XUpper, BoundaryLocation::YLower};
+        case Codim2BoundaryLocation::XLower_YUpper:
+            return {BoundaryLocation::XLower, BoundaryLocation::YUpper};
+        case Codim2BoundaryLocation::XUpper_YUpper:
+            return {BoundaryLocation::XUpper, BoundaryLocation::YUpper};
+
+        // X-Z Edges
+        case Codim2BoundaryLocation::XLower_ZLower:
+            return {BoundaryLocation::XLower, BoundaryLocation::ZLower};
+        case Codim2BoundaryLocation::XUpper_ZLower:
+            return {BoundaryLocation::XUpper, BoundaryLocation::ZLower};
+        case Codim2BoundaryLocation::XLower_ZUpper:
+            return {BoundaryLocation::XLower, BoundaryLocation::ZUpper};
+        case Codim2BoundaryLocation::XUpper_ZUpper:
+            return {BoundaryLocation::XUpper, BoundaryLocation::ZUpper};
+
+        // Y-Z Edges
+        case Codim2BoundaryLocation::YLower_ZLower:
+            return {BoundaryLocation::YLower, BoundaryLocation::ZLower};
+        case Codim2BoundaryLocation::YUpper_ZLower:
+            return {BoundaryLocation::YUpper, BoundaryLocation::ZLower};
+        case Codim2BoundaryLocation::YLower_ZUpper:
+            return {BoundaryLocation::YLower, BoundaryLocation::ZUpper};
+        case Codim2BoundaryLocation::YUpper_ZUpper:
+            return {BoundaryLocation::YUpper, BoundaryLocation::ZUpper};
+
+        default: return {};
+    }
+}
+
+/** @brief Possible locations of a 3-codimensional boundary (a corner in 3D) */
 enum class Codim3BoundaryLocation {
     XLower_YLower_ZLower = 0,
-    XHI_YLower_ZLower    = 1,
+    XUpper_YLower_ZLower = 1,
     XLower_YUpper_ZLower = 2,
-    XHI_YUpper_ZLower    = 3,
+    XUpper_YUpper_ZLower = 3,
     XLower_YLower_ZUpper = 4,
-    XHI_YLower_ZUpper    = 5,
+    XUpper_YLower_ZUpper = 5,
     XLower_YUpper_ZUpper = 6,
-    XHI_YUpper_ZUpper    = 7
+    XUpper_YUpper_ZUpper = 7
 };
+
+/**
+ * @brief Return the location of the three (1-codimensional) boundaries adjacent to a
+ * 3-codimensional boundary.
+ * @param The location of the 3-codimensional boundary.
+ * @return An array containing the three locations of the adjacent boundaries.
+ */
+constexpr std::array<BoundaryLocation, 3>
+getAdjacentBoundaryLocations(Codim3BoundaryLocation location)
+{
+    switch (location)
+    {
+        // Lower Z Plane
+        case Codim3BoundaryLocation::XLower_YLower_ZLower:
+            return {BoundaryLocation::XLower, BoundaryLocation::YLower, BoundaryLocation::ZLower};
+        case Codim3BoundaryLocation::XUpper_YLower_ZLower:
+            return {BoundaryLocation::XUpper, BoundaryLocation::YLower, BoundaryLocation::ZLower};
+        case Codim3BoundaryLocation::XLower_YUpper_ZLower:
+            return {BoundaryLocation::XLower, BoundaryLocation::YUpper, BoundaryLocation::ZLower};
+        case Codim3BoundaryLocation::XUpper_YUpper_ZLower:
+            return {BoundaryLocation::XUpper, BoundaryLocation::YUpper, BoundaryLocation::ZLower};
+
+        // Upper Z Plane
+        case Codim3BoundaryLocation::XLower_YLower_ZUpper:
+            return {BoundaryLocation::XLower, BoundaryLocation::YLower, BoundaryLocation::ZUpper};
+        case Codim3BoundaryLocation::XUpper_YLower_ZUpper:
+            return {BoundaryLocation::XUpper, BoundaryLocation::YLower, BoundaryLocation::ZUpper};
+        case Codim3BoundaryLocation::XLower_YUpper_ZUpper:
+            return {BoundaryLocation::XLower, BoundaryLocation::YUpper, BoundaryLocation::ZUpper};
+        case Codim3BoundaryLocation::XUpper_YUpper_ZUpper:
+            return {BoundaryLocation::XUpper, BoundaryLocation::YUpper, BoundaryLocation::ZUpper};
+
+        default: return {};
+    }
+}
 
 /**
  * @brief Get the BoundaryType from input keyword, and throw and error if the keyword does not
@@ -139,6 +222,16 @@ inline BoundaryLocation getBoundaryLocationFromString(std::string const& name)
         return typeMap_.at(name);
     throw std::runtime_error("Wrong boundary location name = " + name);
 }
+
+/**
+ * @brief Meta utilities to retrieve the enum type of boundary location depending on the
+ * codimension.
+ * @tparam N Codimension value.
+ */
+template<std::size_t N>
+using CodimNBoundaryLocation = std::tuple_element_t<
+    N - 1, std::tuple<BoundaryLocation, Codim2BoundaryLocation, Codim3BoundaryLocation>>;
+
 
 } // namespace PHARE::core
 

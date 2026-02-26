@@ -1,13 +1,11 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_BOUNDARY_CONDITION_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_BOUNDARY_CONDITION_HPP
 
-#include "core/utilities/box/box.hpp"
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
 #include "core/data/tensorfield/tensorfield_traits.hpp"
-
-#include <compare>
+#include "core/utilities/box/box.hpp"
 
 namespace PHARE::core
 {
@@ -15,10 +13,9 @@ namespace PHARE::core
 /**
  * @brief Supported types of field boundary conditions.
  *
- * @note The enum fields are ordered from lowest to highest priority at edges/corner.
- *
  */
 enum class FieldBoundaryConditionType : int {
+    None,
     Dirichlet,
     AntiSymmetric,
     Symmetric,
@@ -75,16 +72,6 @@ public:
                        Box<std::uint32_t, dimension> const& localGhostBox,
                        GridLayoutT const& gridLayout, double const time)
         = 0;
-
-
-    /**
-     * @brief Define comparison of field boundary conditions based on the enum @c
-     * ScalarOrTensorFieldT.
-     */
-    std::strong_ordering operator<=>(This const& other) const
-    {
-        return this->getType() <=> other.getType();
-    }
 };
 
 } // namespace PHARE::core

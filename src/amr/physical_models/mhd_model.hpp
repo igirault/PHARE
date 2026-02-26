@@ -1,21 +1,19 @@
 #ifndef PHARE_MHD_MODEL_HPP
 #define PHARE_MHD_MODEL_HPP
 
-#include "core/def.hpp"
-#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
-#include "core/models/mhd_state.hpp"
-#include "core/mhd/mhd_quantities.hpp"
-#include "core/boundary/boundary_manager.hpp"
-
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/resources_manager/resources_manager.hpp"
 
-#include <SAMRAI/hier/PatchLevel.h>
+#include "core/boundary/boundary_manager.hpp"
+#include "core/def.hpp"
+#include "core/def/phare_mpi.hpp" // IWYU pragma: keep
+#include "core/mhd/mhd_quantities.hpp"
+#include "core/models/mhd_state.hpp"
 
+#include <initializer_list>
 #include <string>
 #include <string_view>
-#include <initializer_list>
 
 
 namespace PHARE::solver
@@ -92,7 +90,7 @@ public:
             = {core::MHDQuantity::Scalar::rho, core::MHDQuantity::Scalar::Etot};
         std::vector<core::MHDQuantity::Vector> vectorQuantities = {
             core::MHDQuantity::Vector::B,
-            core::MHDQuantity::Vector::J,
+            // core::MHDQuantity::Vector::J,
             core::MHDQuantity::Vector::E,
             core::MHDQuantity::Vector::rhoV,
         };

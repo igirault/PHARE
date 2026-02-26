@@ -3,16 +3,19 @@
 
 #include "core/boundary/boundary.hpp"
 #include "core/boundary/boundary_defs.hpp"
-#include "core/data/vecfield/vecfield.hpp"
-#include "core/data/field/field_traits.hpp"
 #include "core/boundary/boundary_factory.hpp"
+#include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
+#include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
 #include "initializer/data_provider.hpp"
 
-#include <memory>
+#include <algorithm>
 #include <concepts>
+#include <memory>
+#include <stdexcept>
+#include <string>
 #include <unordered_map>
 
 namespace PHARE::core
@@ -62,6 +65,9 @@ public:
                        boundaries_[location]     = boundary_factory_type::create(
                            location, dict[locationName], scalarQuantities, vectorQuantities);
                    });
+
+        /// @todo If this mode stays in the code it should be read from the input dict.
+        priority_policy_ = PriorityPolicy::ByDirection;
     }
 
 
@@ -78,25 +84,83 @@ public:
         return (it != boundaries_.end()) ? it->second : nullptr;
     }
 
+    /** @brief Describes how the master boundary is chosen at corner and edges */
+    enum class PriorityPolicy {
+        ByDirection,
+        ByBoundaryType,
+    };
+
+    void setPriorityPolicy(PriorityPolicy policy) { priority_policy_ = policy; }
+
+    /** @brief Gets the master 1-codimensional boundary for any given N-codimensional boundary,
+     * following the priority policy of the boundary manager.
+     *
+     * @note If @p location corresponds itself to a 1-codim boundary, then it returns the same
+     * @p location.
+     *
+     * @tparam CodimNBoundaryLocationT Type of boundary location.
+     * @param location The location of the boundary where we want to determine which is the master
+     * boundary.
+     * @return The location of the master boundary.
+     */
+    template<typename CodimNBoundaryLocationT>
+    BoundaryLocation getMasterBoundaryLocation(CodimNBoundaryLocationT location) const
+    {
+        if constexpr (std::same_as<CodimNBoundaryLocationT, BoundaryLocation>)
+        {
+            return location;
+        }
+        else
+        {
+            return selectMasterBoundaryInArray_(getAdjacentBoundaryLocations(location));
+        }
+    }
 
 private:
     using _boundary_map_type = std::unordered_map<BoundaryLocation, std::shared_ptr<boundary_type>>;
 
-    /**
-     * @brief Utility struct to group scalar and vector quantities together
-     *
-     */
+    /** @brief Utility struct to group scalar and vector quantities together */
     struct SimulationMenu
     {
         std::vector<typename PhysicalQuantityT::Scalar> const& scalars;
         std::vector<typename PhysicalQuantityT::Vector> const& vectors;
     };
 
+
+    _boundary_map_type boundaries_;  //!< List of boundaries mapped by their location.
+    PriorityPolicy priority_policy_; //!< How the master boundary is chosen at corners and edges.
+
     /**
-     * @brief List of boundaries mapped by their location
+     * @brief Worker function to get the master of an array of 1-codimensional boundary locations,
+     * according to the priority policy of the boundary manager.
      *
+     * @tparam N Number of elements in the array
+     * @param locations Array of boundary locations.
+     * @return The location of the master boundary.
      */
-    _boundary_map_type boundaries_;
+    template<size_t N>
+    BoundaryLocation selectMasterBoundaryInArray_(std::array<BoundaryLocation, N> locations) const
+    {
+        switch (priority_policy_)
+        {
+            case PriorityPolicy::ByDirection: {
+                auto it = std::ranges::max_element(locations, {}, getDirection);
+                return *it;
+            }
+
+            case PriorityPolicy::ByBoundaryType: {
+                auto it = std::ranges::max_element(locations, {}, [&](auto location) {
+                    if (auto boundaryPtr = getBoundary(location); boundaryPtr)
+                        return boundaryPtr->getType();
+                    else
+                        throw std::runtime_error("Pointer to boundary is null.");
+                });
+                return *it;
+            }
+
+            default: throw std::runtime_error("Non-existing priority mode for boundaries.");
+        }
+    }
 };
 
 } // namespace PHARE::core

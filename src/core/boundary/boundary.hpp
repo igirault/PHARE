@@ -2,15 +2,15 @@
 #define PHARE_CORE_BOUNDARY_BOUNDARY_HPP
 
 #include "core/boundary/boundary_defs.hpp"
-#include "core/data/vecfield/vecfield.hpp"
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
+#include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition_factory.hpp"
 
-#include <memory>
-#include <utility>
 #include <concepts>
+#include <memory>
 #include <unordered_map>
+#include <utility>
 
 namespace PHARE::core
 {
@@ -31,6 +31,7 @@ template<typename PhysicalQuantityT, IsField FieldT, IsGridLayout GridLayoutT>
 class Boundary
 {
 public:
+    using This                 = Boundary<PhysicalQuantityT, FieldT, GridLayoutT>;
     using scalar_quantity_type = FieldT::physical_quantity_type;
     static_assert(std::same_as<scalar_quantity_type, typename PhysicalQuantityT::Scalar>);
     using vector_quantity_type        = PhysicalQuantityT::Vector;
@@ -112,6 +113,14 @@ public:
             static_assert(dependant_false_<TensorPhysicalQuantityT>,
                           "Tensoriality of the physical quantity not supported.");
         }
+    }
+
+    /**
+     * @brief Define comparison of boundaries based on the enum @c BoundaryType .
+     */
+    std::strong_ordering operator<=>(This const& other) const
+    {
+        return this->getType() <=> other.getType();
     }
 
 private:

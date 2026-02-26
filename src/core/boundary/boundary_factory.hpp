@@ -15,7 +15,7 @@
 namespace PHARE::core
 {
 /**
- * @brief This class contains all the recipes to create a boundary object according to the desired
+ * @brief Contains all the recipes to create a boundary object according to the desired
  * type of physical boundary (reflective, open, ...). It can extracts all the necessary data from
  * the input data dict associated to the boundary (value of physical quantities on the boundary for
  * an Inflow condition for instance), and create the right boundary conditions associated to each
@@ -112,6 +112,10 @@ private:
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::AntiSymmetric>(quantity);
                     break;
+                case (PhysicalQuantityT::Vector::E):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::AntiSymmetric>(quantity);
+                    break;
                 default:
                     boundary
                         ->template registerFieldCondition<FieldBoundaryConditionType::Symmetric>(
@@ -138,6 +142,10 @@ private:
                 case (PhysicalQuantityT::Vector::B):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                    break;
+                case (PhysicalQuantityT::Vector::E):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
