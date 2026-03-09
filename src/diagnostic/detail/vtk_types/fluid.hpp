@@ -274,7 +274,6 @@ void FluidDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
 {
     PHARE_LOG_SCOPE(3, "FluidDiagnosticWriter<H5Writer>::write");
 
-    using Model_t    = H5Writer::ModelView::Model_t;
     auto& modelView  = this->h5Writer_.modelView();
     auto const& info = mem[diagnostic.quantity];
 
