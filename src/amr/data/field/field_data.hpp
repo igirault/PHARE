@@ -8,6 +8,7 @@
 
 #include "amr/resources_manager/amr_utils.hpp"
 
+#include "core/mhd/mhd_quantities.hpp"
 #include "field_geometry.hpp"
 
 #include <SAMRAI/hier/PatchData.h>
@@ -33,7 +34,7 @@ namespace amr
         using value_type = Grid_t::value_type;
 
     private:
-        using SetEqualOp = core::Equals<value_type>;
+        using SetEqualOp = core::SetEqual<value_type>;
 
     public:
         static constexpr std::size_t dimension    = GridLayoutT::dimension;
@@ -302,13 +303,20 @@ namespace amr
 
         static Grid_t& getField(SAMRAI::hier::Patch const& patch, int id)
         {
-            auto const& patchData
-                = std::dynamic_pointer_cast<FieldData<GridLayoutT, Grid_t>>(patch.getPatchData(id));
-            if (!patchData)
+            auto const& patchData = patch.getPatchData(id);
+            if (patchData == nullptr)
+            {
+                throw std::runtime_error("no patch data for the corresponding id "
+                                         + std::to_string(id) + " on patch "
+                                         + std::to_string(patch.getLocalId().getValue()));
+            }
+            auto const& fieldData
+                = std::dynamic_pointer_cast<FieldData<GridLayoutT, Grid_t>>(patchData);
+            if (!fieldData)
             {
                 throw std::runtime_error("cannot cast to FieldData");
             }
-            return patchData->field;
+            return fieldData->field;
         }
 
 

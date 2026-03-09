@@ -5,19 +5,16 @@
 
 #include "core/logger.hpp"
 #include "core/data/field/field_box.hpp"
-#include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/tensorfield/tensorfield.hpp"
 
 #include "amr/data/field/field_geometry.hpp"
-#include "amr/data/tensorfield/tensor_field_overlap.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
-#include "amr/data/field/field_overlap.hpp"
+#include "amr/data/tensorfield/tensor_field_overlap.hpp"
 #include "amr/data/tensorfield/tensor_field_geometry.hpp"
 
 #include <SAMRAI/hier/PatchData.h>
 #include <SAMRAI/tbox/MemoryUtilities.h>
 
-#include <optional>
 #include <type_traits>
 
 
@@ -50,7 +47,7 @@ public:
     using value_type = Grid_t::value_type;
 
 private:
-    using SetEqualOp = core::Equals<value_type>;
+    using SetEqualOp = core::SetEqual<value_type>;
 
 public:
     static constexpr std::size_t dimension    = GridLayoutT::dimension;
