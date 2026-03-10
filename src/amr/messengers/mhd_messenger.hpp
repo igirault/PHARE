@@ -127,8 +127,8 @@ namespace amr
                     "MHDMessengerStrategy: missing electric field variable IDs");
             }
 
-            EalgoPatchGhost.registerRefine(*e_id, *e_id, *e_id, EfieldRefineOp_,
-                                           nonOverwriteInteriorTFfillPattern);
+            // EalgoPatchGhost.registerRefine(*e_id, *e_id, *e_id, EfieldRefineOp_,
+            //                                nonOverwriteInteriorTFfillPattern);
 
             // refluxing
             // we first want to coarsen the flux sum onto the coarser level
@@ -284,10 +284,10 @@ namespace amr
         {
             auto const level = hierarchy->getPatchLevel(levelNumber);
 
-            magPatchGhostsRefineSchedules[levelNumber]
-                = BalgoPatchGhost.createSchedule(level, &magneticRefinePatchStrategy_);
+            // magPatchGhostsRefineSchedules[levelNumber]
+            //    = BalgoPatchGhost.createSchedule(level, &magneticRefinePatchStrategy_);
 
-            elecPatchGhostsRefineSchedules[levelNumber] = EalgoPatchGhost.createSchedule(level);
+            // elecPatchGhostsRefineSchedules[levelNumber] = EalgoPatchGhost.createSchedule(level);
 
             EpatchGhostRefluxedSchedules[levelNumber]
                 = EpatchGhostRefluxedAlgo.createSchedule(level);
@@ -313,6 +313,8 @@ namespace amr
             magFluxesZGhostRefiners_.registerLevel(hierarchy, level);
 
             magGhostsRefiners_.registerLevel(hierarchy, level);
+            magMaxRefiners_.registerLevel(hierarchy, level);
+            magMaxModelRefiners_.registerLevel(hierarchy, level);
 
             if (levelNumber != rootLevelNumber)
             {
@@ -348,6 +350,8 @@ namespace amr
             bool isRegriddingL0 = levelNumber == 0 and oldLevel;
 
             magneticRegriding_(hierarchy, level, oldLevel, initDataTime);
+            magMaxModelRefiners_.fill(mhdModel.state.B, level->getLevelNumber(), initDataTime);
+
             densityInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             momentumInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
             totalEnergyInitRefiners_.regrid(hierarchy, levelNumber, oldLevel, initDataTime);
@@ -492,6 +496,7 @@ namespace amr
 
             setNaNsOnVecfieldGhosts(B, level);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
+            magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
         void fillCurrentGhosts(VecFieldT& J, level_t const& level, double const fillTime)
@@ -505,10 +510,11 @@ namespace amr
 
 
     private:
-        using rm_t                   = typename MHDModel::resources_manager_type;
-        using InitRefinerPool        = RefinerPool<rm_t, RefinerType::InitField>;
-        using GhostRefinerPool       = RefinerPool<rm_t, RefinerType::GhostField>;
-        using InitDomPartRefinerPool = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
+        using rm_t                        = typename MHDModel::resources_manager_type;
+        using InitRefinerPool             = RefinerPool<rm_t, RefinerType::InitField>;
+        using GhostRefinerPool            = RefinerPool<rm_t, RefinerType::GhostField>;
+        using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
+        using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderMax>;
         using FieldRefinePatchStrategyT
             = FieldRefinePatchStrategy<ResourcesManagerT, FieldDataT, BoundaryManagerT>;
         using VectorFieldRefinePatchStrategyT
@@ -734,6 +740,8 @@ namespace amr
         GhostRefinerPool magFluxesZGhostRefiners_{resourcesManager_};
 
         GhostRefinerPool magGhostsRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
+        VecFieldGhostMaxRefinerPool magMaxModelRefiners_{resourcesManager_};
 
         InitRefinerPool densityInitRefiners_{resourcesManager_};
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
