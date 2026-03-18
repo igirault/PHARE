@@ -61,6 +61,9 @@ namespace core
             std::array<QtyCentering, NBR_COMPO> const Bx = {{data.primal, data.dual, data.dual}};
             std::array<QtyCentering, NBR_COMPO> const By = {{data.dual, data.primal, data.dual}};
             std::array<QtyCentering, NBR_COMPO> const Bz = {{data.dual, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const B0x = {{data.primal, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const B0y = {{data.dual, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const B0z = {{data.dual, data.dual, data.primal}};
 
             std::array<QtyCentering, NBR_COMPO> const P = {{data.dual, data.dual, data.dual}};
 
@@ -128,6 +131,9 @@ namespace core
                 Bx,
                 By,
                 Bz,
+                B0x,
+                B0y,
+                B0z,
                 P,
                 rhoVx,
                 rhoVy,
@@ -192,6 +198,12 @@ namespace core
                         return {{_QtyCentering_[gridData_.iBy][gridData_.idirX]}};
                     case MHDQuantity::Scalar::Bz:
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::B0x:
+                        return {{_QtyCentering_[gridData_.iB0x][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::B0y:
+                        return {{_QtyCentering_[gridData_.iB0y][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::B0z:
+                        return {{_QtyCentering_[gridData_.iB0z][gridData_.idirX]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX]}};
                     case MHDQuantity::Scalar::rhoVx:
@@ -259,6 +271,15 @@ namespace core
                     case MHDQuantity::Scalar::Bz:
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::B0x:
+                        return {{_QtyCentering_[gridData_.iB0x][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iB0x][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::B0y:
+                        return {{_QtyCentering_[gridData_.iB0y][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iB0y][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::B0z:
+                        return {{_QtyCentering_[gridData_.iB0z][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iB0z][gridData_.idirY]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX],
                                  _QtyCentering_[gridData_.iP][gridData_.idirY]}};
@@ -364,6 +385,18 @@ namespace core
                         return {{_QtyCentering_[gridData_.iBz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirY],
                                  _QtyCentering_[gridData_.iBz][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::B0x:
+                        return {{_QtyCentering_[gridData_.iB0x][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iB0x][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iB0x][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::B0y:
+                        return {{_QtyCentering_[gridData_.iB0y][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iB0y][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iB0y][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::B0z:
+                        return {{_QtyCentering_[gridData_.iB0z][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iB0z][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iB0z][gridData_.idirZ]}};
                     case MHDQuantity::Scalar::P:
                         return {{_QtyCentering_[gridData_.iP][gridData_.idirX],
                                  _QtyCentering_[gridData_.iP][gridData_.idirY],
@@ -489,6 +522,11 @@ namespace core
                 case MHDQuantity::Vector::B:
                     return {{centering(MHDQuantity::Scalar::Bx), centering(MHDQuantity::Scalar::By),
                              centering(MHDQuantity::Scalar::Bz)}};
+
+                case MHDQuantity::Vector::B0:
+                    return {{centering(MHDQuantity::Scalar::B0x),
+                             centering(MHDQuantity::Scalar::B0y),
+                             centering(MHDQuantity::Scalar::B0z)}};
 
                 case MHDQuantity::Vector::rhoV:
                     return {{centering(MHDQuantity::Scalar::rhoVx),
