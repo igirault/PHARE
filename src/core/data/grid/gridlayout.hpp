@@ -40,6 +40,34 @@ namespace core
     template<typename T>
     constexpr bool has_physicalQuantity_v = has_physicalQuantity<T>::value;
 
+    template<typename T, typename Attempt = void>
+    struct has_nbrDualGhosts : std::false_type
+    {
+    };
+
+    template<typename T>
+    struct has_nbrDualGhosts<T, core::tryToInstanciate<decltype(T::nbrDualGhosts_())>>
+        : std::true_type
+    {
+    };
+
+    template<typename T>
+    constexpr bool has_nbrDualGhosts_v = has_nbrDualGhosts<T>::value;
+
+    template<typename T, typename Attempt = void>
+    struct has_nbrPrimalGhosts : std::false_type
+    {
+    };
+
+    template<typename T>
+    struct has_nbrPrimalGhosts<T, core::tryToInstanciate<decltype(T::nbrPrimalGhosts_())>>
+        : std::true_type
+    {
+    };
+
+    template<typename T>
+    constexpr bool has_nbrPrimalGhosts_v = has_nbrPrimalGhosts<T>::value;
+
     NO_DISCARD constexpr int centering2int(QtyCentering c)
     {
         return static_cast<int>(c);
@@ -1416,9 +1444,16 @@ namespace core
          */
         NO_DISCARD std::uint32_t constexpr static nbrDualGhosts_()
         {
-            static_assert(interp_order > 0 and interp_order < 4);
-            constexpr auto ghosts = std::array{2, 6, 4};
-            return ghosts[interp_order - 1];
+            if constexpr (has_nbrDualGhosts_v<GridLayoutImpl>)
+            {
+                return GridLayoutImpl::nbrDualGhosts_();
+            }
+            else
+            {
+                static_assert(interp_order > 0 and interp_order < 4);
+                constexpr auto ghosts = std::array{2, 4, 4};
+                return ghosts[interp_order - 1];
+            }
         }
 
         /**
@@ -1430,7 +1465,17 @@ namespace core
          * (e.g. laplacian of J for a yee lattice). Dual ghosts don't have this issue since they
          * always have at least 1 ghost.
          */
-        NO_DISCARD std::uint32_t constexpr static nbrPrimalGhosts_() { return nbrDualGhosts_(); }
+        NO_DISCARD std::uint32_t constexpr static nbrPrimalGhosts_()
+        {
+            if constexpr (has_nbrPrimalGhosts_v<GridLayoutImpl>)
+            {
+                return GridLayoutImpl::nbrPrimalGhosts_();
+            }
+            else
+            {
+                return nbrDualGhosts_();
+            }
+        }
 
         NO_DISCARD std::uint32_t static constexpr dualOffset_() noexcept { return 1; }
 

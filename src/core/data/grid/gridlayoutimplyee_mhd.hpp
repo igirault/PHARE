@@ -39,6 +39,15 @@ namespace core
         static constexpr std::string_view type    = "yee";
         using quantity_type                       = MHDQuantity;
 
+        NO_DISCARD std::uint32_t constexpr static nbrDualGhosts_()
+        {
+            static_assert(interp_order > 0 and interp_order < 4);
+            constexpr auto ghosts = std::array{2, 6, 4};
+            return ghosts[interp_order - 1];
+        }
+
+        NO_DISCARD std::uint32_t constexpr static nbrPrimalGhosts_() { return nbrDualGhosts_(); }
+
         /**
          * @brief GridLayoutImpl<Selector<Layout,Layout::Yee>,dim>::initLayoutCentering_ initialize
          * the table MHDQuantityCentering_. This is THE important array in the GridLayout module.
