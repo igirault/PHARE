@@ -103,7 +103,18 @@ def add_to_patchdata(patch_datas, h5_patch_grp, basename, layout):
                     )
                 )
 
-            pdata = FieldData(layout, field_qties[dataset_name], dataset)
+            ghosts = dataset.attrs.get("ghosts")
+            kwargs = {}
+            if ghosts is not None:
+                # Temporary MHD workaround: some diagnostics are written with an on-disk
+                # ghost count that differs from the generic Python GridLayout rule, so
+                # read back the HDF5 metadata verbatim instead of recomputing it here.
+                ghosts = np.asarray(ghosts, dtype=int).reshape(-1)
+                if ghosts.size == 1:
+                    ghosts = np.repeat(ghosts, layout.ndim)
+                kwargs["ghosts_nbr"] = ghosts
+
+            pdata = FieldData(layout, field_qties[dataset_name], dataset, **kwargs)
 
             pdata_name = field_qties[dataset_name]
 

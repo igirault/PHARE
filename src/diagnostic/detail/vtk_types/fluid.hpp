@@ -317,9 +317,9 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
     auto& V        = modelView.getV();
     auto& P        = modelView.getP();
     auto& rhoV     = modelView.getRhoV();
-    auto const& B1 = modelView.getStoredB();
+    auto const& B1 = modelView.getB1();
     auto const& B0 = modelView.getB0();
-    auto const& E1 = modelView.getStoredEtot();
+    auto const& E1 = modelView.getEtot1();
 
     std::string tree{"/mhd/"};
 
@@ -339,7 +339,7 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
                 auto const gamma = diagnostic.fileAttributes["heat_capacity_ratio"]
                                        .template to<double>();
                 core::ToPrimitiveConverter_ref<GridLayout> toPrim{layout};
-                toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B1, B0, E1, P);
+                toPrim.eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, E1, P);
             },
             minLvl, maxLvl);
     }
