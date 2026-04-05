@@ -6,11 +6,12 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
 
   configure_file(${CMAKE_SOURCE_DIR}/tests/__init__.py ${CMAKE_BINARY_DIR}/tests/__init__.py @ONLY)
 
-
+  add_subdirectory(tests/core/boundary/boundary_manager)
   add_subdirectory(tests/core/data/ndarray)
   add_subdirectory(tests/core/data/grid)
   add_subdirectory(tests/core/data/gridlayout)
   add_subdirectory(tests/core/data/vecfield)
+  add_subdirectory(tests/core/data/tensorfield)
   add_subdirectory(tests/core/data/particles)
   add_subdirectory(tests/core/data/ions)
   add_subdirectory(tests/core/data/electrons)
@@ -19,12 +20,13 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/core/data/particle_initializer)
   add_subdirectory(tests/core/data/mhd_state)
   add_subdirectory(tests/core/utilities/box)
+  add_subdirectory(tests/core/utilities/point)
   add_subdirectory(tests/core/utilities/range)
   add_subdirectory(tests/core/utilities/index)
   add_subdirectory(tests/core/utilities/indexer)
   add_subdirectory(tests/core/utilities/cellmap)
   add_subdirectory(tests/core/utilities/ghost_width_calculator)
-  #add_subdirectory(tests/core/numerics/boundary_condition)
+  add_subdirectory(tests/core/numerics/boundary_condition)
   add_subdirectory(tests/core/numerics/interpolator)
   add_subdirectory(tests/core/numerics/pusher)
   add_subdirectory(tests/core/numerics/ampere)
@@ -49,6 +51,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/amr/models)
   add_subdirectory(tests/amr/multiphysics_integrator)
   add_subdirectory(tests/amr/tagging)
+  add_subdirectory(tests/amr/data/tensorfield/tensor_field_data)
 
   add_subdirectory(tests/diagnostic)
 
