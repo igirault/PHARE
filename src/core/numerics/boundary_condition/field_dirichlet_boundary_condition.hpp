@@ -30,8 +30,8 @@ public:
         ScalarOrTensorFieldT, GridLayoutT,
         FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
     using tensor_quantity_type = Super::tensor_quantity_type;
-    using field_type             = Super::field_type;
-    using value_type             = field_type::value_type;
+    using field_type           = Super::field_type;
+    using value_type           = field_type::value_type;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr size_t N         = Super::N;
@@ -72,9 +72,11 @@ public:
     void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
                            Box<std::uint32_t, dimension> const& localGhostBox,
                            GridLayoutT const& gridLayout, double const time,
-                           [[maybe_unused]] Super::patch_field_accessor_type const&
-                               fieldAccessor)
+                           [[maybe_unused]] Super::patch_field_accessor_type const& fieldAccessor)
     {
+        if constexpr (static_cast<size_t>(direction) >= dimension)
+            return;
+
         constexpr std::array centerings = {Centerings...};
 
         auto fields = [&]() {
@@ -83,6 +85,8 @@ public:
             else
                 return scalarOrTensorField.components();
         }();
+
+
 
         for_N<N>([&](auto i) {
             constexpr QtyCentering centering = centerings[i];
@@ -95,9 +99,10 @@ public:
                         index);
                 // if the ghost is on the boundary (possible if primal), set to value,
                 // else set with a linear extrapolation
-                constexpr size_t dir_i = static_cast<size_t>(direction);
-                field(index) = (mirrorIndex[dir_i] == index[dir_i]) ? value_[i]
-                                                            : 2.0 * value_[i] - field(mirrorIndex);
+                constexpr size_t iDir = static_cast<size_t>(direction);
+                field(index)          = (mirrorIndex[iDir] == index[iDir])
+                                            ? value_[i]
+                                            : 2.0 * value_[i] - field(mirrorIndex);
             }
         });
     }
