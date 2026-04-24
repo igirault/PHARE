@@ -240,7 +240,7 @@ def check_path(**kwargs):
 
 
 def check_boundaries(ndim, **kwargs):
-    valid_boundary_types = ("periodic",)
+    valid_boundary_types = ("periodic","physical")
     boundary_types = kwargs.get("boundary_types", ["periodic"] * ndim)
     phare_utilities.check_iterables(boundary_types)
 
@@ -265,6 +265,181 @@ def check_boundaries(ndim, **kwargs):
         )
 
     return boundary_types
+
+
+# ------------------------------------------------------------------------------
+
+_BOUNDARY_NORMAL_INDEX = {"x": 0, "y": 1, "z": 2}
+
+
+def _normalize_inflow_velocity(location, velocity):
+    """Return velocity as a (vx, vy, vz) tuple.
+
+    A scalar is interpreted as the inward-normal speed: it is stored with a
+    positive sign for lower boundaries (flow enters in the +direction) and a
+    negative sign for upper boundaries (flow enters in the -direction).
+    The two transverse components are set to zero.
+    A 3-element sequence is kept as-is with no sign adjustment.
+    """
+    normal_idx = _BOUNDARY_NORMAL_INDEX[location[0]]
+    side = location[1:]  # "lower" or "upper"
+    if isinstance(velocity, (int, float)):
+        sign = 1.0 if side == "lower" else -1.0
+        v = [0.0, 0.0, 0.0]
+        v[normal_idx] = sign * float(velocity)
+        return tuple(v)
+    try:
+        v = tuple(float(vi) for vi in velocity)
+    except (TypeError, ValueError):
+        raise TypeError(
+            f"'velocity' at boundary '{location}' must be a scalar or a 3-vector, "
+            f"got {velocity!r}"
+        )
+    if len(v) != 3:
+        raise ValueError(
+            f"'velocity' at boundary '{location}' must be a scalar or a 3-vector, "
+            f"got a {len(v)}-element sequence"
+        )
+    return v
+
+
+def _normalize_B(location, B):
+    """Return the magnetic field as a (Bx, By, Bz) tuple. Must be a 3-element sequence."""
+    try:
+        b = tuple(float(bi) for bi in B)
+    except (TypeError, ValueError):
+        raise TypeError(
+            f"'B' at boundary '{location}' must be a 3-vector, got {B!r}"
+        )
+    if len(b) != 3:
+        raise ValueError(
+            f"'B' at boundary '{location}' must be a 3-vector, "
+            f"got a {len(b)}-element sequence"
+        )
+    return b
+
+
+def _check_inflow_data(location, bc):
+    """Validate and normalise the 'data' sub-dict for a super-magnetofast-inflow BC."""
+    data = bc.get("data", {})
+    for key in ("density", "pressure", "velocity", "B"):
+        if key not in data:
+            raise KeyError(
+                f"Inflow BC at '{location}' requires '{key}' inside 'data'"
+            )
+    for key in ("density", "pressure"):
+        val = data[key]
+        if not isinstance(val, (int, float)) or val <= 0:
+            raise ValueError(
+                f"'{key}' at inflow boundary '{location}' must be a positive scalar, "
+                f"got {val!r}"
+            )
+    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
+    data["B"]        = _normalize_B(location, data["B"])
+    bc["data"] = data
+
+
+def _check_fixed_pressure_outflow_data(location, bc):
+    """Validate and normalise the 'data' sub-dict for a fixed-pressure-outflow BC.
+
+    Only a prescribed exit pressure is required. All other flow variables (ρ, ρv, B)
+    use a Neumann (zero-gradient) condition and are therefore not prescribed.
+    """
+    data = bc.get("data", {})
+    if "pressure" not in data:
+        raise KeyError(
+            f"Fixed-pressure outflow BC at '{location}' requires 'pressure' inside 'data'"
+        )
+    val = data["pressure"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'pressure' at fixed-pressure outflow boundary '{location}' must be a positive "
+            f"scalar, got {val!r}"
+        )
+    bc["data"] = data
+
+
+def _check_free_pressure_inflow_data(location, bc):
+    """Validate and normalise the 'data' sub-dict for a free-pressure-inflow BC.
+
+    Like a super-magnetofast-inflow but without a prescribed pressure: the ghost
+    pressure is obtained from a Neumann extrapolation at runtime.
+    """
+    data = bc.get("data", {})
+    for key in ("density", "velocity", "B"):
+        if key not in data:
+            raise KeyError(
+                f"Free-pressure inflow BC at '{location}' requires '{key}' inside 'data'"
+            )
+    val = data["density"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'density' at free-pressure inflow boundary '{location}' must be a positive scalar, "
+            f"got {val!r}"
+        )
+    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
+    data["B"]        = _normalize_B(location, data["B"])
+    bc["data"] = data
+
+
+def check_boundary_conditions(ndim, **kwargs):
+    valid_bc_types = ("open", "reflective", "none", "super-magnetofast-inflow",
+                      "super-magnetofast-outflow", "free-pressure-inflow",
+                      "fixed-pressure-outflow")
+    all_directions = ["x", "y", "z"][:ndim]
+    sides = "lower", "upper"
+    boundary_types = kwargs["boundary_types"]
+    physical_directions = []
+    periodic_directions = []
+    for dir, type in zip(all_directions, boundary_types):
+        if type == "physical":
+            physical_directions.append(dir)
+        elif type == "periodic":
+            periodic_directions.append(dir)
+    physical_boundary_locations = [f"{dir}{side}" for dir in physical_directions for side in sides]
+    all_boundary_locations = [f"{dir}{side}" for side in sides for dir in all_directions]
+    default_boundary_conditions = {location: {"type": "none"} for location in all_boundary_locations}
+    boundary_conditions = kwargs.get("boundary_conditions", {})
+    
+    if not isinstance(boundary_conditions, dict):
+        raise TypeError(f"A dict should be passed to argument 'boundary_conditions'")
+
+    # check first that all provided locations are valid
+    for location in boundary_conditions:
+        if not location in all_boundary_locations:
+            raise ValueError(f"Wrong boundary name {location}: should belong to {all_boundary_locations}")
+
+    # attribute a default 'none' type to all unspecified boundaries 
+    for location in all_boundary_locations:
+        if location not in boundary_conditions:
+            boundary_conditions[location] = {'type': 'none'}
+
+    # check that all boundaries have a dict, which contain a 'type' key in their dict associated to a valid value
+    for location in all_boundary_locations:
+        boundary_condition = boundary_conditions[location]
+        if not isinstance(boundary_condition, dict):
+            raise TypeError(f"A dict should be passed to the boundary {location} for specifying a boundary condition")
+        if 'type' not in boundary_condition:
+            raise KeyError(f"No key 'type' found in the boundary_condition dict passed to {location}")
+        boundary_type = boundary_condition['type']
+        if boundary_type not in valid_bc_types:
+            raise ValueError(f"Boundary type {boundary_type} is not valid: it should belong to {valid_bc_types}")
+
+    # now check that all physical boundary have a boundary type other than 'none'
+    for location in physical_boundary_locations:
+        if boundary_conditions[location]['type'] == 'none':
+            raise KeyError(f"{location} is a physical boundary and should be provided with a valid type other than 'none'.")
+
+    # validate and normalise inflow-specific data
+    for location in all_boundary_locations:
+        if boundary_conditions[location]['type'] == "super-magnetofast-inflow":
+            _check_inflow_data(location, boundary_conditions[location])
+        elif boundary_conditions[location]['type'] == "free-pressure-inflow":
+            _check_free_pressure_inflow_data(location, boundary_conditions[location])
+        elif boundary_conditions[location]['type'] == "fixed-pressure-outflow":
+            _check_fixed_pressure_outflow_data(location, boundary_conditions[location])
+
+    return boundary_conditions
 
 
 # ------------------------------------------------------------------------------
@@ -405,10 +580,26 @@ def check_patch_size(ndim, **kwargs):
     def get_max_ghosts():
         from ..core.gridlayout import GridLayout
 
-        grid = GridLayout()
-        return max(
-            grid.nbrGhosts(kwargs["interp_order"], x) for x in ["primal", "dual"]
+        model_options = phare_utilities.listify(
+            kwargs.get("model_options", "HybridModel")
         )
+        reconstruction = kwargs.get("reconstruction", "")
+        models = []
+        if "HybridModel" in model_options:
+            models.append("hybrid")
+        if "MHDModel" in model_options:
+            models.append("mhd")
+        if len(models) == 0:
+            models = ["hybrid"]
+
+        max_ghosts = 0
+        for model in models:
+            grid = GridLayout(model=model, reconstruction=reconstruction)
+            max_ghosts = max(
+                max_ghosts,
+                max(grid.nbrGhosts(kwargs["interp_order"], x) for x in ["primal", "dual"]),
+            )
+        return max_ghosts
 
     interp = kwargs["interp_order"]
     max_ghosts = get_max_ghosts()
@@ -675,12 +866,18 @@ def check_model_options(**kwargs):
     return model_options
 
 
-def check_mhd_constants(**kwargs):
+def check_mhd_eos(**kwargs):
+    eos = kwargs.get("eos", "ideal_gas")
     gamma = kwargs.get("gamma", 5.0 / 3.0)
+
+    return eos, gamma
+
+
+def check_mhd_constants(**kwargs):
     eta = kwargs.get("eta", 0.0)
     nu = kwargs.get("nu", 0.0)
 
-    return gamma, eta, nu
+    return eta, nu
 
 
 def check_mhd_terms(**kwargs):
@@ -716,6 +913,7 @@ def checker(func):
             "layout",
             "interp_order",
             "boundary_types",
+            "boundary_conditions",
             "refined_particle_nbr",
             "path",
             "nesting_buffer",
@@ -738,6 +936,7 @@ def checker(func):
             "write_reports",
             "max_mhd_level",
             "model_options",
+            "eos",
             "gamma",
             "eta",
             "nu",
@@ -786,6 +985,7 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
+        kwargs["boundary_conditions"] = check_boundary_conditions(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
         kwargs["diag_export_format"] = kwargs.get("diag_export_format", "hdf5")
@@ -830,8 +1030,11 @@ def checker(func):
 
         kwargs["model_options"] = check_model_options(**kwargs)
 
-        gamma, eta, nu = check_mhd_constants(**kwargs)
+        eos, gamma = check_mhd_eos(**kwargs)
+        kwargs["eos"] = eos
         kwargs["gamma"] = gamma
+
+        eta, nu = check_mhd_constants(**kwargs)
         kwargs["eta"] = eta
         kwargs["nu"] = nu
 
