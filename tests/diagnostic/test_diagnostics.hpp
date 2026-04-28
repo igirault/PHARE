@@ -1,14 +1,11 @@
 #ifndef PHARE_TEST_DIAGNOSTIC_INCLUDE_HPP
 #define PHARE_TEST_DIAGNOSTIC_INCLUDE_HPP
 
-#include "tests/simulator/per_test.hpp"
-
-#include "diagnostic/diagnostic_model_view.hpp"
 #include "diagnostic/detail/h5writer.hpp"
-#include "diagnostic/detail/types/electromag.hpp"
-#include "diagnostic/detail/types/particle.hpp"
-#include "diagnostic/detail/types/fluid.hpp"
+#include "diagnostic/diagnostic_model_view.hpp"
 
+#include "tests/core/data/field/test_field.hpp"
+#include "tests/simulator/per_test.hpp"
 
 
 using namespace PHARE;
