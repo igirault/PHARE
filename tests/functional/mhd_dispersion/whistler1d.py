@@ -85,8 +85,6 @@ def config(settings):
         riemann="Rusanov",
         mhd_timestepper="TVDRK2",
         hall=True,
-        res=False,
-        hyper_res=False,
         model_options=["MHDModel"],
     )
 
