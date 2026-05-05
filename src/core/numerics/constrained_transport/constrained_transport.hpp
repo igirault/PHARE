@@ -12,10 +12,10 @@
 
 namespace PHARE::core
 {
-template<typename GridLayout, bool Resistivity, bool HyperResistivity>
+template<typename GridLayout>
 class ConstrainedTransport_ref;
 
-template<typename GridLayout, bool Resistivity, bool HyperResistivity>
+template<typename GridLayout>
 class ConstrainedTransport : public LayoutHolder<GridLayout>
 {
     constexpr static auto dimension = GridLayout::dimension;
@@ -28,6 +28,8 @@ public:
         , hyper_mode_{cppdict::get_value(dict, "hyper_mode", std::string{"constant"}) == "constant"
                           ? HyperMode::constant
                           : HyperMode::spatial}
+        , resistivity_{eta_ != 0.0}
+        , hyper_resistivity_{nu_ != 0.0}
     {
     }
     template<typename Field, typename VecField, typename Fluxes>
@@ -38,28 +40,34 @@ public:
             throw std::runtime_error(
                 "Error - ConstrainedTransport - GridLayout not set, cannot proceed to computation");
 
-        ConstrainedTransport_ref<GridLayout, Resistivity, HyperResistivity>{
-            *this->layout_, eta_, nu_, hyper_mode_}(E, fluxes, J, B, rho);
+        ConstrainedTransport_ref<GridLayout>{
+            *this->layout_, eta_, nu_, hyper_mode_, resistivity_, hyper_resistivity_}(
+            E, fluxes, J, B, rho);
     }
 
 private:
     double const eta_;
     double const nu_;
     HyperMode const hyper_mode_;
+    bool const resistivity_;
+    bool const hyper_resistivity_;
 };
 
-template<typename GridLayout, bool Resistivity, bool HyperResistivity>
+template<typename GridLayout>
 class ConstrainedTransport_ref
 {
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
     ConstrainedTransport_ref(GridLayout const& layout, double const eta, double const nu,
-                             HyperMode const& hyper_mode)
+                             HyperMode const& hyper_mode, bool const resistivity,
+                             bool const hyper_resistivity)
         : layout_{layout}
         , eta_{eta}
         , nu_{nu}
         , hyper_mode_{hyper_mode}
+        , resistivity_{resistivity}
+        , hyper_resistivity_{hyper_resistivity}
     {
     }
 
@@ -84,7 +92,7 @@ public:
 
             layout_.evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, {args...}, By_x); });
 
-            if constexpr (Resistivity)
+            if (resistivity_)
             {
                 layout_.evalOnBox(
                     Ey, [&](auto&... args) mutable { resistive_contribution_(Ey, Jy, {args...}); });
@@ -92,7 +100,7 @@ public:
                     Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
             }
 
-            if constexpr (HyperResistivity)
+            if (hyper_resistivity_)
             {
                 layout_.evalOnBox(Ey, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::Y>(Ey, Jy, B, rho, {args...});
@@ -131,7 +139,7 @@ public:
                                   [&](auto&... args) mutable { EzEq_(Ez, {args...}, By_x, Bx_y); });
             }
 
-            if constexpr (Resistivity)
+            if (resistivity_)
             {
                 layout_.evalOnBox(
                     Ex, [&](auto&... args) mutable { resistive_contribution_(Ex, Jx, {args...}); });
@@ -141,7 +149,7 @@ public:
                     Ez, [&](auto&... args) mutable { resistive_contribution_(Ez, Jz, {args...}); });
             }
 
-            if constexpr (HyperResistivity)
+            if (hyper_resistivity_)
             {
                 layout_.evalOnBox(Ex, [&](auto&... args) mutable {
                     hyperresistive_contribution_<Component::X>(Ex, Jx, B, rho, {args...});
@@ -161,6 +169,8 @@ private:
     double const eta_;
     double const nu_;
     HyperMode const hyper_mode_;
+    bool const resistivity_;
+    bool const hyper_resistivity_;
 
     template<typename Field, typename... Fluxes>
     void ExEq_(Field& Ex, MeshIndex<Field::dimension> index, Fluxes const&... fluxes) const
@@ -275,11 +285,11 @@ private:
                 return std::min({meshSize[0], meshSize[1], meshSize[2]});
         }();
 
-        auto computeHR = [&](auto BxProj, auto ByProj, auto BzProj, auto rhoProj) {
-            auto const BxOnE = GridLayout::project(B(Component::X), index, BxProj);
-            auto const ByOnE = GridLayout::project(B(Component::Y), index, ByProj);
-            auto const BzOnE = GridLayout::project(B(Component::Z), index, BzProj);
-            auto const nOnE  = GridLayout::project(rho, index, rhoProj);
+        auto computeHR = [&]<auto BxProj, auto ByProj, auto BzProj, auto rhoProj>() {
+            auto const BxOnE = GridLayout::template project<BxProj>(B(Component::X), index);
+            auto const ByOnE = GridLayout::template project<ByProj>(B(Component::Y), index);
+            auto const BzOnE = GridLayout::template project<BzProj>(B(Component::Z), index);
+            auto const nOnE  = GridLayout::template project<rhoProj>(rho, index);
             auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
             E(index)
                 -= nu_ * layout_.laplacian(J, index) * minMeshSize * minMeshSize * (b / nOnE + 1);
@@ -287,18 +297,18 @@ private:
 
         if constexpr (component == Component::X)
         {
-            return computeHR(GridLayout::BxToEx(), GridLayout::ByToEx(), GridLayout::BzToEx(),
-                             GridLayout::cellCenterToEdgeX());
+            return computeHR.template operator()<GridLayout::BxToEx, GridLayout::ByToEx,
+                                                 GridLayout::BzToEx, GridLayout::cellCenterToEdgeX>();
         }
         if constexpr (component == Component::Y)
         {
-            return computeHR(GridLayout::BxToEy(), GridLayout::ByToEy(), GridLayout::BzToEy(),
-                             GridLayout::cellCenterToEdgeY());
+            return computeHR.template operator()<GridLayout::BxToEy, GridLayout::ByToEy,
+                                                 GridLayout::BzToEy, GridLayout::cellCenterToEdgeY>();
         }
         if constexpr (component == Component::Z)
         {
-            return computeHR(GridLayout::BxToEz(), GridLayout::ByToEz(), GridLayout::BzToEz(),
-                             GridLayout::cellCenterToEdgeZ());
+            return computeHR.template operator()<GridLayout::BxToEz, GridLayout::ByToEz,
+                                                 GridLayout::BzToEz, GridLayout::cellCenterToEdgeZ>();
         }
     }
 };

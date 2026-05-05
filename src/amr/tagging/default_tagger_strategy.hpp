@@ -31,13 +31,19 @@ private:
 template<typename Model>
 void DefaultTaggerStrategy<Model>::tag(Model& model, gridlayout_type const& layout, int* tags) const
 {
-    auto& Bx = model.get_B().getComponent(PHARE::core::Component::X);
-    auto& By = model.get_B().getComponent(PHARE::core::Component::Y);
-    auto& Bz = model.get_B().getComponent(PHARE::core::Component::Z);
+    auto& B = [&]() -> auto& {
+        if constexpr (requires { model.get_B1(); })
+            return model.get_B1();
+        else
+            return model.get_B();
+    }();
+    auto& Bx = B.getComponent(PHARE::core::Component::X);
+    auto& By = B.getComponent(PHARE::core::Component::Y);
+    auto& Bz = B.getComponent(PHARE::core::Component::Z);
 
     // we loop on cell indexes for all qties regardless of their centering
-    auto const& [start_x, _]
-        = layout.physicalStartToEnd(PHARE::core::QtyCentering::dual, PHARE::core::Direction::X);
+    auto const& start_x
+        = layout.physicalStartIndex(PHARE::core::QtyCentering::dual, PHARE::core::Direction::X);
 
     // override end_x because the tag buffer does not have ghost cells
     // and physicalEnd will account for ghost cells
@@ -94,8 +100,8 @@ void DefaultTaggerStrategy<Model>::tag(Model& model, gridlayout_type const& layo
     }
     if constexpr (dimension == 2)
     {
-        auto const& [start_y, __]
-            = layout.physicalStartToEnd(PHARE::core::QtyCentering::dual, PHARE::core::Direction::Y);
+        auto const& start_y
+            = layout.physicalStartIndex(PHARE::core::QtyCentering::dual, PHARE::core::Direction::Y);
 
         auto const& end_y = layout.nbrCells()[1] - 1;
 
@@ -134,10 +140,10 @@ void DefaultTaggerStrategy<Model>::tag(Model& model, gridlayout_type const& layo
     }
     if constexpr (dimension == 3)
     {
-        auto const& [start_y, __]
-            = layout.physicalStartToEnd(PHARE::core::QtyCentering::dual, PHARE::core::Direction::Y);
-        auto const& [start_z, ___]
-            = layout.physicalStartToEnd(PHARE::core::QtyCentering::dual, PHARE::core::Direction::Z);
+        auto const& start_y
+            = layout.physicalStartIndex(PHARE::core::QtyCentering::dual, PHARE::core::Direction::Y);
+        auto const& start_z
+            = layout.physicalStartIndex(PHARE::core::QtyCentering::dual, PHARE::core::Direction::Z);
 
         auto const& end_y = layout.nbrCells()[1] - 1;
         auto const& end_z = layout.nbrCells()[2] - 1;

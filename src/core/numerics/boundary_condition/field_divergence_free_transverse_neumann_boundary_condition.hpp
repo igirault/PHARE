@@ -88,7 +88,7 @@ public:
 
         // here we check the condition that the vector field has same staggering than the magnetic
         // field
-        assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B));
+        assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B1));
 
         // handle transverse components
         for_N<N>([&](auto iTransverse) {

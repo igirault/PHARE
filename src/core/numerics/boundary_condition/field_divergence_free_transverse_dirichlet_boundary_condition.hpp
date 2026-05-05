@@ -115,7 +115,7 @@ public:
         auto fields = vecField.components();
 
         // check that the vector field has the same staggering as the magnetic field
-        assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B));
+        assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B1));
 
         // handle transverse components with Dirichlet
         for_N<N>([&](auto iTransverse) {

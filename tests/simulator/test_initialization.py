@@ -105,13 +105,13 @@ class InitializationTest(SimulatorTest):
                         a.flatten() for a in np.meshgrid(xbz, ybz, zbz, indexing="ij")
                     ]
 
-                    np.testing.assert_allclose(
+                    assert_fp_any_all_close(
                         bx, bx_fn(xbx, ybx, zbx), atol=1e-16, rtol=0
                     )
-                    np.testing.assert_allclose(
+                    assert_fp_any_all_close(
                         by, by_fn(xby, yby, zby).reshape(by.shape), atol=1e-16, rtol=0
                     )
-                    np.testing.assert_allclose(
+                    assert_fp_any_all_close(
                         bz, bz_fn(xbz, ybz, zbz).reshape(bz.shape), atol=1e-16, rtol=0
                     )
 

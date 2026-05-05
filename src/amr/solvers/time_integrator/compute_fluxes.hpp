@@ -1,9 +1,8 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 
-#include "amr/solvers/solver_mhd_model_view.hpp"
-
 #include "initializer/data_provider.hpp"
+#include "amr/solvers/solver_mhd_model_view.hpp"
 
 namespace PHARE::solver
 {
@@ -18,16 +17,13 @@ class ComputeFluxes
 
     using FVMethod_t = Dispatchers_t::template FVMethod_t<FVMethodStrategy>;
 
-    constexpr static auto Hall             = FVMethod_t::Hall;
-    constexpr static auto Resistivity      = FVMethod_t::Resistivity;
-    constexpr static auto HyperResistivity = FVMethod_t::HyperResistivity;
+    constexpr static auto Hall = FVMethod_t::Hall;
 
     template<typename T>
     using Rec = FVMethod_t::template Rec<T>;
 
     using ConstrainedTransport_t
-        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall, Resistivity,
-                                                         HyperResistivity>;
+        = Dispatchers_t::template ConstrainedTransport_t<MHDModel, Rec, Hall>;
 
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
     using ToConservativeConverter_t = Dispatchers_t::ToConservativeConverter_t;
@@ -47,12 +43,10 @@ public:
     {
         to_primitive_(level, model, newTime, state);
 
-        if constexpr (Hall || Resistivity || HyperResistivity)
-        {
+        if constexpr (Hall)
             ampere_(level, model, newTime, state);
-
-            // bc.fillCurrentGhosts(state.J, level, newTime);
-        }
+        else if (fvm_.resistivity() || fvm_.hyper_resistivity())
+            ampere_(level, model, newTime, state);
 
         fvm_(level, model, newTime, ct_.constrained_transport_, state, fluxes);
 
@@ -73,7 +67,7 @@ public:
         //
         ct_(level, model, state, fluxes);
 
-        bc.fillElectricGhosts(state.E, level, newTime);
+        // bc.fillElectricGhosts(state.E, level, newTime);
     }
 
     void registerResources(MHDModel& model)

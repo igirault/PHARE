@@ -109,6 +109,13 @@ def _divB2D(Bx, By, xBx, yBy):
     return dxbx + dyby
 
 
+def _divB3D(Bx, By, Bz, xBx, yBy, zBz):
+    dxbx = (Bx[1:, :, :] - Bx[:-1, :, :]) / (xBx[1] - xBx[0])
+    dyby = (By[:, 1:, :] - By[:, :-1, :]) / (yBy[1] - yBy[0])
+    dzbz = (Bz[:, :, 1:] - Bz[:, :, :-1]) / (zBz[1] - zBz[0])
+    return dxbx + dyby + dzbz
+
+
 def _compute_divB(patch, **kwargs):
     reference_pd = patch["Bx"]  # take Bx as a reference, but could be any other
     ndim = reference_pd.box.ndim
@@ -119,11 +126,21 @@ def _compute_divB(patch, **kwargs):
     centering = ["dual"] * ndim
 
     if ndim == 2:
-        By = patch["By"].dataset[:]
         Bx = patch["Bx"].dataset[:]
+        By = patch["By"].dataset[:]
         xBx = patch["Bx"].x
         yBy = patch["By"].y
         divB = reference_pd.copy_as(_divB2D(Bx, By, xBx, yBy), centering=centering)
+        return ({"name": "divB", "data": divB},)
+
+    if ndim == 3:
+        Bx = patch["Bx"].dataset[:]
+        By = patch["By"].dataset[:]
+        Bz = patch["Bz"].dataset[:]
+        xBx = patch["Bx"].x
+        yBy = patch["By"].y
+        zBz = patch["Bz"].z
+        divB = reference_pd.copy_as(_divB3D(Bx, By, Bz, xBx, yBy, zBz), centering=centering)
         return ({"name": "divB", "data": divB},)
 
     raise RuntimeError("dimension not implemented")
@@ -334,7 +351,7 @@ def _compute_to_primal(patch, **kwargs):
 
     pd_attrs = []
     for name, ref_pd in patch.patch_datas.items():
-        nb_ghosts = int(ref_pd.ghosts_nbr[0])
+        nb_ghosts = ref_pd.layout.nbrGhosts(ref_pd.layout.interp_order, "primal")
         ref_ds = ref_pd.dataset
 
         should_skip = all(  # vtkhdf is all primal with no ghosts
@@ -389,8 +406,9 @@ def _get_rank(patch, **kwargs):
     reference_pd = patch["Bx"]  # Bx as a ref, but could be any other
     ndim = reference_pd.box.ndim
 
+    layout = reference_pd.layout
     centering = ["dual"] * ndim
-    nbrGhosts = int(reference_pd.ghosts_nbr[0])
+    nbrGhosts = layout.nbrGhosts(layout.interp_order, centering)
     shape = grow(reference_pd.box, [nbrGhosts] * ndim).shape
 
     if ndim == 1:

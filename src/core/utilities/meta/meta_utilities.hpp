@@ -9,9 +9,6 @@
 #include <type_traits>
 
 
-#include <type_traits>
-
-
 namespace PHARE
 {
 namespace core
@@ -180,6 +177,7 @@ namespace core
         return p;
     }
 
+
     /**
      * @brief A type-wrapper for compile-time constant values.
      * This alias allows runtime enum values to be "lifted" into the type system,
@@ -200,18 +198,14 @@ namespace core
     template<auto... Values>
     auto promote(auto val)
     {
-        // Ensure the pack is not empty to avoid compilation errors
         static_assert(sizeof...(Values) > 0, "promote requires at least one enum value");
 
-        // Ensure all values belong to same enum
         using T = std::common_type_t<decltype(Values)...>;
         static_assert((std::is_same_v<T, decltype(Values)> && ...),
                       "All promoted values must belong to the same Enum type");
 
-        // The variant type is composed of the Tag types for each value
         std::variant<Tag<Values>...> result;
 
-        // Fold expression to find the match at runtime
         bool found = ((val == Values ? (result = Tag<Values>{}, true) : false) || ...);
 
         if (!found)
@@ -219,7 +213,6 @@ namespace core
 
         return result;
     }
-
 
 } // namespace core
 

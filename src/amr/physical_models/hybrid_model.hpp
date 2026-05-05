@@ -20,7 +20,6 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
-#include <initializer_list>
 
 namespace PHARE::solver
 {
@@ -98,11 +97,13 @@ public:
         , state{dict}
         , resourcesManager{std::move(_resourcesManager)}
     {
-        std::initializer_list<core::HybridQuantity::Scalar> scalarQuantities = {};
-        std::initializer_list<core::HybridQuantity::Vector> vectorQuantities = {};
-
-        boundaryManager = std::make_shared<boundary_manager_type>(
-            dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities);
+        if (dict["grid"].contains("boundary_conditions"))
+        {
+            std::initializer_list<core::HybridQuantity::Scalar> scalarQuantities = {};
+            std::initializer_list<core::HybridQuantity::Vector> vectorQuantities = {};
+            boundaryManager = std::make_shared<boundary_manager_type>(
+                dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities);
+        }
     }
 
 

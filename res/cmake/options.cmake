@@ -77,6 +77,8 @@ option(highResourceTests "Enable heavy tests for CI (3d/etc" OFF)
 option(testDuringBuild "Runs C++ unit tests after they are built" OFF)
 
 
+# -DuseExceptionsInsteadOfMPIAbort=ON
+option(useExceptionsInsteadOfMPIAbort "Exceptions use AllReduce!" OFF)
 
 # -DPGO_GEN=OFF profile guided optimization generate
 option(PGO_GEN "profile guided optimization generate" OFF)
