@@ -4,9 +4,9 @@
 
 #include "core/utilities/types.hpp"
 
-#include <variant>
 #include <iterator>
 #include <type_traits>
+#include <variant>
 
 
 namespace PHARE
