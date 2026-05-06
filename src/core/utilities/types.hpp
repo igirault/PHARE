@@ -31,6 +31,8 @@ namespace core
     enum class Basis { Magnetic, Cartesian };
 
 
+    template<typename>
+    inline constexpr bool dependent_false_v = false;
 
 
     template<typename T>
@@ -52,8 +54,6 @@ namespace core
         {
         }
     };
-
-
 
 
     template<typename T>

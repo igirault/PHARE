@@ -21,7 +21,9 @@
 #include "amr/messengers/refiner_pool.hpp"
 #include "amr/messengers/synchronizer_pool.hpp"
 
+#include "core/data/vecfield/vecfield.hpp"
 #include "core/mhd/mhd_quantities.hpp"
+#include "core/def/phare_mpi.hpp"
 
 #include "SAMRAI/hier/CoarsenOperator.h"
 #include "SAMRAI/hier/PatchLevel.h"
@@ -493,7 +495,7 @@ namespace amr
 
         void fillMagneticGhosts(VecFieldT& B, level_t const& level, double const fillTime)
         {
-            PHARE_LOG_SCOPE(3, "HybridHybridMessengerStrategy::fillMagneticGhosts");
+            PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
 
             setNaNsOnVecfieldGhosts(B, level);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
@@ -534,7 +536,7 @@ namespace amr
         // likely
         void registerGhostComms_(std::unique_ptr<MHDMessengerInfo> const& info)
         {
-            // static refinement for J because in MHD it is a temporary, so keeping its
+            // static refinement for J and E because in MHD they are temporaries, so keeping there
             // state updated after each regrid is not a priority. However if we do not correctly
             // refine on regrid, the post regrid state is not up to date (in our case it will be nan
             // since we nan-initialise) and thus is is better to rely on static refinement, which

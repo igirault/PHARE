@@ -574,7 +574,7 @@ class PatchHierarchy(object):
         finest = kwargs.get("finest", False)
         pops = kwargs.get("pop", [])
         time = kwargs.get("time", self.times()[0])
-        axis = kwargs.get("axis", ("Vx", "Vy"))
+        axis = listify(kwargs.get("axis", ("Vx", "Vy")))
         all_pops = list(self.level(0, time).patches[0].patch_datas.keys())
 
         vmin = kwargs.get("vmin", -2)
@@ -584,11 +584,14 @@ class PatchHierarchy(object):
 
         if finest:
             final = finest_part_data(self)
-            if axis[0] == "x":
-                xbins = amr_grid(self, time)
-                bins = (xbins, vbins)
-            else:
-                bins = (vbins, vbins)
+            if len(axis) == 2:
+                if axis[0] == "x":
+                    xbins = amr_grid(self, time)
+                    bins = (xbins, vbins)
+                else:
+                    bins = (vbins, vbins)
+            elif len(axis) == 1:
+                bins = vbins
             kwargs["bins"] = bins
 
         else:
@@ -601,12 +604,16 @@ class PatchHierarchy(object):
                         pops = list(patch.patch_datas.keys())
 
                     for pop in pops:
-                        tmp = copy.copy(patch.patch_datas[pop].dataset)
-
-                        if final[pop] is None:
-                            final[pop] = tmp
+                        if patch.patch_datas.__len__() == 0:
+                            tmp = None
                         else:
-                            final[pop].add(tmp)
+                            tmp = copy.copy(patch.patch_datas[pop].dataset)
+
+                        if tmp is not None:
+                            if final[pop] is None:
+                                final[pop] = tmp
+                            else:
+                                final[pop].add(tmp)
 
         # select particles
         if "select" in kwargs:
@@ -690,9 +697,16 @@ def finest_part_data(hierarchy, time=None):
 
     from ..particles import remove
 
+    i_ref = None
+    for i_ref, p in enumerate(hierarchy.level(0, time=time).patches):
+        if len(p.patch_datas):
+            break
+    if i_ref is None:
+        raise ValueError("This particle hierarchy seems empty !")
+
     # we are going to return a dict {popname : Particles}
     # we prepare it with population names
-    aPatch = hierarchy.level(0, time=time).patches[0]
+    aPatch = hierarchy.level(0, time=time).patches[i_ref]
     particles = {popname: None for popname in aPatch.patch_datas.keys()}
 
     # our strategy is to explore the hierarchy from the finest

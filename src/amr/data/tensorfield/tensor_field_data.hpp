@@ -7,6 +7,7 @@
 #include "core/data/field/field_box.hpp"
 #include "core/data/tensorfield/tensorfield.hpp"
 
+#include "amr/samrai.hpp"
 #include "amr/data/field/field_geometry.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/data/tensorfield/tensor_field_overlap.hpp"
@@ -46,7 +47,7 @@ private:
     auto static make_grids(ComponentNames const& compNames, GridLayout const& layout, tensor_t qty)
     {
         auto qts = PhysicalQuantity::componentsQuantities(qty);
-        return core::for_N<N, core::for_N_R_mode::make_array>(
+        return core::for_N_make_array<N>(
             [&](auto i) { return Grid_t{compNames[i], layout, qts[i], NaN}; });
     }
 
@@ -90,11 +91,7 @@ public:
         Super::getFromRestart(restart_db);
 
         for (std::uint16_t c = 0; c < N; ++c)
-        {
-            assert(grids[c].vector().size() > 0);
-            restart_db->getDoubleArray("field_" + grids[c].name(), grids[c].vector().data(),
-                                       grids[c].vector().size()); // do not reallocate!
-        }
+            getVectorFromRestart(*restart_db, "field_" + grids[c].name(), grids[c].vector());
     }
 
     void putToRestart(std::shared_ptr<SAMRAI::tbox::Database> const& restart_db) const override
@@ -102,7 +99,7 @@ public:
         Super::putToRestart(restart_db);
 
         for (std::uint16_t c = 0; c < N; ++c)
-            restart_db->putVector("field_" + grids[c].name(), grids[c].vector());
+            putVectorToRestart(*restart_db, "field_" + grids[c].name(), grids[c].vector());
     };
 
 

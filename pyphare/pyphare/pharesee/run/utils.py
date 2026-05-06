@@ -351,7 +351,7 @@ def _compute_to_primal(patch, **kwargs):
 
     pd_attrs = []
     for name, ref_pd in patch.patch_datas.items():
-        nb_ghosts = int(ref_pd.ghosts_nbr[0])
+        nb_ghosts = ref_pd.layout.nbrGhosts(ref_pd.layout.interp_order, "primal")
         ref_ds = ref_pd.dataset
 
         should_skip = all(  # vtkhdf is all primal with no ghosts
@@ -406,8 +406,9 @@ def _get_rank(patch, **kwargs):
     reference_pd = patch["Bx"]  # Bx as a ref, but could be any other
     ndim = reference_pd.box.ndim
 
+    layout = reference_pd.layout
     centering = ["dual"] * ndim
-    nbrGhosts = int(reference_pd.ghosts_nbr[0])
+    nbrGhosts = layout.nbrGhosts(layout.interp_order, centering)
     shape = grow(reference_pd.box, [nbrGhosts] * ndim).shape
 
     if ndim == 1:
