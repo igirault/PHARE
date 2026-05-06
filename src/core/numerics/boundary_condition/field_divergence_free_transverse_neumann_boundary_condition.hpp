@@ -1,24 +1,20 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_DIVERGENCE_FREE_TRANSVERSE_NEUMANN_BOUNDARY_CONDITION_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_DIVERGENCE_FREE_TRANSVERSE_NEUMANN_BOUNDARY_CONDITION_HPP
 
+#include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
 
 #include <cstddef>
 
 namespace PHARE::core
 {
 /**
- * @brief Boundary condition implementation for vector fields, that enforces the normal derivative
- * of the tangential components to be zero, and sets the normal component in the ghost cells such
- * that its numerical divergence is zero.
+ * @brief Boundary condition for vector fields that enforces zero normal derivative on tangential
+ * components and sets the normal component so that numerical divergence is zero.
  *
- * First tangential components are mirrored, then the normal component is filled on ghost cells to
- * have a null divergence.
- *
- * @warning This condition only makes sense for a vector field with same centerings than the
- * magnetic vector field.
+ * @warning Only valid for vector fields with the same centering as the magnetic field.
  *
  * @tparam VecFieldT Type of the vector field.
  * @tparam GridLayoutT Grid layout configuration.
@@ -26,16 +22,12 @@ namespace PHARE::core
  */
 template<typename VecFieldT, typename GridLayoutT>
 class FieldDivergenceFreeTransverseNeumannBoundaryCondition
-    : public FieldBoundaryConditionDispatcher<
-          VecFieldT, GridLayoutT,
-          FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldT, GridLayoutT>>
+    : public IFieldBoundaryCondition<VecFieldT, GridLayoutT>
 {
 public:
-    using Super = FieldBoundaryConditionDispatcher<
-        VecFieldT, GridLayoutT,
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldT, GridLayoutT>>;
+    using Super                = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
     using tensor_quantity_type = Super::tensor_quantity_type;
-    using field_type             = Super::field_type;
+    using field_type           = Super::field_type;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr size_t N         = Super::N;
@@ -60,94 +52,78 @@ public:
 
     virtual ~FieldDivergenceFreeTransverseNeumannBoundaryCondition() = default;
 
-
-    /** @brief Implements getType. */
     FieldBoundaryConditionType getType() const override
     {
         return FieldBoundaryConditionType::DivergenceFreeTransverseNeumann;
     }
 
-
-    /**
-     * @brief Apply the condition using compile-time specialized parameters.
-     *
-     * @tparam direction Normal direction of the boundary.
-     * @tparam side Boundary side (Lower or Upper).
-     * @tparam Centerings Component-wise centerings.
-     *
-     */
-    template<Direction direction, Side side, QtyCentering... Centerings>
-    void apply_specialized(VecFieldT& vecField, Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time,
-                           [[maybe_unused]] Super::patch_field_accessor_type const&
-                               fieldAccessor)
+    void apply(VecFieldT& vecField, BoundaryLocation const boundaryLocation,
+               Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
+               double const time,
+               [[maybe_unused]] Super::patch_field_accessor_type const& fieldAccessor) override
     {
-        constexpr std::array centerings = {Centerings...};
+        Direction const direction = getDirection(boundaryLocation);
+        Side const side           = getSide(boundaryLocation);
+        size_t const iNormal      = static_cast<size_t>(direction);
 
         auto fields = vecField.components();
 
-        // here we check the condition that the vector field has same staggering than the magnetic
-        // field
         assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B1));
 
-        // handle transverse components
+        // handle transverse components with Neumann
         for_N<N>([&](auto iTransverse) {
-            if constexpr (iTransverse != static_cast<size_t>(direction))
+            if (static_cast<size_t>(iTransverse) != iNormal)
             {
-                constexpr QtyCentering centering = centerings[iTransverse];
-                field_type& tField               = std::get<iTransverse>(fields);
-                scalar_neumann_condition_.template apply_specialized<direction, side, centering>(
-                    tField, localGhostBox, gridLayout, time, fieldAccessor);
+                field_type& tField = std::get<iTransverse>(fields);
+                scalar_neumann_condition_.apply(tField, boundaryLocation, localGhostBox, gridLayout,
+                                                time, fieldAccessor);
             }
         });
 
-        // handle normal component, by iterating on ghost cells from closest to farthest to the
-        // physical domain.
-        constexpr size_t iNormal = static_cast<size_t>(direction);
-        field_type& nField       = std::get<iNormal>(fields);
+        // handle normal component: iterate ghost cells closest-to-farthest from physical domain
+        field_type& nField = [&]() -> field_type& {
+            switch (iNormal)
+            {
+                case 0: return std::get<0>(fields);
+                case 1: return std::get<1>(fields);
+                default: return std::get<2>(fields);
+            }
+        }();
 
-        // define a lambda for iterating in different orders
-        auto apply_loop_for_normal_component = [&](auto begin, auto end) {
+        auto apply_loop = [&](auto begin, auto end) {
             for (auto it = begin; it != end; ++it)
             {
                 _index const& index = *it;
 
-                // compute the "transverse divergence" in the cell
                 double transverseDiv = 0.0;
                 for_N<dimension>([&](auto iTransverse) {
-                    if constexpr (iTransverse != iNormal)
+                    if (static_cast<size_t>(iTransverse) != iNormal)
                     {
-                        field_type& tField        = std::get<iTransverse>(fields);
-                        _index const& upper_index = index.template neighbor<iTransverse, 1>();
+                        field_type& tField       = std::get<iTransverse>(fields);
+                        _index const upper_index = index.neighbor(iTransverse, 1);
                         transverseDiv += tField(upper_index) - tField(index);
                     }
                 });
 
-                // set the last unset normal component using the disrete form of 'div = 0'
-                if constexpr (side == Side::Upper)
+                if (side == Side::Upper)
                 {
-                    _index const& index_to_set      = index.template neighbor<iNormal, 1>();
-                    _index const& index_already_set = index;
-                    nField(index_to_set)            = nField(index_already_set) - transverseDiv;
+                    _index const index_to_set      = index.neighbor(iNormal, 1);
+                    _index const index_already_set = index;
+                    nField(index_to_set)           = nField(index_already_set) - transverseDiv;
                 }
-                else // if constexpr (side == Side::Lower)
+                else
                 {
-                    _index const& index_to_set      = index; // to continue
-                    _index const& index_already_set = index.template neighbor<iNormal, 1>();
-                    nField(index_to_set)            = nField(index_already_set) + transverseDiv;
+                    _index const index_to_set      = index;
+                    _index const index_already_set = index.neighbor(iNormal, 1);
+                    nField(index_to_set)           = nField(index_already_set) + transverseDiv;
                 }
             }
         };
 
-        // apply the loop in the required following which side of the box we are on
-        if constexpr (side == Side::Upper)
-        {
-            apply_loop_for_normal_component(localGhostBox.begin(), localGhostBox.end());
-        }
-        else // if constexpr (side == Side::Lower)
-        {
-            apply_loop_for_normal_component(localGhostBox.rbegin(), localGhostBox.rend());
-        }
+        if (side == Side::Upper)
+            apply_loop(localGhostBox.begin(), localGhostBox.end());
+        else
+            apply_loop(localGhostBox.rbegin(), localGhostBox.rend());
     }
 
 private:
@@ -160,5 +136,4 @@ private:
 }; // class FieldDivergenceFreeTransverseNeumannBoundaryCondition
 
 } // namespace PHARE::core
-
 #endif // PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_DIVERGENCE_FREE_TRANSVERSE_NEUMANN_BOUNDARY_CONDITION_HPP

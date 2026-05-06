@@ -273,6 +273,13 @@ namespace core
             return result;
         }
 
+        NO_DISCARD constexpr Point<Type, dim> neighbor(std::size_t d, int offset) const
+        {
+            Point<Type, dim> result = *this;
+            result[d] += static_cast<Type>(offset);
+            return result;
+        }
+
     private:
         std::array<Type, dim> r{};
     };

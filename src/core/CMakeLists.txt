@@ -29,7 +29,6 @@ set( SOURCES_INC
      hybrid/hybrid_quantities.hpp
      numerics/boundary_condition/boundary_condition.hpp
      numerics/boundary_condition/field_boundary_condition.hpp
-     numerics/boundary_condition/field_boundary_condition_dispatcher.hpp
      numerics/boundary_condition/field_neumann_boundary_condition.hpp
      numerics/interpolator/interpolator.hpp
      numerics/pusher/boris.hpp
