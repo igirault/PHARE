@@ -4,6 +4,7 @@
 #include "core/inner_boundary/inner_bc_context.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "initializer/data_provider.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
 
 namespace PHARE::solver
@@ -47,7 +48,7 @@ public:
                     if (cellStatus(idx) > core::toDouble(core::ElemStatus::Cut))
                     {
                         statenew.rho(idx)                      = state.rho(idx);
-                        statenew.Etot(idx)                     = state.Etot(idx);
+                        statenew.Etot1(idx)                    = state.Etot1(idx);
                         statenew.rhoV(core::Component::X)(idx) = state.rhoV(core::Component::X)(idx);
                         statenew.rhoV(core::Component::Y)(idx) = state.rhoV(core::Component::Y)(idx);
                         statenew.rhoV(core::Component::Z)(idx) = state.rhoV(core::Component::Z)(idx);
@@ -56,12 +57,12 @@ public:
 
                 // Restore face-centered B for inactive/ghost face elements
                 auto restoreB = [&](auto component) {
-                    auto centering   = layout.centering(statenew.B(component).physicalQuantity());
+                    auto centering   = layout.centering(statenew.B1(component).physicalQuantity());
                     auto& faceStatus = meshData.getStatusFieldFromCentering(centering);
-                    layout.evalOnBox(statenew.B(component), [&](auto&... args) {
+                    layout.evalOnBox(statenew.B1(component), [&](auto&... args) {
                         auto idx = core::MeshIndex<Layout::dimension>{args...};
                         if (faceStatus(idx) > core::toDouble(core::ElemStatus::Cut))
-                            statenew.B(component)(idx) = state.B(component)(idx);
+                            statenew.B1(component)(idx) = state.B1(component)(idx);
                     });
                 };
                 restoreB(core::Component::X);
@@ -70,7 +71,14 @@ public:
             }
         }
 
-        bc.fillMagneticGhosts(statenew.B, level, newTime);
+        for (auto& patch : level)
+        {
+            auto layout = amr::layoutFromPatch<Layout>(*patch);
+            auto _      = model.resourcesManager->setOnPatch(*patch, statenew.B0);
+            statenew.updateExternalMagneticField(layout, newTime);
+        }
+
+        bc.fillMagneticGhosts(statenew.B1, level, newTime);
 
         bc.fillMomentsGhosts(statenew, level, newTime);
 
@@ -83,14 +91,14 @@ public:
                 auto const layout = amr::layoutFromPatch<Layout>(*patch);
                 auto _ = model.resourcesManager->setOnPatch(*patch, *model.innerBoundaryManager,
                                                              statenew, state);
-                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::B,
-                                                    statenew.B, layout, ctx);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::B1,
+                                                    statenew.B1, layout, ctx);
                 model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::rhoV,
                                                     statenew.rhoV, layout, ctx);
                 model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Scalar::rho,
                                                     statenew.rho, layout, ctx);
-                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Scalar::Etot,
-                                                    statenew.Etot, layout, ctx);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Scalar::Etot1,
+                                                    statenew.Etot1, layout, ctx);
             }
         }
     }

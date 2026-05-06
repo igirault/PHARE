@@ -1,8 +1,9 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_NONE_BOUNDARY_CONDITION_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_NONE_BOUNDARY_CONDITION_HPP
 
+#include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
 #include <cstddef>
 
@@ -16,15 +17,10 @@ namespace PHARE::core
  */
 template<typename ScalarOrTensorFieldT, typename GridLayoutT>
 class FieldNoneBoundaryCondition
-    : public FieldBoundaryConditionDispatcher<
-          ScalarOrTensorFieldT, GridLayoutT,
-          FieldNoneBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>
+    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>
 {
 public:
-    using Super = FieldBoundaryConditionDispatcher<
-        ScalarOrTensorFieldT, GridLayoutT,
-        FieldNoneBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
-
+    using Super                    = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
     static constexpr size_t dimension = Super::dimension;
 
     FieldNoneBoundaryCondition() = default;
@@ -36,21 +32,16 @@ public:
 
     virtual ~FieldNoneBoundaryCondition() = default;
 
-
     FieldBoundaryConditionType getType() const override { return FieldBoundaryConditionType::None; }
 
-
-    /** @brief Do nothing. */
-    template<Direction direction, Side side, QtyCentering... Centerings>
-    void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
-                           Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time,
-                           [[maybe_unused]] Super::patch_field_accessor_type const&
-                               fieldAccessor)
+    void apply(ScalarOrTensorFieldT& /*scalarOrTensorField*/,
+               BoundaryLocation const /*boundaryLocation*/,
+               Box<std::uint32_t, dimension> const& /*localGhostBox*/,
+               GridLayoutT const& /*gridLayout*/, double const /*time*/,
+               [[maybe_unused]] Super::patch_field_accessor_type const& /*fieldAccessor*/) override
     {
     }
 }; // class FieldNoneBoundaryCondition
 
 } // namespace PHARE::core
-
 #endif // PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_NONE_BOUNDARY_CONDITION_HPP

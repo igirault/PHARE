@@ -40,7 +40,6 @@ set( SOURCES_INC
      inner_boundary/sphere_inner_boundary.hpp
      inner_boundary/plane_inner_boundary.hpp
      numerics/boundary_condition/field_boundary_condition.hpp
-     numerics/boundary_condition/field_boundary_condition_dispatcher.hpp
      numerics/boundary_condition/field_neumann_boundary_condition.hpp
      numerics/interpolator/interpolator.hpp
      numerics/pusher/boris.hpp

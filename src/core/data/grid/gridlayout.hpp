@@ -763,31 +763,20 @@ namespace core
             return localBox;
         }
 
-        template<typename Field, std::size_t nbr_points>
-        NO_DISCARD static typename Field::type
-        project(Field const& field, MeshIndex<dimension> index,
-                std::array<WeightPoint<dimension>, nbr_points> wps)
+        template<auto func, typename Field>
+        NO_DISCARD static typename Field::type project(Field const& field,
+                                                       MeshIndex<dimension> index)
         {
+            auto constexpr wps = func();
+
             typename Field::type result = 0.;
+
             for (auto const& wp : wps)
-            {
-                if constexpr (dimension == 1)
-                {
-                    result += wp.coef * field(index[0] + wp.indexes[0]);
-                }
-                if constexpr (dimension == 2)
-                {
-                    result += wp.coef * field(index[0] + wp.indexes[0], index[1] + wp.indexes[1]);
-                }
-                if constexpr (dimension == 3)
-                {
-                    result += wp.coef
-                              * field(index[0] + wp.indexes[0], index[1] + wp.indexes[1],
-                                      index[2] + wp.indexes[2]);
-                }
-            }
+                result += wp.coef * field(index + wp.indexes);
+
             return result;
         }
+
 
         /**
          * @brief Returns the mirrored index of @p index with respect to a boundary.
@@ -849,6 +838,36 @@ namespace core
             mirroredPoint[iDir]        = boundaryMirrored<direction, side, centering>(point[iDir]);
             return mirroredPoint;
         }
+
+        NO_DISCARD inline std::uint32_t boundaryMirrored(Direction direction, Side side,
+                                                         QtyCentering centering,
+                                                         std::uint32_t const index) const
+        {
+            int32_t const s         = static_cast<int32_t>(side);
+            std::size_t const iCent = static_cast<std::size_t>(centering);
+            std::size_t const iDir  = static_cast<std::size_t>(direction);
+            int32_t const i         = static_cast<int32_t>(index);
+            uint32_t const limitIdx = (side == Side::Lower) ? physicalStartIndexTable_[iCent][iDir]
+                                                            : physicalEndIndexTable_[iCent][iDir];
+            int32_t const b         = static_cast<int32_t>(limitIdx);
+            if (centering == QtyCentering::primal)
+                return static_cast<std::uint32_t>(i - 2 * (i - b));
+            else
+                return static_cast<std::uint32_t>(i - 2 * (i - b) + s);
+        }
+
+        template<std::size_t dim>
+        NO_DISCARD inline Point<std::uint32_t, dim>
+        boundaryMirrored(Direction direction, Side side, QtyCentering centering,
+                         Point<std::uint32_t, dim> const point) const
+        {
+            std::size_t const iDir = static_cast<std::size_t>(direction);
+            auto mirroredPoint     = point;
+            mirroredPoint[iDir]    = boundaryMirrored(direction, side, centering, point[iDir]);
+            return mirroredPoint;
+        }
+
+
         // ----------------------------------------------------------------------
         //                      LAYOUT SPECIFIC METHODS
         //

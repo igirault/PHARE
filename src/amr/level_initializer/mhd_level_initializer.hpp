@@ -3,12 +3,14 @@
 
 #include "amr/level_initializer/level_initializer.hpp"
 #include "amr/messengers/messenger.hpp"
-#include "amr/messengers/mhd_messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/mhd_inactive_cell_reset.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "core/utilities/index/index.hpp"
 
+#include "core/logger.hpp"
+
+#include "initializer/data_provider.hpp"
 
 namespace PHARE::solver
 {
@@ -44,6 +46,7 @@ public:
             PHARE_LOG_LINE_STR("regriding level " + std::to_string(levelNumber));
             PHARE_LOG_START(3, "mhdLevelInitializer::initialize : regriding block");
             messenger.regrid(hierarchy, levelNumber, oldLevel, model, initDataTime);
+            model.updateExternalFields(level, initDataTime);
             PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : regriding block");
         }
         else
@@ -59,6 +62,7 @@ public:
             {
                 PHARE_LOG_START(3, "mhdLevelInitializer::initialize : initlevel");
                 messenger.initLevel(model, level, initDataTime);
+                model.updateExternalFields(level, initDataTime);
                 PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : initlevel");
             }
         }

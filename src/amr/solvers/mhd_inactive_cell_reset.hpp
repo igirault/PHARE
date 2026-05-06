@@ -37,13 +37,16 @@ inline void safeResetInactiveMHDCell(core::MeshIndex<Layout::dimension> const& i
     state.rhoV(core::Component::Y)(idx) = 0.0;
     state.rhoV(core::Component::Z)(idx) = 0.0;
 
-    auto const bx = Layout::project(state.B(core::Component::X), idx, Layout::faceXToCellCenter());
-    auto const by = Layout::project(state.B(core::Component::Y), idx, Layout::faceYToCellCenter());
-    auto const bz = Layout::project(state.B(core::Component::Z), idx, Layout::faceZToCellCenter());
+    auto const bx
+        = Layout::template project<Layout::faceXToCellCenter>(state.B1(core::Component::X), idx);
+    auto const by
+        = Layout::template project<Layout::faceYToCellCenter>(state.B1(core::Component::Y), idx);
+    auto const bz
+        = Layout::template project<Layout::faceZToCellCenter>(state.B1(core::Component::Z), idx);
 
     thermo.setState_DP(safeRho, safeP);
     auto const e_int = safeRho * thermo.internalEnergy();
-    state.Etot(idx)  = core::totalEnergyFromInternalEnergy(e_int, safeRho, 0., 0., 0., bx, by, bz);
+    state.Etot1(idx) = core::totalEnergyFromInternalEnergy(e_int, safeRho, 0., 0., 0., bx, by, bz);
 }
 
 } // namespace PHARE::solver

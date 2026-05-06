@@ -42,7 +42,7 @@ public:
         EdgeCenteredZ,
         count
     };
-    enum class Vector { B, E, J, V, FaceCentered, EdgeCentered };
+    enum class Vector { B, B0 = B, B1 = B, E, J, V, FaceCentered, EdgeCentered };
     enum class Tensor { M, count };
 
     static constexpr auto all_primal_field = Scalar::rho;

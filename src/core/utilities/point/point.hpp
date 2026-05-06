@@ -67,8 +67,8 @@ namespace core
 
         constexpr Point() { core::fill(Type{0}, r); }
 
-        NO_DISCARD auto& operator[](std::size_t i) { return r[i]; }
-        NO_DISCARD auto const& operator[](std::size_t i) const { return r[i]; }
+        NO_DISCARD constexpr auto& operator[](std::size_t i) { return r[i]; }
+        NO_DISCARD constexpr auto const& operator[](std::size_t i) const { return r[i]; }
 
 
         template<typename T2>
@@ -273,6 +273,14 @@ namespace core
             result[d] += static_cast<Type>(offset);
             return result;
         }
+
+        NO_DISCARD constexpr Point<Type, dim> neighbor(std::size_t d, int offset) const
+        {
+            Point<Type, dim> result = *this;
+            result[d] += static_cast<Type>(offset);
+            return result;
+        }
+
 
     private:
         std::array<Type, dim> r{};

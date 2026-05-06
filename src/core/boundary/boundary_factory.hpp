@@ -28,7 +28,7 @@ namespace PHARE::core
 template<typename T>
 concept HasInflowQuantities = requires {
     { T::Vector::rhoV };
-    { T::Scalar::Etot };
+    { T::Scalar::Etot1 };
 };
 
 /**
@@ -146,7 +146,7 @@ private:
         {
             switch (quantity)
             {
-                case (PhysicalQuantityT::Vector::B):
+                case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
                     break;
@@ -181,7 +181,7 @@ private:
         {
             switch (quantity)
             {
-                case (PhysicalQuantityT::Vector::B):
+                case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
                     break;
@@ -218,7 +218,7 @@ private:
         thermo->setState_DP(rho, p);
         double const Etot
             = totalEnergyFromInternalEnergy(thermo->internalEnergy() * rho, rho, v, B);
-        auto rhoV = vToRhoV(rho, v);
+        auto const rhoV = vToRhoV(rho, v);
 
         for (auto const quantity : quantities.scalars)
         {
@@ -229,7 +229,7 @@ private:
                         ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
                             quantity, rho);
                     break;
-                case (PhysicalQuantityT::Scalar::Etot):
+                case (PhysicalQuantityT::Scalar::Etot1):
                     boundary
                         ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
                             quantity, Etot);
@@ -250,7 +250,7 @@ private:
                         ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
                             quantity, rhoV);
                     break;
-                case (PhysicalQuantityT::Vector::B):
+                case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity, B);
                     break;
@@ -286,7 +286,7 @@ private:
         double const rho = data["density"].to<double>();
         auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
         auto const B     = initializer::parseDimXYZType<double, 3>(data, "B");
-        auto const rhoV  = vToRhoV(rho, v);
+        auto const rhoV = vToRhoV(rho, v);
 
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
@@ -316,7 +316,7 @@ private:
                         ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
                             quantity, rho);
                     break;
-                case (PhysicalQuantityT::Scalar::Etot):
+                case (PhysicalQuantityT::Scalar::Etot1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::TotalEnergyFromPressure>(
                         quantity, rho_bc, rhoV_bc, B_bc, P_bc, thermo);
@@ -337,7 +337,7 @@ private:
                         ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
                             quantity, rhoV);
                     break;
-                case (PhysicalQuantityT::Vector::B):
+                case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity, B);
                     break;
@@ -397,7 +397,7 @@ private:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
                         quantity);
                     break;
-                case (PhysicalQuantityT::Scalar::Etot):
+                case (PhysicalQuantityT::Scalar::Etot1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::TotalEnergyFromPressure>(
                         quantity, rho_bc, rhoV_bc, B_bc, P_bc, thermo);
@@ -417,7 +417,7 @@ private:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
                         quantity);
                     break;
-                case (PhysicalQuantityT::Vector::B):
+                case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
                     break;

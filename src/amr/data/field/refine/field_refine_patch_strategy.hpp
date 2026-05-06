@@ -82,8 +82,7 @@ public:
     class PatchFieldAccessor : public core::IPatchFieldAccessor<field_type, physical_quantity_type>
     {
     public:
-        PatchFieldAccessor(SAMRAI::hier::Patch const& patch,
-                           scalar_id_map_type const& scalarIds,
+        PatchFieldAccessor(SAMRAI::hier::Patch const& patch, scalar_id_map_type const& scalarIds,
                            vector_id_map_type const& vectorIds)
             : patch_{patch}
             , scalarIds_{scalarIds}
@@ -173,7 +172,8 @@ public:
         /// @todo Make SAMRAI call the current function with the correct number of ghost cells. With
         /// only L0, the commented check above pass, but with more levels it fails.
         SAMRAI::hier::IntVector const ghost_width_to_fill{
-            static_cast<SAMRAI::tbox::Dimension>(dimension), gridLayout.nbrGhosts()};
+            static_cast<SAMRAI::tbox::Dimension>(static_cast<int>(dimension)),
+            static_cast<int>(gridLayout.nbrGhosts())};
 
         // no check this is a valid cast
         std::shared_ptr<cartesian_patch_geometry_type> patchGeom

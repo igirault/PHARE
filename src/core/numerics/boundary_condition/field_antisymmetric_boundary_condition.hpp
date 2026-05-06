@@ -1,19 +1,19 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_ANTISYMMETRIC_BOUNDARY_CONDITION_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_ANTISYMMETRIC_BOUNDARY_CONDITION_HPP
 
+#include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
+#include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 
 namespace PHARE::core
 {
 /**
  * @brief Anti-symmetric boundary condition for scalar and vector fields.
  *
- * For scalars, this class imposes a zero value on the boundary. For vectors, it imposes a null
- * value for tangential components, and a Neumann (zero-gradient) condition for the normal
- * component.
+ * For scalars, imposes a zero value on the boundary (Dirichlet zero).
+ * For vectors, imposes zero value on tangential components, Neumann on the normal component.
  *
  * @tparam ScalarOrTensorFieldT Type of the field or tensor field.
  * @tparam GridLayoutT Grid layout configuration.
@@ -21,16 +21,12 @@ namespace PHARE::core
  */
 template<typename ScalarOrTensorFieldT, typename GridLayoutT>
 class FieldAntiSymmetricBoundaryCondition
-    : public FieldBoundaryConditionDispatcher<
-          ScalarOrTensorFieldT, GridLayoutT,
-          FieldAntiSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>
+    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>
 {
 public:
-    using Super = FieldBoundaryConditionDispatcher<
-        ScalarOrTensorFieldT, GridLayoutT,
-        FieldAntiSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
+    using Super                = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
     using tensor_quantity_type = Super::tensor_quantity_type;
-    using field_type             = Super::field_type;
+    using field_type           = Super::field_type;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr size_t N         = Super::N;
@@ -46,32 +42,18 @@ public:
 
     virtual ~FieldAntiSymmetricBoundaryCondition() = default;
 
-
-    /** @brief Implement getType to return Anti-symmetric. */
     FieldBoundaryConditionType getType() const override
     {
         return FieldBoundaryConditionType::AntiSymmetric;
     }
 
-
-    /**
-     * @brief Apply the anti-symmetric condition using compile-time specialized parameters.
-     *
-     * @tparam direction Normal direction of the boundary.
-     * @tparam side Boundary side (Lower or Upper).
-     * @tparam Centerings Component-wise centerings.
-     *
-     */
-    template<Direction direction, Side side, QtyCentering... Centerings>
-    void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
-                           Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time,
-                           [[maybe_unused]] Super::patch_field_accessor_type const&
-                               fieldAccessor)
+    void apply(ScalarOrTensorFieldT& scalarOrTensorField,
+               BoundaryLocation const boundaryLocation,
+               Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
+               double const time, Super::patch_field_accessor_type const& fieldAccessor) override
     {
-        constexpr std::array centerings = {Centerings...};
+        Direction const direction = getDirection(boundaryLocation);
 
-        // no other way than using a lambda builder
         auto fields = [&]() {
             if constexpr (is_scalar)
                 return std::make_tuple(scalarOrTensorField);
@@ -80,19 +62,20 @@ public:
         }();
 
         for_N<N>([&](auto i) {
-            constexpr auto centering = centerings[i];
-            field_type& field        = std::get<i>(fields);
-            if constexpr ((i != static_cast<size_t>(direction)) || is_scalar)
-            // if the component is tangent to the boundary, or if we are handling a scalar
+            field_type& field = std::get<i>(fields);
+            if constexpr (is_scalar)
             {
-                scalar_dirichlet_condition_.template apply_specialized<direction, side, centering>(
-                    field, localGhostBox, gridLayout, time, fieldAccessor);
+                scalar_dirichlet_condition_.apply(field, boundaryLocation, localGhostBox,
+                                                  gridLayout, time, fieldAccessor);
             }
             else
-            // if the component is normal to the boundary
             {
-                scalar_neumann_condition_.template apply_specialized<direction, side, centering>(
-                    field, localGhostBox, gridLayout, time, fieldAccessor);
+                if (static_cast<size_t>(i) != static_cast<size_t>(direction))
+                    scalar_dirichlet_condition_.apply(field, boundaryLocation, localGhostBox,
+                                                      gridLayout, time, fieldAccessor);
+                else
+                    scalar_neumann_condition_.apply(field, boundaryLocation, localGhostBox,
+                                                    gridLayout, time, fieldAccessor);
             }
         });
     }
@@ -108,5 +91,4 @@ private:
 }; // class FieldAntiSymmetricBoundaryCondition
 
 } // namespace PHARE::core
-
 #endif // PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_ANTISYMMETRIC_BOUNDARY_CONDITION_HPP

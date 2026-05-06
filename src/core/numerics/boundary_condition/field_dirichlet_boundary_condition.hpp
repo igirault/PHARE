@@ -1,8 +1,10 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_DIRICHLET_BOUNDARY_CONDITION_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_DIRICHLET_BOUNDARY_CONDITION_HPP
 
+#include "core/boundary/boundary_defs.hpp"
+#include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_dispatcher.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
 #include <cstddef>
 #include <tuple>
@@ -12,7 +14,7 @@ namespace PHARE::core
 /**
  * @brief Dirichlet boundary condition for scalar and vector fields.
  *
- * Impose a constajt value on the boundary by linearly extrapolating the (tensor) field in the ghost
+ * Impose a constant value on the boundary by linearly extrapolating the (tensor) field in the ghost
  * cells.
  *
  * @tparam ScalarOrTensorFieldT Type of the field or tensor field.
@@ -21,17 +23,13 @@ namespace PHARE::core
  */
 template<typename ScalarOrTensorFieldT, typename GridLayoutT>
 class FieldDirichletBoundaryCondition
-    : public FieldBoundaryConditionDispatcher<
-          ScalarOrTensorFieldT, GridLayoutT,
-          FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>
+    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>
 {
 public:
-    using Super = FieldBoundaryConditionDispatcher<
-        ScalarOrTensorFieldT, GridLayoutT,
-        FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>;
-    using tensor_quantity_type = Super::tensor_quantity_type;
-    using field_type           = Super::field_type;
-    using value_type           = field_type::value_type;
+    using Super                    = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
+    using tensor_quantity_type     = Super::tensor_quantity_type;
+    using field_type               = Super::field_type;
+    using value_type               = field_type::value_type;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr size_t N         = Super::N;
@@ -52,29 +50,22 @@ public:
 
     virtual ~FieldDirichletBoundaryCondition() = default;
 
-
-    /** @brief Implement getType to return Dirichlet. */
     FieldBoundaryConditionType getType() const override
     {
         return FieldBoundaryConditionType::Dirichlet;
     }
 
-
-    /**
-     * @brief Apply the Dirichlet condition using compile-time specialized parameters.
-     *
-     * @tparam direction Normal direction of the boundary.
-     * @tparam side Boundary side (Lower or Upper).
-     * @tparam Centerings Component-wise centerings.
-     *
-     */
-    template<Direction direction, Side side, QtyCentering... Centerings>
-    void apply_specialized(ScalarOrTensorFieldT& scalarOrTensorField,
-                           Box<std::uint32_t, dimension> const& localGhostBox,
-                           GridLayoutT const& gridLayout, double const time,
-                           [[maybe_unused]] Super::patch_field_accessor_type const& fieldAccessor)
+    void apply(ScalarOrTensorFieldT& scalarOrTensorField,
+               BoundaryLocation const boundaryLocation,
+               Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
+               double const /*time*/,
+               [[maybe_unused]] Super::patch_field_accessor_type const& fieldAccessor) override
     {
-        constexpr std::array centerings = {Centerings...};
+        Direction const direction = getDirection(boundaryLocation);
+        Side const side           = getSide(boundaryLocation);
+
+        if (static_cast<size_t>(direction) >= dimension)
+            return;
 
         auto fields = [&]() {
             if constexpr (is_scalar)
@@ -84,23 +75,18 @@ public:
         }();
 
         for_N<N>([&](auto i) {
-            constexpr QtyCentering centering = centerings[i];
-            field_type& field                = std::get<i>(fields);
+            field_type& field = std::get<i>(fields);
+            QtyCentering const centering
+                = GridLayoutT::centering(field.physicalQuantity())[static_cast<size_t>(direction)];
             auto fieldBox = gridLayout.toFieldBox(localGhostBox, field.physicalQuantity());
             for (_index_type const& index : fieldBox)
             {
                 _index_type mirrorIndex
-                    = gridLayout.template boundaryMirrored<dimension, direction, side, centering>(
-                        index);
-                // if the ghost is on the boundary (possible if primal), set to value,
-                // else set with a linear extrapolation
-                constexpr size_t dir_i = static_cast<size_t>(direction);
-                if constexpr (dir_i < dimension) // this if constexpr avoids compilation errors for
-                                                 // unreachable combinations
-                                                 // (example: a Z-boundary condition in 1D)
-                    field(index) = (mirrorIndex[dir_i] == index[dir_i])
-                                       ? value_[i]
-                                       : 2.0 * value_[i] - field(mirrorIndex);
+                    = gridLayout.boundaryMirrored(direction, side, centering, index);
+                size_t const iDir = static_cast<size_t>(direction);
+                field(index)      = (mirrorIndex[iDir] == index[iDir])
+                                        ? value_[i]
+                                        : 2.0 * value_[i] - field(mirrorIndex);
             }
         });
     }
@@ -108,10 +94,9 @@ public:
 private:
     using _index_type = Point<std::uint32_t, dimension>;
 
-    std::array<value_type, N> value_{0}; /**< Value to impose on the boundary, zero by default. */
+    std::array<value_type, N> value_{0};
 
 }; // class FieldDirichletBoundaryCondition
 
 } // namespace PHARE::core
-
 #endif // PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_DIRICHLET_BOUNDARY_CONDITION_HPP
