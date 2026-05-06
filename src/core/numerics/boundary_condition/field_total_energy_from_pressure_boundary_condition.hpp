@@ -105,11 +105,11 @@ public:
             auto const mirrorIdx = gridLayout.boundaryMirrored(direction, side, centering, index);
 
             double const b1x
-                = GridLayoutT::project(B1x, mirrorIdx, GridLayoutT::faceXToCellCenter());
+                = GridLayoutT::template project<GridLayoutT::faceXToCellCenter>(B1x, mirrorIdx);
             double const b1y
-                = GridLayoutT::project(B1y, mirrorIdx, GridLayoutT::faceYToCellCenter());
+                = GridLayoutT::template project<GridLayoutT::faceYToCellCenter>(B1y, mirrorIdx);
             double const b1z
-                = GridLayoutT::project(B1z, mirrorIdx, GridLayoutT::faceZToCellCenter());
+                = GridLayoutT::template project<GridLayoutT::faceZToCellCenter>(B1z, mirrorIdx);
 
             double const rho_m = rhoField(mirrorIdx);
             double const vx    = rhoVx(mirrorIdx) / rho_m;
@@ -136,9 +136,12 @@ public:
             double const vy    = rhoVy(index) / rho_g;
             double const vz    = rhoVz(index) / rho_g;
 
-            double const b1x = GridLayoutT::project(B1x, index, GridLayoutT::faceXToCellCenter());
-            double const b1y = GridLayoutT::project(B1y, index, GridLayoutT::faceYToCellCenter());
-            double const b1z = GridLayoutT::project(B1z, index, GridLayoutT::faceZToCellCenter());
+            double const b1x
+                = GridLayoutT::template project<GridLayoutT::faceXToCellCenter>(B1x, index);
+            double const b1y
+                = GridLayoutT::template project<GridLayoutT::faceYToCellCenter>(B1y, index);
+            double const b1z
+                = GridLayoutT::template project<GridLayoutT::faceZToCellCenter>(B1z, index);
 
             thermo_->setState_DP(rho_g, PField(index));
             double const e_int = thermo_->internalEnergy() * rho_g;
