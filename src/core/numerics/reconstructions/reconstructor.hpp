@@ -38,16 +38,21 @@ public:
 
         using Float = std::decay_t<decltype(rhoL)>;
 
-        PerIndex<Float> uL{rhoL, PerIndexVector<Float>{VxL, VyL, VzL},
-                           PerIndexVector<Float>{BxL, ByL, BzL}, PL, B0L};
-        PerIndex<Float> uR{rhoR, PerIndexVector<Float>{VxR, VyR, VzR},
-                           PerIndexVector<Float>{BxR, ByR, BzR}, PR, B0R};
+        PerIndex<Float> uL{rhoL,
+                           PerIndexVector<Float>{VxL, VyL, VzL},
+                           PerIndexVector<Float>{BxL, ByL, BzL},
+                           PL,
+                           B0L};
+        PerIndex<Float> uR{rhoR,
+                           PerIndexVector<Float>{VxR, VyR, VzR},
+                           PerIndexVector<Float>{BxR, ByR, BzR},
+                           PR,
+                           B0R};
 
         return std::make_pair(uL, uR);
     }
 
-    template<auto direction, auto ProjectionX, auto ProjectionY, auto ProjectionZ,
-             typename VecField>
+    template<auto direction, auto ProjectionX, auto ProjectionY, auto ProjectionZ, typename VecField>
     static auto center_reconstruct(VecField const& U, MeshIndex<VecField::dimension> index)
     {
         auto const& Ux = U(Component::X);
@@ -93,12 +98,10 @@ public:
         auto const Bt0 = B(static_cast<Component>(transverse[0]));
         auto const Bt1 = B(static_cast<Component>(transverse[1]));
 
-
         auto [Bt0L, Bt0R] = Reconstruction::template center_reconstruct<
             direction, Reconstructor::template projection<transverse[0]>>(Bt0, index);
         auto [Bt1L, Bt1R] = Reconstruction::template center_reconstruct<
             direction, Reconstructor::template projection<transverse[1]>>(Bt1, index);
-
 
         PerIndexVector<typename VecField::value_type> BL, BR;
         BL(direction)     = Bn(index);
@@ -146,7 +149,7 @@ private:
         };
 
         auto const [JL, JR]
-            = Reconstruction::template center_reconstruct<direction>(J, index, projection);
+            = Reconstruction::template center_reconstruct<direction, Projection>(J, index);
 
         MeshIndex<Field::dimension> prevX = GridLayout::template previous<Direction::X>(index);
         MeshIndex<Field::dimension> nextX = GridLayout::template next<Direction::X>(index);
@@ -191,7 +194,7 @@ private:
                 MeshIndex<Field::dimension> nextZ = GridLayout::template next<Direction::Z>(index);
 
                 auto const [JL_Z_1, JR_Z_1]
-                    = Reconstruction::template center_reconstruct<direction>(J, prevZ, projection);
+                    = Reconstruction::template center_reconstruct<direction, Projection>(J, prevZ);
                 auto const [JL_Z1, JR_Z1]
                     = Reconstruction::template center_reconstruct<direction, Projection>(J, nextZ);
 

@@ -20,7 +20,6 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
-#include <initializer_list>
 
 namespace PHARE::solver
 {

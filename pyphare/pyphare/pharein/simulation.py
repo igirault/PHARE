@@ -167,7 +167,12 @@ def check_time(**kwargs):
             + " or 'final_time' and 'time_step_nbr'"
         )
 
-    start_time = kwargs.get("restart_options", {}).get("restart_time", 0)
+    def _start_time():
+        if restart_options := kwargs.get("restart_options", {}):
+            return restart_options.get("restart_time", 0)
+        return 0
+
+    start_time = _start_time()
 
     def _final_time():
         if "final_time" in kwargs:
@@ -650,26 +655,10 @@ def check_patch_size(ndim, **kwargs):
     def get_max_ghosts():
         from ..core.gridlayout import GridLayout
 
-        model_options = phare_utilities.listify(
-            kwargs.get("model_options", "HybridModel")
+        grid = GridLayout()
+        return max(
+            grid.nbrGhosts(kwargs["interp_order"], x) for x in ["primal", "dual"]
         )
-        reconstruction = kwargs.get("reconstruction", "")
-        models = []
-        if "HybridModel" in model_options:
-            models.append("hybrid")
-        if "MHDModel" in model_options:
-            models.append("mhd")
-        if len(models) == 0:
-            models = ["hybrid"]
-
-        max_ghosts = 0
-        for model in models:
-            grid = GridLayout(model=model, reconstruction=reconstruction)
-            max_ghosts = max(
-                max_ghosts,
-                max(grid.nbrGhosts(kwargs["interp_order"], x) for x in ["primal", "dual"]),
-            )
-        return max_ghosts
 
     interp = kwargs["interp_order"]
     max_ghosts = get_max_ghosts()
@@ -794,9 +783,9 @@ def check_restart_options(**kwargs):
         "keep_last",  # delete obsolete
     ]
 
-    restart_options = kwargs.get("restart_options", {})
+    restart_options = kwargs.get("restart_options", None)
 
-    if "restart_options" in kwargs:
+    if restart_options:
         for key in restart_options.keys():
             if key not in valid_keys:
                 raise ValueError(
@@ -1023,7 +1012,7 @@ def checker(func):
             "inner_boundary",
         ]
 
-        kwargs = deepcopy(dict(**kwargs_in))  # local copy - dictionaries are weird
+        kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
         accepted_keywords += check_optional_keywords(**kwargs)
 
         wrong_kwds = phare_utilities.not_in_keywords_list(accepted_keywords, **kwargs)
