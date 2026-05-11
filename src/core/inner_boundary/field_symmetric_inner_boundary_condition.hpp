@@ -46,48 +46,48 @@ public:
         }
         else
         {
-        // handling of the vector case
-        auto fields = scalarOrTensorField.components();
+            // handling of the vector case
+            auto fields = scalarOrTensorField.components();
 
-        for_N<N>([&](auto ic) {
-            constexpr auto i       = ic();
-            auto& currentField     = std::get<i>(fields);
-            auto const centering   = GridLayoutT::centering(currentField);
-            auto const& ghostElems = boundaryMeshData.getGhostDataFromCentering(centering);
+            for_N<N>([&](auto ic) {
+                constexpr auto i       = ic();
+                auto& currentField     = std::get<i>(fields);
+                auto const centering   = GridLayoutT::centering(currentField);
+                auto const& ghostElems = boundaryMeshData.getGhostDataFromCentering(centering);
 
-            for (ghost_elem_data_type const& ghostElem : ghostElems)
-            {
-                if (!ghostElem.mirrorIsInPatch)
-                    continue;
+                for (ghost_elem_data_type const& ghostElem : ghostElems)
+                {
+                    if (!ghostElem.mirrorIsInPatch)
+                        continue;
 
-                // get interpolated value of all components at the mirror point
-                Point<value_type, N> interpolatedComponents;
-                for_N<N>([&](auto jc) {
-                    constexpr auto j = jc();
-                    interpolatedComponents[j]
-                        = this->interpolator_(layout, std::get<j>(fields), ghostElem.mirrorPoint);
-                });
+                    // get interpolated value of all components at the mirror point
+                    Point<value_type, N> interpolatedComponents;
+                    for_N<N>([&](auto jc) {
+                        constexpr auto j          = jc();
+                        interpolatedComponents[j] = this->interpolator_(layout, std::get<j>(fields),
+                                                                        ghostElem.mirrorPoint);
+                    });
 
-                // Extend the dim-dimensional boundary normal to N dimensions,
-                // padding with zeros for components beyond the spatial dimension
-                // (e.g. z-component is 0 in 2D since the boundary has no z-normal).
-                Point<value_type, N> normal_N{};
-                for_N<dimension>([&](auto kc) {
-                    constexpr auto k = kc();
-                    normal_N[k]      = static_cast<value_type>(ghostElem.normal[k]);
-                });
+                    // Extend the dim-dimensional boundary normal to N dimensions,
+                    // padding with zeros for components beyond the spatial dimension
+                    // (e.g. z-component is 0 in 2D since the boundary has no z-normal).
+                    Point<value_type, N> normal_N{};
+                    for_N<dimension>([&](auto kc) {
+                        constexpr auto k = kc();
+                        normal_N[k]      = static_cast<value_type>(ghostElem.normal[k]);
+                    });
 
-                // compute normal and tangential part of the interpolated vector with respect to the
-                // boundary
-                auto const v_n = normal_N * dot_product(interpolatedComponents, normal_N);
-                auto const v_t = interpolatedComponents - v_n;
+                    // compute normal and tangential part of the interpolated vector with respect to
+                    // the boundary
+                    auto const v_n = normal_N * dot_product(interpolatedComponents, normal_N);
+                    auto const v_t = interpolatedComponents - v_n;
 
-                // mirror the vector with respect to the boundary, and only keep the component
-                // associated with the current field
-                auto const v                  = v_t - v_n;
-                currentField(ghostElem.index) = v[i];
-            }
-        });
+                    // mirror the vector with respect to the boundary, and only keep the component
+                    // associated with the current field
+                    auto const v                  = v_t - v_n;
+                    currentField(ghostElem.index) = v[i];
+                }
+            });
         } // end else (vector case)
     }
 

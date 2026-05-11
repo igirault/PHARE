@@ -200,6 +200,8 @@ def populateDict(sim):
         # they will become configurable when we have multi-models or several methods
         # per model
         add_double("simulation/AMR/refinement/tagging/threshold", sim.tagging_threshold)
+        if sim.inner_boundary_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/inner_boundary_halo", sim.inner_boundary_refinement_halo)
     else:
         add_string(
             "simulation/AMR/refinement/tagging/method", "none"

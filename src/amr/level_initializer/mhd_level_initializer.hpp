@@ -5,10 +5,11 @@
 #include "amr/messengers/messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/mhd_inactive_cell_reset.hpp"
-#include "core/inner_boundary/inner_boundary_mesh_data.hpp"
-#include "core/utilities/index/index.hpp"
 
+#include "core/utilities/mpi_utils.hpp"
+#include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "core/logger.hpp"
+#include "core/utilities/index/index.hpp"
 
 #include "initializer/data_provider.hpp"
 

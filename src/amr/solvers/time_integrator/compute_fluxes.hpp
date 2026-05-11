@@ -11,8 +11,8 @@ namespace PHARE::solver
 template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
-    using level_t       = typename MHDModel::level_t;
-    using Layout        = typename MHDModel::gridlayout_type;
+    using level_t       = MHDModel::level_t;
+    using Layout        = MHDModel::gridlayout_type;
     using Dispatchers_t = Dispatchers<Layout>;
 
     using Ampere_t = Dispatchers_t::Ampere_t;
@@ -74,12 +74,12 @@ public:
         if (model.hasInnerBoundary())
         {
             core::InnerBCContext<std::remove_reference_t<decltype(state)>> ctx{state, state,
-                                                                                newTime};
+                                                                               newTime};
             for (auto& patch : level)
             {
                 auto const layout = amr::layoutFromPatch<Layout>(*patch);
                 auto _ = model.resourcesManager->setOnPatch(*patch, *model.innerBoundaryManager,
-                                                             state);
+                                                            state);
                 model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::E,
                                                     state.E, layout, ctx);
             }

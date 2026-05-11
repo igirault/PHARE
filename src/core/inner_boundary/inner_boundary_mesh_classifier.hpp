@@ -303,6 +303,27 @@ private:
 
     /**
      * @brief Return true iff any cell adjacent to @p elem (given its @p centering)
+     * has Fluid or Cut status.
+     */
+    bool elemSurroundsFluidOrCutCell_(local_index_type const& elem,
+                                      std::array<QtyCentering, dim> const& centering,
+                                      field_type const& cell_status) const
+    {
+        bool found            = false;
+        auto const cell_shape = cell_status.shape();
+        signed_local_index_type cell{};
+        forEachAdjacentCell_<0>(elem, centering, cell, [&](auto const& adjacent_cell) {
+            if (found || !inBounds_(adjacent_cell, cell_shape))
+                return;
+            auto const s = cell_status(asLocal_(adjacent_cell));
+            if (s == toDouble(ElemStatus::Fluid) || s == toDouble(ElemStatus::Cut))
+                found = true;
+        });
+        return found;
+    }
+
+    /**
+     * @brief Return true iff any cell adjacent to @p elem (given its @p centering)
      * has Ghost status.
      *
      * Delegates to forEachAdjacentCell_, which visits 2^(n_primal) cells based on
@@ -449,15 +470,22 @@ private:
                 local_index_type node_idx{};
                 forEachSupportNode_<0>(local_elem, centering, node_idx,
                                        [&](auto const& support_node) {
-                                           auto const phi
-                                               = signed_distance_at_nodes(support_node);
-                                           phi_min = std::min(phi_min, phi);
-                                           phi_max = std::max(phi_max, phi);
+                                           auto const phi = signed_distance_at_nodes(support_node);
+                                           phi_min        = std::min(phi_min, phi);
+                                           phi_max        = std::max(phi_max, phi);
                                        });
 
                 if (isCut_(phi_min, phi_max, params_.cut_eps))
                 {
                     elem_field(local_elem) = toDouble(ElemStatus::Cut);
+                    return;
+                }
+
+                // let too close elements from the boundary be active to avoid complicated
+                // interpolation at the symmetric location
+                if (elemSurroundsFluidOrCutCell_(local_elem, centering, cell_status))
+                {
+                    elem_field(local_elem) = toDouble(ElemStatus::Fluid);
                     return;
                 }
 
@@ -467,8 +495,8 @@ private:
                     return;
                 }
 
-                auto const phi_elem = boundary_.signedDistance(
-                    layout.fieldNodeCoordinates(elem_field, amr_elem));
+                auto const phi_elem
+                    = boundary_.signedDistance(layout.fieldNodeCoordinates(elem_field, amr_elem));
                 elem_field(local_elem) = (phi_elem < -params_.inactive_eps)
                                              ? toDouble(ElemStatus::Inactive)
                                              : toDouble(ElemStatus::Fluid);
@@ -510,16 +538,18 @@ private:
     }
 
     /**
-     * @brief Return `true` iff @p mirrorPoint falls within the physical domain of @p layout.
+     * @brief Return `true` iff @p mirrorPoint falls within the domain of @p layout (ghosts
+     * included).
      */
     static bool mirrorIsInPatch_(GridLayoutT const& layout, point_type const& mirrorPoint)
     {
         auto const& dx     = layout.meshSize();
         auto const& amrBox = layout.AMRBox();
+        auto const nGhosts = static_cast<int>(layout.nbrGhosts());
         for (auto d = 0u; d < dim; ++d)
         {
             int const iCell = static_cast<int>(std::floor(mirrorPoint[d] / dx[d]));
-            if (iCell < amrBox.lower[d] || iCell > amrBox.upper[d])
+            if (iCell < amrBox.lower[d] - nGhosts || iCell > amrBox.upper[d] + nGhosts)
                 return false;
         }
         return true;
@@ -540,9 +570,8 @@ private:
         {
             auto const expected = mesh_data_type::idxToCentering(idx);
             if (GridLayoutT::centering(meshData.elemStatus[idx]) != expected)
-                throw std::runtime_error(
-                    "elemStatus entry at index " + std::to_string(idx)
-                    + " has invalid centering");
+                throw std::runtime_error("elemStatus entry at index " + std::to_string(idx)
+                                         + " has invalid centering");
         }
     }
 };

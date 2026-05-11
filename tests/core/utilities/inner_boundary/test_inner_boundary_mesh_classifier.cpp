@@ -121,11 +121,11 @@ TEST(InnerBoundaryMeshClassifier, tagsCutInactiveAndGhostGeometry)
               cellField(physicalLocalIndex(layout, cellField, 3u, 0u)));
 
     // Face at physical[2] straddles x=0 → Cut; face at physical[1] (between ghost and cut
-    // cell) is adjacent to the ghost cell → Ghost.
+    // cells) has a Cut adjacent cell → Fluid (not Ghost: mirror too close to boundary).
     auto& faceXField = buffers.tags.getStatusFieldFromCentering(kFaceXC);
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Cut),
               faceXField(physicalLocalIndex(layout, faceXField, 2u, 0u)));
-    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Ghost),
+    EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Fluid),
               faceXField(physicalLocalIndex(layout, faceXField, 1u, 0u)));
     // FaceCenteredY face at physical[0,0] is adjacent to the ghost cell column → Ghost.
     auto& faceYField = buffers.tags.getStatusFieldFromCentering(kFaceYC);
@@ -198,20 +198,18 @@ TEST(InnerBoundaryMeshClassifier, ghostFaceListIsNonEmpty)
     InnerBoundaryMeshClassifierBuffers buffers{layout};
     tagger(layout, buffers.tags);
 
-    // FaceCenteredX ghost face at physical[1,0] (between ghost and cut cell) must be present.
+    // FaceCenteredX: physical[0,0] (only OOB and Ghost neighbors) is Ghost → list non-empty.
     EXPECT_FALSE(buffers.tags.getGhostDataFromCentering(kFaceXC).empty());
     // FaceCenteredY face adjacent to the ghost cell column must also be present.
     EXPECT_FALSE(buffers.tags.getGhostDataFromCentering(kFaceYC).empty());
 }
 
-TEST(InnerBoundaryMeshClassifier, amrHaloGhostCellsHaveMirrorOutsidePatch)
+TEST(InnerBoundaryMeshClassifier, ghostCellMirrorsAreInPatch)
 {
-    // Plane at x=0. Physical cells: AMR x in [-2, 1]. AMR ghost (halo) cells on the solid
-    // side occupy AMR x < -2 with centres at ..., -3.5, -2.5; their mirrors land at x >
-    // 2.5, which is beyond the patch's physical domain. These entries must be flagged
-    // mirrorIsInPatch = false.
-    // Physical ghost at physical[0,0] (AMR x = -2, centre x = -1.5) has mirror at x = 1.5,
-    // which IS within the domain → mirrorIsInPatch = true.
+    // Plane at x=0. Physical cells: AMR x in [-2, 1]. Ghost shell grows nbrGhosts layers
+    // from the cut cells into the solid side (AMR x < -2). With mirrorIsInPatch_ extended
+    // to include the ghost halo, every ghost mirror lands within
+    // [amrBox.lower - nGhosts, amrBox.upper + nGhosts], so all entries are mirrorIsInPatch=true.
     PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}};
     PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
     GridLayout layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
@@ -227,17 +225,7 @@ TEST(InnerBoundaryMeshClassifier, amrHaloGhostCellsHaveMirrorOutsidePatch)
     auto const& ghost_cells = buffers.tags.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghost_cells.empty());
 
-    bool found_in_patch     = false;
-    bool found_out_of_patch = false;
     for (auto const& g : ghost_cells)
-    {
-        if (g.mirrorIsInPatch)
-            found_in_patch = true;
-        else
-            found_out_of_patch = true;
-    }
-    EXPECT_TRUE(found_in_patch)
-        << "Physical ghost (mirror inside patch) must appear in the list";
-    EXPECT_TRUE(found_out_of_patch)
-        << "AMR-halo ghosts (mirror outside patch) must appear in the list";
+        EXPECT_TRUE(g.mirrorIsInPatch)
+            << "All ghost mirrors must be in-patch when the ghost shell depth equals nbrGhosts";
 }

@@ -42,16 +42,15 @@ class InnerBoundaryManager
 public:
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    using vecfield_type      = VecField<FieldT, PhysicalQuantityT>;
-    using scalar_qty         = typename PhysicalQuantityT::Scalar;
-    using vector_qty         = typename PhysicalQuantityT::Vector;
-    using geometry_type      = InnerBoundaryGeometry<dimension>;
-    using mesh_data_type     = InnerBoundaryMeshData<dimension, PhysicalQuantityT>;
-    using classifier_type    = InnerBoundaryMeshClassifier<dimension, GridLayoutT, PhysicalQuantityT>;
-    using context_type       = InnerBCContext<PhysicalStateT>;
-    using scalar_bc_type     = FieldInnerBoundaryCondition<FieldT, GridLayoutT, PhysicalStateT>;
-    using vector_bc_type
-        = FieldInnerBoundaryCondition<vecfield_type, GridLayoutT, PhysicalStateT>;
+    using vecfield_type   = VecField<FieldT, PhysicalQuantityT>;
+    using scalar_qty      = typename PhysicalQuantityT::Scalar;
+    using vector_qty      = typename PhysicalQuantityT::Vector;
+    using geometry_type   = InnerBoundaryGeometry<dimension>;
+    using mesh_data_type  = InnerBoundaryMeshData<dimension, PhysicalQuantityT>;
+    using classifier_type = InnerBoundaryMeshClassifier<dimension, GridLayoutT, PhysicalQuantityT>;
+    using context_type    = InnerBCContext<PhysicalStateT>;
+    using scalar_bc_type  = FieldInnerBoundaryCondition<FieldT, GridLayoutT, PhysicalStateT>;
+    using vector_bc_type  = FieldInnerBoundaryCondition<vecfield_type, GridLayoutT, PhysicalStateT>;
     using scalar_bc_map_type = std::unordered_map<scalar_qty, std::unique_ptr<scalar_bc_type>>;
     using vector_bc_map_type = std::unordered_map<vector_qty, std::unique_ptr<vector_bc_type>>;
     using factory_type
@@ -95,9 +94,9 @@ public:
         if (!geometry)
             return nullptr;
 
-        auto const& ibDict    = dict["inner_boundary"];
-        auto const typeName   = ibDict["condition_type"].template to<std::string>();
-        auto const condType   = getInnerBoundaryConditionTypeFromString(typeName);
+        auto const& ibDict  = dict["inner_boundary"];
+        auto const typeName = ibDict["condition_type"].template to<std::string>();
+        auto const condType = getInnerBoundaryConditionTypeFromString(typeName);
 
         return std::make_unique<InnerBoundaryManager>(std::move(geometry), condType,
                                                       scalarQuantities, vectorQuantities);
@@ -133,8 +132,7 @@ public:
      * @param layout Grid layout of the current patch.
      * @param ctx    State context (statenew, state, time, dt).
      */
-    void applyBC(scalar_qty qty, FieldT& field, GridLayoutT const& layout,
-                 context_type const& ctx)
+    void applyBC(scalar_qty qty, FieldT& field, GridLayoutT const& layout, context_type const& ctx)
     {
         auto it = scalarBCs_.find(qty);
         if (it == scalarBCs_.end())
@@ -167,6 +165,8 @@ public:
 
     NO_DISCARD mesh_data_type const& getMeshData() const { return meshData_; }
 
+    NO_DISCARD geometry_type const& getGeometry() const { return *geometry_; }
+
     // -------------------------------------------------------------------------
     //  ResourcesUser interface (exposes mesh data to SAMRAI resource manager)
     // -------------------------------------------------------------------------
@@ -180,16 +180,13 @@ public:
         return std::forward_as_tuple(meshData_);
     }
 
-    NO_DISCARD auto getCompileTimeResourcesViewList()
-    {
-        return std::forward_as_tuple(meshData_);
-    }
+    NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(meshData_); }
 
 private:
     std::unique_ptr<geometry_type> geometry_;
-    mesh_data_type                 meshData_;
-    scalar_bc_map_type             scalarBCs_;
-    vector_bc_map_type             vectorBCs_;
+    mesh_data_type meshData_;
+    scalar_bc_map_type scalarBCs_;
+    vector_bc_map_type vectorBCs_;
 };
 
 } // namespace PHARE::core

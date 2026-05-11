@@ -759,6 +759,13 @@ def check_diag_options(**kwargs):
                 raise ValueError(
                     f"Invalid diagnostics mode {mode}, valid modes are {valid_modes}"
                 )
+        if "options" in diag_options:
+            valid_option_keys = {"dir", "mode", "allow_emergency_dumps"}
+            unknown = set(diag_options["options"].keys()) - valid_option_keys
+            if unknown:
+                raise ValueError(
+                    f"Unknown diag_options keys: {unknown}. Valid keys: {valid_option_keys}"
+                )
         if (
             "options" in diag_options
             and "allow_emergency_dumps" in diag_options["options"]
@@ -983,6 +990,7 @@ def checker(func):
             "refinement_boxes",
             "refinement",
             "tagging_threshold",
+            "inner_boundary_refinement_halo",
             "clustering",
             "smallest_patch_size",
             "largest_patch_size",
@@ -1076,6 +1084,7 @@ def checker(func):
 
             kwargs["refinement_boxes"] = None
             kwargs["tagging_threshold"] = kwargs.get("tagging_threshold", 0.1)
+            kwargs["inner_boundary_refinement_halo"] = kwargs.get("inner_boundary_refinement_halo", None)
 
         kwargs["resistivity"] = check_resistivity(**kwargs)
 

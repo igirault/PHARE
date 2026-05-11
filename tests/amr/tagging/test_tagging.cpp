@@ -3,6 +3,7 @@
 
 #include "simulator/simulator.hpp"
 
+#include "core/inner_boundary/sphere_inner_boundary.hpp"
 #include "tests/core/data/gridlayout/gridlayout_test.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures.hpp"
 
@@ -239,6 +240,85 @@ TYPED_TEST(TestTagger, scaledAvg)
   */
 }
 
+
+
+namespace
+{
+constexpr std::size_t ib_tagger_dim    = 2;
+constexpr std::size_t ib_tagger_interp = 1;
+using IBTaggerGridLayout = GridLayout<GridLayoutImplYee<ib_tagger_dim, ib_tagger_interp>>;
+
+struct IBTaggerMockModel
+{
+    using gridlayout_type           = IBTaggerGridLayout;
+    static constexpr std::size_t dimension = ib_tagger_dim;
+
+    struct FakeIBManager
+    {
+        SphereInnerBoundary<ib_tagger_dim>          sphere;
+        InnerBoundaryGeometry<ib_tagger_dim> const& getGeometry() const { return sphere; }
+    };
+
+    std::unique_ptr<FakeIBManager> innerBoundaryManager = nullptr;
+    UsableVecField<ib_tagger_dim>* B_ptr                = nullptr;
+
+    bool hasInnerBoundary() const { return innerBoundaryManager != nullptr; }
+    auto& get_B() { return *B_ptr; }
+};
+} // namespace
+
+TEST(InnerBoundaryTagger, doesNotTagCellsNearBoundary)
+{
+    constexpr std::size_t dim = ib_tagger_dim;
+
+    // 20x20 cells, dl=0.05, AMRBox [(0,0),(19,19)]
+    // cell (ix,iy) has center at ((ix+0.5)*0.05, (iy+0.5)*0.05)
+    auto const layout = TestGridLayout<IBTaggerGridLayout>::make(20);
+    UsableVecField<dim> B{"B", layout, HybridQuantity::Vector::B};
+
+    // Fill By with a linear ramp so gradient pass tags every cell to 1
+    // criter_x = |By(ix+2)-By(ix)| / (1 + |By(ix+1)-By(ix)|) = 2/(1+1) = 1.0 > threshold
+    auto& By             = B.getComponent(PHARE::core::Component::Y);
+    auto const byAlloc   = layout.allocSize(PHARE::core::HybridQuantity::Scalar::By);
+    for (std::size_t ix = 0; ix < byAlloc[0]; ++ix)
+        for (std::size_t iy = 0; iy < byAlloc[1]; ++iy)
+            By(ix, iy) = static_cast<double>(ix);
+
+    constexpr double radius = 0.2;
+    constexpr double halo   = 0.05;
+    Point<double, dim> const center{0.5, 0.5};
+
+    IBTaggerMockModel model;
+    model.B_ptr = &B;
+    model.innerBoundaryManager.reset(
+        new IBTaggerMockModel::FakeIBManager{SphereInnerBoundary<dim>{"sphere", center, radius}});
+
+    PHARE::initializer::PHAREDict dict;
+    dict["threshold"]           = 0.1; // gradient pass tags all cells = 1
+    dict["inner_boundary_halo"] = halo;
+
+    DefaultTaggerStrategy<IBTaggerMockModel> strat{dict};
+
+    auto const ncells = layout.nbrCells();
+    std::vector<int> tags(ncells[0] * ncells[1], 0);
+    strat.tag(model, layout, tags.data());
+
+    bool constexpr fortran = false;
+    auto tagsv             = NdArrayView<dim, int, fortran>(tags.data(), ncells);
+
+    for (auto const [amr, tag] : boxes_iterator{layout.AMRBox(), boxFromNbrCells(ncells)})
+    {
+        auto const coords = layout.cellCenteredCoordinates(amr);
+        double const dx   = coords[0] - center[0];
+        double const dy   = coords[1] - center[1];
+        double const sd   = std::sqrt(dx * dx + dy * dy) - radius;
+
+        // IB pass clears (sets to 0) cells within halo of boundary to prevent refinement there
+        int const expected = sd <= halo ? 0 : 1;
+        EXPECT_EQ(tagsv(tag.toArray()), expected)
+            << "cell (" << amr[0] << "," << amr[1] << ") sd=" << sd;
+    }
+}
 
 
 int main(int argc, char** argv)
