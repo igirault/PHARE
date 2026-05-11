@@ -42,10 +42,10 @@ public:
                 auto& meshData   = model.innerBoundaryManager->getMeshData();
                 auto& cellStatus = meshData.cellStatusField();
 
-                // Restore cell-centered quantities for inactive/ghost cells
-                layout.evalOnBox(statenew.rho, [&](auto&... args) {
+                // Restore cell-centered quantities for inactive cells
+                layout.evalOnGhostBox(statenew.rho, [&](auto&... args) {
                     auto idx = core::MeshIndex<Layout::dimension>{args...};
-                    if (cellStatus(idx) > core::toDouble(core::ElemStatus::Cut))
+                    if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
                     {
                         statenew.rho(idx)   = state.rho(idx);
                         statenew.Etot1(idx) = state.Etot1(idx);
@@ -58,13 +58,13 @@ public:
                     }
                 });
 
-                // Restore face-centered B for inactive/ghost face elements
+                // Restore face-centered B for inactive face elements
                 auto restoreB = [&](auto component) {
                     auto centering   = layout.centering(statenew.B1(component).physicalQuantity());
                     auto& faceStatus = meshData.getStatusFieldFromCentering(centering);
                     layout.evalOnBox(statenew.B1(component), [&](auto&... args) {
                         auto idx = core::MeshIndex<Layout::dimension>{args...};
-                        if (faceStatus(idx) > core::toDouble(core::ElemStatus::Cut))
+                        if (faceStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
                             statenew.B1(component)(idx) = state.B1(component)(idx);
                     });
                 };
@@ -94,8 +94,8 @@ public:
                 auto const layout = amr::layoutFromPatch<Layout>(*patch);
                 auto _ = model.resourcesManager->setOnPatch(*patch, *model.innerBoundaryManager,
                                                             statenew, state);
-                // model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::B1,
-                //                                     statenew.B1, layout, ctx);
+                model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::B1,
+                                                    statenew.B1, layout, ctx);
                 model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Vector::rhoV,
                                                     statenew.rhoV, layout, ctx);
                 model.innerBoundaryManager->applyBC(MHDModel::physical_quantity_type::Scalar::rho,

@@ -7,6 +7,7 @@
 #include "amr/solvers/mhd_inactive_cell_reset.hpp"
 
 #include "core/utilities/mpi_utils.hpp"
+#include "core/inner_boundary/inner_bc_context.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 #include "core/logger.hpp"
 #include "core/utilities/index/index.hpp"
@@ -42,6 +43,8 @@ public:
         auto& mhdModel = static_cast<MHDModel&>(model);
         auto& level    = amr_types::getLevel(*hierarchy, levelNumber);
 
+
+
         if (isRegridding)
         {
             PHARE_LOG_LINE_STR("regriding level " + std::to_string(levelNumber));
@@ -61,7 +64,7 @@ public:
             }
             else
             {
-                PHARE_LOG_START(3, "mhdLevelInitializer::initialize : initlevel");
+                PHARE_LOG_START(3, "mhdLevel Initializer::initialize : initlevel");
                 messenger.initLevel(model, level, initDataTime);
                 model.updateExternalFields(level, initDataTime);
                 PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : initlevel");
@@ -78,8 +81,10 @@ public:
                 mhdModel.innerBoundaryManager->classify(layout);
             }
 
-            // Set inactive/ghost cells to a safe physical state so the Riemann solver
+            // Set inactive cells to a safe physical state so the Riemann solver
             // never receives pathological input (negative or zero rho/P) from them.
+            // Ghost cells are intentionally skipped here: applyBC below will fill them
+            // with physics-consistent mirror values.
             for (auto& patch : level)
             {
                 auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
@@ -91,10 +96,31 @@ public:
 
                 layout.evalOnGhostBox(mhdModel.state.rho, [&](auto&... args) {
                     auto idx = core::MeshIndex<dimension>{args...};
-                    if (cellStatus(idx) > core::toDouble(core::ElemStatus::Cut))
+                    if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
                         safeResetInactiveMHDCell<GridLayoutT>(idx, mhdModel.state,
                                                               *mhdModel.thermo);
                 });
+            }
+
+            core::InnerBCContext<std::remove_reference_t<decltype(mhdModel.state)>> ctx{
+                mhdModel.state, mhdModel.state, initDataTime, 0.0};
+
+            for (auto& patch : level)
+            {
+                auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
+                auto _      = mhdModel.resourcesManager->setOnPatch(
+                    *patch, *mhdModel.innerBoundaryManager, mhdModel.state);
+
+                mhdModel.innerBoundaryManager->applyBC(
+                    MHDModel::physical_quantity_type::Vector::B1, mhdModel.state.B1, layout, ctx);
+                mhdModel.innerBoundaryManager->applyBC(
+                    MHDModel::physical_quantity_type::Vector::rhoV, mhdModel.state.rhoV, layout,
+                    ctx);
+                mhdModel.innerBoundaryManager->applyBC(
+                    MHDModel::physical_quantity_type::Scalar::rho, mhdModel.state.rho, layout, ctx);
+                mhdModel.innerBoundaryManager->applyBC(
+                    MHDModel::physical_quantity_type::Scalar::Etot1, mhdModel.state.Etot1, layout,
+                    ctx);
             }
         }
     }

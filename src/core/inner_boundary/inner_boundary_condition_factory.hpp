@@ -4,6 +4,7 @@
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
 #include "core/data/vecfield/vecfield.hpp"
+#include "core/inner_boundary/field_none_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_antisymmetric_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_neumann_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_symmetric_inner_boundary_condition.hpp"
@@ -59,12 +60,11 @@ template<typename PhysicalQuantityT, IsField FieldT, IsGridLayout GridLayoutT,
 class InnerBoundaryConditionFactory
 {
 public:
-    using vecfield_type      = VecField<FieldT, PhysicalQuantityT>;
-    using scalar_qty         = typename PhysicalQuantityT::Scalar;
-    using vector_qty         = typename PhysicalQuantityT::Vector;
-    using scalar_bc_type     = FieldInnerBoundaryCondition<FieldT, GridLayoutT, PhysicalStateT>;
-    using vector_bc_type
-        = FieldInnerBoundaryCondition<vecfield_type, GridLayoutT, PhysicalStateT>;
+    using vecfield_type  = VecField<FieldT, PhysicalQuantityT>;
+    using scalar_qty     = typename PhysicalQuantityT::Scalar;
+    using vector_qty     = typename PhysicalQuantityT::Vector;
+    using scalar_bc_type = FieldInnerBoundaryCondition<FieldT, GridLayoutT, PhysicalStateT>;
+    using vector_bc_type = FieldInnerBoundaryCondition<vecfield_type, GridLayoutT, PhysicalStateT>;
     using scalar_bc_map_type = std::unordered_map<scalar_qty, std::unique_ptr<scalar_bc_type>>;
     using vector_bc_map_type = std::unordered_map<vector_qty, std::unique_ptr<vector_bc_type>>;
 
@@ -89,12 +89,14 @@ public:
             case InnerBoundaryConditionType::Reflective:
                 register_reflective_(scalarQuantities, vectorQuantities, scalarBCs, vectorBCs);
                 break;
-            default:
-                throw std::runtime_error("InnerBoundaryConditionFactory: unknown type");
+            default: throw std::runtime_error("InnerBoundaryConditionFactory: unknown type");
         }
     }
 
 private:
+    template<typename ScalarOrTensorFieldT>
+    using None = FieldNoneInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, PhysicalStateT>;
+
     template<typename ScalarOrTensorFieldT>
     using Neumann
         = FieldNeumannInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, PhysicalStateT>;
@@ -105,7 +107,7 @@ private:
 
     template<typename ScalarOrTensorFieldT>
     using Antisymmetric = FieldAntisymmetricInnerBoundaryCondition<ScalarOrTensorFieldT,
-                                                                    GridLayoutT, PhysicalStateT>;
+                                                                   GridLayoutT, PhysicalStateT>;
 
     /**
      * @brief Reflective body BC rules:
@@ -117,8 +119,7 @@ private:
      */
     static void register_reflective_(std::vector<scalar_qty> const& scalars,
                                      std::vector<vector_qty> const& vectors,
-                                     scalar_bc_map_type& scalarBCs,
-                                     vector_bc_map_type& vectorBCs)
+                                     scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs)
     {
         for (auto const qty : scalars)
             scalarBCs[qty] = std::make_unique<Neumann<FieldT>>();
@@ -127,8 +128,8 @@ private:
         {
             switch (qty)
             {
-                case PhysicalQuantityT::Vector::B:
-                    vectorBCs[qty] = std::make_unique<Symmetric<vecfield_type>>();
+                case PhysicalQuantityT::Vector::B1:
+                    vectorBCs[qty] = std::make_unique<None<vecfield_type>>();
                     break;
                 case PhysicalQuantityT::Vector::rhoV:
                     vectorBCs[qty] = std::make_unique<Symmetric<vecfield_type>>();
@@ -136,9 +137,7 @@ private:
                 case PhysicalQuantityT::Vector::E:
                     vectorBCs[qty] = std::make_unique<Antisymmetric<vecfield_type>>();
                     break;
-                default:
-                    vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>();
-                    break;
+                default: vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>(); break;
             }
         }
     }

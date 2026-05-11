@@ -23,18 +23,19 @@ constexpr double eps = 1e-10;
 
 using GridLayoutImpl = PHARE::core::GridLayoutImplYeeMHD<2, 2, 1>;
 using GridLayout     = PHARE::core::GridLayout<GridLayoutImpl>;
-using ScalarField  = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
-using VecFieldMHD2 = PHARE::core::UsableVecFieldMHD<2>;
-using MeshData     = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQuantity>;
-using Classifier = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
+using ScalarField    = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
+using VecFieldMHD2   = PHARE::core::UsableVecFieldMHD<2>;
+using MeshData       = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQuantity>;
+using Classifier
+    = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
 
 /// Minimal physical-state stub.
 struct DummyState
 {
 };
 
-using Manager = PHARE::core::InnerBoundaryManager<PHARE::core::MHDQuantity, ScalarField,
-                                                   GridLayout, DummyState>;
+using Manager = PHARE::core::InnerBoundaryManager<PHARE::core::MHDQuantity, ScalarField, GridLayout,
+                                                  DummyState>;
 
 // ---------------------------------------------------------------------------
 //  ManagerFixture — constructs a Manager directly (no dict needed)
@@ -63,19 +64,15 @@ struct ManagerFixture
         PHARE::core::MHDQuantity::Scalar::Etot,
     };
     std::vector<PHARE::core::MHDQuantity::Vector> vectorQtys{
-        PHARE::core::MHDQuantity::Vector::B,
+        PHARE::core::MHDQuantity::Vector::B1,
         PHARE::core::MHDQuantity::Vector::rhoV,
         PHARE::core::MHDQuantity::Vector::E,
     };
 
-    Manager manager{
-        std::make_unique<PHARE::core::PlaneInnerBoundary<2>>(
-            BOUNDARY_NAME,
-            PHARE::core::Point<double, 2>{0.0, 0.0},
-            PHARE::core::Point<double, 2>{1.0, 0.0}),
-        PHARE::core::InnerBoundaryConditionType::Reflective,
-        scalarQtys,
-        vectorQtys};
+    Manager manager{std::make_unique<PHARE::core::PlaneInnerBoundary<2>>(
+                        BOUNDARY_NAME, PHARE::core::Point<double, 2>{0.0, 0.0},
+                        PHARE::core::Point<double, 2>{1.0, 0.0}),
+                    PHARE::core::InnerBoundaryConditionType::Reflective, scalarQtys, vectorQtys};
 
     ManagerFixture()
     {
@@ -87,8 +84,8 @@ struct ManagerFixture
         std::string const bn{BOUNDARY_NAME};
 
         ScalarField phi_field{bn + "_signed_distance",
-                              PHARE::core::MHDQuantity::Scalar::NodeCentered,
-                              phi_storage.data(), phi_storage.shape()};
+                              PHARE::core::MHDQuantity::Scalar::NodeCentered, phi_storage.data(),
+                              phi_storage.shape()};
         md.signedDistanceAtNodes.setBuffer(&phi_field);
 
         elem_storages.reserve(MeshData::num_elem_types);
@@ -97,8 +94,8 @@ struct ManagerFixture
             auto const c   = MeshData::idxToCentering(i);
             auto const qty = MeshData::scalarFromCentering(c);
             elem_storages.emplace_back(layout.allocSize(qty));
-            ScalarField tmp{md.elemStatus[i].name(), qty,
-                            elem_storages[i].data(), elem_storages[i].shape()};
+            ScalarField tmp{md.elemStatus[i].name(), qty, elem_storages[i].data(),
+                            elem_storages[i].shape()};
             md.elemStatus[i].setBuffer(&tmp);
         }
 
@@ -150,8 +147,8 @@ TEST(InnerBoundaryManager, reflectiveScalarIsNeumann)
 
     PHARE::core::NdArrayVector<2, double> storage{
         layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)};
-    ScalarField rho{"rho", PHARE::core::MHDQuantity::Scalar::CellCentered,
-                    storage.data(), storage.shape()};
+    ScalarField rho{"rho", PHARE::core::MHDQuantity::Scalar::CellCentered, storage.data(),
+                    storage.shape()};
 
     for (auto i = 0u; i < rho.shape()[0]; ++i)
         for (auto j = 0u; j < rho.shape()[1]; ++j)
@@ -263,7 +260,7 @@ TEST(InnerBoundaryManager, reflectiveEIsAntisymmetric_tangentialComponentFlips)
     //   Ex (dual,primal): antisymmetric keeps normal component → Ex preserved.
     //   Ey (primal,dual): antisymmetric reverses tangential → Ey negated.
     constexpr std::array<PHARE::core::QtyCentering, 2> kEdgeXC // EdgeCenteredX
-        = {PHARE::core::QtyCentering::dual,   PHARE::core::QtyCentering::primal};
+        = {PHARE::core::QtyCentering::dual, PHARE::core::QtyCentering::primal};
     constexpr std::array<PHARE::core::QtyCentering, 2> kEdgeYC // EdgeCenteredY
         = {PHARE::core::QtyCentering::primal, PHARE::core::QtyCentering::dual};
 
@@ -273,16 +270,14 @@ TEST(InnerBoundaryManager, reflectiveEIsAntisymmetric_tangentialComponentFlips)
         if (!g.mirrorIsInPatch)
             continue;
         foundAnyEdge = true;
-        EXPECT_NEAR(Ex_field(g.index), Ex, eps)
-            << "Ex (normal component) should be preserved";
+        EXPECT_NEAR(Ex_field(g.index), Ex, eps) << "Ex (normal component) should be preserved";
     }
     for (auto const& g : meshData.getGhostDataFromCentering(kEdgeYC))
     {
         if (!g.mirrorIsInPatch)
             continue;
         foundAnyEdge = true;
-        EXPECT_NEAR(Ey_field(g.index), -Ey, eps)
-            << "Ey (tangential component) should be negated";
+        EXPECT_NEAR(Ey_field(g.index), -Ey, eps) << "Ey (tangential component) should be negated";
     }
 
     EXPECT_TRUE(foundAnyEdge) << "no in-patch edge ghost found — check classifier / geometry";
@@ -298,8 +293,8 @@ TEST(InnerBoundaryManager, applyBCIsNoopForUnregisteredScalar)
 
     PHARE::core::NdArrayVector<2, double> storage{
         layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)};
-    ScalarField field{"P", PHARE::core::MHDQuantity::Scalar::CellCentered,
-                      storage.data(), storage.shape()};
+    ScalarField field{"P", PHARE::core::MHDQuantity::Scalar::CellCentered, storage.data(),
+                      storage.shape()};
 
     constexpr double C = 42.0;
     for (auto i = 0u; i < field.shape()[0]; ++i)

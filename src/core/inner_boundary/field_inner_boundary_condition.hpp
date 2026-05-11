@@ -20,7 +20,7 @@ namespace PHARE::core
  * - **Symmetric** — the field is mirrored across the boundary (even reflection).
  * - **Antisymmetric** — the field is sign-flipped across the boundary (odd reflection).
  */
-enum class FieldInnerBoundaryConditionType { Dirichlet, Neumann, Symmetric, Antisymmetric };
+enum class FieldInnerBoundaryConditionType { None, Dirichlet, Neumann, Symmetric, Antisymmetric };
 
 /**
  * @brief Abstract base class for applying a boundary condition to a scalar or tensor field
