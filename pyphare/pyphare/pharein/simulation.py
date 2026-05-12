@@ -760,7 +760,7 @@ def check_diag_options(**kwargs):
                     f"Invalid diagnostics mode {mode}, valid modes are {valid_modes}"
                 )
         if "options" in diag_options:
-            valid_option_keys = {"dir", "mode", "allow_emergency_dumps"}
+            valid_option_keys = {"dir", "mode", "allow_emergency_dumps", "fine_dump_lvl_max"}
             unknown = set(diag_options["options"].keys()) - valid_option_keys
             if unknown:
                 raise ValueError(
