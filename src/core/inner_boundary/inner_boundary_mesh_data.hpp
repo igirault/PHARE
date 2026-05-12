@@ -5,6 +5,8 @@
 #include "core/data/field/field.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/inner_boundary/ghost_elem_pack.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/utilities/point/point.hpp"
 
 #include <algorithm>
@@ -17,45 +19,6 @@
 
 namespace PHARE::core
 {
-/**
- * @brief Status of a mesh element (cell, face, edge, or node) relative to an inner boundary.
- *
- * - **Fluid**    — element lies entirely in the fluid domain.
- * - **Cut**      — element straddles the boundary surface.
- * - **Ghost**    — element lies inside the body but is used to enforce the boundary condition
- *                  by mirror-point interpolation from the fluid side.
- * - **Inactive** — element lies entirely inside the body and plays no role in the solver.
- */
-enum class ElemStatus : std::uint8_t { Fluid, Cut, Ghost, Inactive };
-
-/// Convert an ElemStatus value to its double encoding for field storage.
-inline constexpr double toDouble(ElemStatus s)
-{
-    return static_cast<double>(static_cast<std::uint8_t>(s));
-}
-
-
-/**
- * @brief Precomputed per-ghost-element data used by the BC applier every time step.
- *
- * Storing these avoids recomputing expensive boundary queries (normal, symmetric)
- * once per field per ghost element per time step.
- *
- * @note `mirrorIsInPatch` is set to `false` when the mirror point lies outside
- * the current patch's AMR box. This can happen for ghost elements in the AMR
- * halo region. When `false`, the BC applier must skip the interpolation — the
- * ghost value will instead be filled by AMR communication.
- */
-template<std::size_t dim>
-struct GhostElemData
-{
-    Point<std::uint32_t, dim> index;          ///< Local array index of the ghost element.
-    Point<double, dim>        mirrorPoint;    ///< Physical coords of the symmetric point in the fluid.
-    Point<double, dim>        normal;         ///< Unit outward normal at the boundary (ghost → mirror).
-    bool                      mirrorIsInPatch; ///< True iff the mirror point lies within this patch.
-};
-
-
 /**
  * @brief Bundle of node level-set values and mesh status data around an inner boundary.
  *
@@ -172,8 +135,11 @@ struct InnerBoundaryMeshData
      * @brief Per-centering ghost element lists, indexed by @ref centeringToIdx.
      *
      * Populated by InnerBoundaryMeshClassifier, iterated by the BC applier every time step.
+     *
+     * Backed by a per-patch GhostElemPatchData allocated by SAMRAI; rebound on each
+     * setOnPatch via ResourcesManager.
      */
-    std::array<std::vector<ghost_elem_data_type>, num_elem_types> ghostElemsData;
+    GhostElemPack<dim> ghostElemsData;
 
 
     // -------------------------------------------------------------------------
@@ -184,6 +150,7 @@ struct InnerBoundaryMeshData
         : signedDistanceAtNodes{boundaryName + "_signed_distance",
                                 PhysicalQuantityT::Scalar::NodeCentered}
         , elemStatus{makeElemStatus_(boundaryName, std::make_index_sequence<num_elem_types>{})}
+        , ghostElemsData{boundaryName + "_ghost_elems"}
     {
     }
 
@@ -288,7 +255,7 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto const&... fields) {
-                return isUsable(signedDistanceAtNodes, fields...);
+                return isUsable(signedDistanceAtNodes, fields..., ghostElemsData);
             },
             elemStatus);
     }
@@ -297,7 +264,7 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto const&... fields) {
-                return isSettable(signedDistanceAtNodes, fields...);
+                return isSettable(signedDistanceAtNodes, fields..., ghostElemsData);
             },
             elemStatus);
     }
@@ -306,7 +273,7 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto&... fields) {
-                return std::forward_as_tuple(signedDistanceAtNodes, fields...);
+                return std::forward_as_tuple(signedDistanceAtNodes, fields..., ghostElemsData);
             },
             elemStatus);
     }
@@ -315,7 +282,7 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto const&... fields) {
-                return std::forward_as_tuple(signedDistanceAtNodes, fields...);
+                return std::forward_as_tuple(signedDistanceAtNodes, fields..., ghostElemsData);
             },
             elemStatus);
     }

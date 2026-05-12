@@ -58,6 +58,7 @@ struct ManagerFixture
     PHARE::core::NdArrayVector<2, double> phi_storage{
         layout.allocSize(PHARE::core::MHDQuantity::Scalar::NodeCentered)};
     std::vector<PHARE::core::NdArrayVector<2, double>> elem_storages;
+    PHARE::core::GhostElemPack<2>::ghost_elem_array_type ghost_array{};
 
     std::vector<PHARE::core::MHDQuantity::Scalar> scalarQtys{
         PHARE::core::MHDQuantity::Scalar::rho,
@@ -98,6 +99,8 @@ struct ManagerFixture
                             elem_storages[i].shape()};
             md.elemStatus[i].setBuffer(&tmp);
         }
+
+        md.ghostElemsData._data = &ghost_array;
 
         // Classify mesh elements relative to the plane at x = 0.
         PHARE::core::PlaneInnerBoundary<2> plane{BOUNDARY_NAME, {0.0, 0.0}, {1.0, 0.0}};

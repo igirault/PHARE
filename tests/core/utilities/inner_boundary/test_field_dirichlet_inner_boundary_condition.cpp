@@ -53,10 +53,12 @@ struct MeshDataBuffers
                             elem_storages[i].data(), elem_storages[i].shape()};
             tags.elemStatus[i].setBuffer(&tmp);
         }
+        tags.ghostElemsData._data = &ghost_array;
     }
 
     PHARE::core::NdArrayVector<2, double> phi_storage;
     std::vector<PHARE::core::NdArrayVector<2, double>> elem_storages;
+    PHARE::core::GhostElemPack<2>::ghost_elem_array_type ghost_array{};
     MeshData tags;
 };
 

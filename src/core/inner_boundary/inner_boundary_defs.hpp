@@ -1,12 +1,55 @@
 #ifndef PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_DEFS_HPP
 #define PHARE_CORE_INNER_BOUNDARY_INNER_BOUNDARY_DEFS_HPP
 
+#include "core/utilities/point/point.hpp"
+
+#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 
 namespace PHARE::core
 {
+
+/**
+ * @brief Status of a mesh element (cell, face, edge, or node) relative to an inner boundary.
+ *
+ * - **Fluid**    — element lies entirely in the fluid domain.
+ * - **Cut**      — element straddles the boundary surface.
+ * - **Ghost**    — element lies inside the body but is used to enforce the boundary condition
+ *                  by mirror-point interpolation from the fluid side.
+ * - **Inactive** — element lies entirely inside the body and plays no role in the solver.
+ */
+enum class ElemStatus : std::uint8_t { Fluid, Cut, Ghost, Inactive };
+
+/// Convert an ElemStatus value to its double encoding for field storage.
+inline constexpr double toDouble(ElemStatus s)
+{
+    return static_cast<double>(static_cast<std::uint8_t>(s));
+}
+
+
+/**
+ * @brief Precomputed per-ghost-element data used by the BC applier every time step.
+ *
+ * Storing these avoids recomputing expensive boundary queries (normal, symmetric)
+ * once per field per ghost element per time step.
+ *
+ * @note `mirrorIsInPatch` is set to `false` when the mirror point lies outside
+ * the current patch's AMR box. This can happen for ghost elements in the AMR
+ * halo region. When `false`, the BC applier must skip the interpolation — the
+ * ghost value will instead be filled by AMR communication.
+ */
+template<std::size_t dim>
+struct GhostElemData
+{
+    Point<std::uint32_t, dim> index;          ///< Local array index of the ghost element.
+    Point<double, dim>        mirrorPoint;    ///< Physical coords of the symmetric point in the fluid.
+    Point<double, dim>        normal;         ///< Unit outward normal at the boundary (ghost → mirror).
+    bool                      mirrorIsInPatch; ///< True iff the mirror point lies within this patch.
+};
+
 
 enum class InnerBoundaryShape { Plane, Sphere };
 
