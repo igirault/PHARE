@@ -138,7 +138,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, scalarGhostCellSetToZeroOnBoundar
     bool foundInPatch = false;
     for (auto const& g : ghostCells)
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
         {
             EXPECT_NEAR(field(g.index), 0.0, eps)
                 << "out-of-patch ghost at (" << g.index[0] << ", " << g.index[1]
@@ -198,7 +198,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, vectorConstantField_tangentialCom
     bool foundInPatch = false;
     for (auto const& g : ghostCells)
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
             continue;
         foundInPatch = true;
 
@@ -251,7 +251,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, vectorPurelyTangentialField_negat
     bool foundInPatch = false;
     for (auto const& g : ghostCells)
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
             continue;
         foundInPatch = true;
 
@@ -319,7 +319,7 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, vectorLinearField_correctTransfor
     bool foundInPatch = false;
     for (auto const& g : ghostCells)
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
             continue;
         foundInPatch = true;
 

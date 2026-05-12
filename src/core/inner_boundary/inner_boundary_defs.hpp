@@ -36,18 +36,21 @@ inline constexpr double toDouble(ElemStatus s)
  * Storing these avoids recomputing expensive boundary queries (normal, symmetric)
  * once per field per ghost element per time step.
  *
- * @note `mirrorIsInPatch` is set to `false` when the mirror point lies outside
- * the current patch's AMR box. This can happen for ghost elements in the AMR
- * halo region. When `false`, the BC applier must skip the interpolation — the
- * ghost value will instead be filled by AMR communication.
- */
+ * @note `mirrorIsInterpolable` is set to `false` when the mirror point sits too close
+ * to the ghost-box edge for the inner-BC interpolation support (2 consecutive grid
+ * values per direction) to fit inside the allocated field extent. When `false`, the
+ * BC applier must skip the interpolation.
+ *
+ * @warning when mirror is not interpolable, nothing is done for the ghost. This might be the cause
+ * of issue, TBD. If so, lower order interp could be done.
+ * */
 template<std::size_t dim>
 struct GhostElemData
 {
-    Point<std::uint32_t, dim> index;          ///< Local array index of the ghost element.
-    Point<double, dim>        mirrorPoint;    ///< Physical coords of the symmetric point in the fluid.
-    Point<double, dim>        normal;         ///< Unit outward normal at the boundary (ghost → mirror).
-    bool                      mirrorIsInPatch; ///< True iff the mirror point lies within this patch.
+    Point<std::uint32_t, dim> index; ///< Local array index of the ghost element.
+    Point<double, dim> mirrorPoint;  ///< Physical coords of the symmetric point in the fluid.
+    Point<double, dim> normal;       ///< Unit outward normal at the boundary (ghost → mirror).
+    bool mirrorIsInterpolable;       ///< True iff the mirror-point interp supports fits.
 };
 
 

@@ -145,7 +145,7 @@ TEST(FieldDirichletInnerBoundaryCondition, ghostCellReceivesExtrapolatedBoundary
     bool foundInPatch = false;
     for (auto const& g : ghostCells)
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
         {
             EXPECT_NEAR(field(g.index), 0.0, eps)
                 << "out-of-patch ghost at (" << g.index[0] << ", " << g.index[1]

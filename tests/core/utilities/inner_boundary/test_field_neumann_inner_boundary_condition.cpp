@@ -182,7 +182,7 @@ TEST(FieldNeumannInnerBoundaryCondition, ghostCellReceivesMirrorPointValue)
     bool found_in_patch = false;
     for (auto const& g : ghost_cells)
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
         {
             EXPECT_NEAR(field(g.index), 0.0, eps)
                 << "out-of-patch ghost at (" << g.index[0] << ", " << g.index[1]

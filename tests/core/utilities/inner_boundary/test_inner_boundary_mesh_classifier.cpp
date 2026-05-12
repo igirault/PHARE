@@ -183,7 +183,7 @@ TEST(InnerBoundaryMeshClassifier, ghostCellHasCorrectMirrorPointAndNormal)
     EXPECT_NEAR(it->normal[0], 1.0, eps);
     EXPECT_NEAR(it->normal[1], 0.0, eps);
     // Mirror (1.5, 0.5) is within the physical domain of the patch → in-patch.
-    EXPECT_TRUE(it->mirrorIsInPatch);
+    EXPECT_TRUE(it->mirrorIsInterpolable);
 }
 
 TEST(InnerBoundaryMeshClassifier, ghostFaceListIsNonEmpty)
@@ -209,9 +209,14 @@ TEST(InnerBoundaryMeshClassifier, ghostFaceListIsNonEmpty)
 TEST(InnerBoundaryMeshClassifier, ghostCellMirrorsAreInPatch)
 {
     // Plane at x=0. Physical cells: AMR x in [-2, 1]. Ghost shell grows nbrGhosts layers
-    // from the cut cells into the solid side (AMR x < -2). With mirrorIsInPatch_ extended
-    // to include the ghost halo, every ghost mirror lands within
-    // [amrBox.lower - nGhosts, amrBox.upper + nGhosts], so all entries are mirrorIsInPatch=true.
+    // from the cut cells into the solid side (AMR x < -2). `pointIsInterpolable_` requires
+    // the mirror's stencil (2 consecutive grid values per direction; for cell-centered
+    // fields that means 1 cell of slack per end of the ghost box). Ghost cells deep in the
+    // solid-side halo map mirrors near or beyond the fluid-side halo edge, so a few mirrors
+    // legitimately fail the check.
+    //
+    // The contract here is: at least the ghost cells whose mirrors land in the *physical*
+    // domain (interior cells) must be interpolable.
     PHARE::core::PlaneInnerBoundary<2> plane{"plane", {0.0, 0.0}, {1.0, 0.0}};
     PHARE::core::Box<int, 2> amr_box{{-2, 0}, {1, 1}};
     GridLayout layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
@@ -227,7 +232,28 @@ TEST(InnerBoundaryMeshClassifier, ghostCellMirrorsAreInPatch)
     auto const& ghost_cells = buffers.tags.getGhostDataFromCentering(kCellC);
     ASSERT_FALSE(ghost_cells.empty());
 
+    auto const& dx     = layout.meshSize();
+    auto const& amrBox = layout.AMRBox();
+    auto inPhysicalDomain = [&](auto const& point) {
+        for (auto d = 0u; d < 2u; ++d)
+        {
+            int const iCell = static_cast<int>(std::floor(point[d] / dx[d]));
+            if (iCell < amrBox.lower[d] || iCell > amrBox.upper[d])
+                return false;
+        }
+        return true;
+    };
+
+    std::size_t interpolable_in_physical = 0;
     for (auto const& g : ghost_cells)
-        EXPECT_TRUE(g.mirrorIsInPatch)
-            << "All ghost mirrors must be in-patch when the ghost shell depth equals nbrGhosts";
+    {
+        if (inPhysicalDomain(g.mirrorPoint))
+        {
+            EXPECT_TRUE(g.mirrorIsInterpolable)
+                << "Ghost cell whose mirror lies in the physical domain must be interpolable";
+            ++interpolable_in_physical;
+        }
+    }
+    EXPECT_GT(interpolable_in_physical, 0u)
+        << "At least one ghost mirror must land in the physical domain";
 }

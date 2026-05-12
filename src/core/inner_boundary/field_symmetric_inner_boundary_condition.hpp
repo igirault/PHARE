@@ -57,7 +57,10 @@ public:
 
                 for (ghost_elem_data_type const& ghostElem : ghostElems)
                 {
-                    if (!ghostElem.mirrorIsInPatch)
+                    // WARNING: when the mirror is not interpolable, the ghost cell is left
+                    // untouched. This may be the cause of issues — TBD. If so, a lower-order
+                    // interpolation could be applied. See GhostElemData::mirrorIsInterpolable.
+                    if (!ghostElem.mirrorIsInterpolable)
                         continue;
 
                     // get interpolated value of all components at the mirror point

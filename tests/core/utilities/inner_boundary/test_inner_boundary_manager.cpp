@@ -203,7 +203,7 @@ TEST(InnerBoundaryManager, reflectiveRhoVIsSymmetric_normalComponentFlips)
     bool foundInPatch = false;
     for (auto const& g : meshData.getGhostDataFromCentering(kCellC))
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
             continue;
         foundInPatch = true;
 
@@ -270,14 +270,14 @@ TEST(InnerBoundaryManager, reflectiveEIsAntisymmetric_tangentialComponentFlips)
     bool foundAnyEdge = false;
     for (auto const& g : meshData.getGhostDataFromCentering(kEdgeXC))
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
             continue;
         foundAnyEdge = true;
         EXPECT_NEAR(Ex_field(g.index), Ex, eps) << "Ex (normal component) should be preserved";
     }
     for (auto const& g : meshData.getGhostDataFromCentering(kEdgeYC))
     {
-        if (!g.mirrorIsInPatch)
+        if (!g.mirrorIsInterpolable)
             continue;
         foundAnyEdge = true;
         EXPECT_NEAR(Ey_field(g.index), -Ey, eps) << "Ey (tangential component) should be negated";

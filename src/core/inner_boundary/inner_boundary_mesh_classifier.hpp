@@ -522,6 +522,7 @@ private:
         {
             auto const& status_field = meshData.elemStatus[idx];
             auto& ghost_list         = meshData.ghostElemsData[idx];
+            auto const centerings    = mesh_data_type::idxToCentering(idx);
 
             layout.evalOnGhostBox(status_field, [&](auto... local_idx_args) {
                 auto const local = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
@@ -531,25 +532,39 @@ private:
                 auto const amr    = fieldAMRIndex_(layout, status_field, local);
                 auto const pos    = layout.fieldNodeCoordinates(status_field, amr);
                 auto const mirror = boundary_.symmetric(pos);
-                ghost_list.push_back(
-                    {local, mirror, boundary_.normal(pos), mirrorIsInPatch_(layout, mirror)});
+                ghost_list.push_back({local, mirror, boundary_.normal(pos),
+                                      pointIsInterpolable_(layout, mirror, centerings)});
             });
         }
     }
 
     /**
-     * @brief Return `true` iff @p mirrorPoint falls within the domain of @p layout (ghosts
-     * included).
+     * @brief Return `true` iff @p point sits inside the (ghost-included) domain with
+     * enough slack on every direction for the inner-BC interpolation support to fit.
+     *
+     * The mirror-point interpolation uses **two consecutive grid values per direction**
+     * (so 4 values in 2D, 8 in 3D). Per direction the slack to reserve at each end of
+     * the ghost box depends on the centering of the field being interpolated:
+     *   - primal: the stencil straddles integer node positions — no slack needed beyond
+     *             the ghost box itself (margin = 0);
+     *   - dual:   the stencil straddles half-integer cell centres — 1 cell of slack on
+     *             each end (margin = 1).
+     *
+     * @note This is independent of @c GridLayoutT::interp_order, which controls the
+     * hybrid-model particle-mesh interpolation, not the inner-BC mirror scheme.
      */
-    static bool mirrorIsInPatch_(GridLayoutT const& layout, point_type const& mirrorPoint)
+    static bool pointIsInterpolable_(GridLayoutT const& layout, point_type const& point,
+                                     std::array<QtyCentering, dim> const& centerings)
     {
         auto const& dx     = layout.meshSize();
         auto const& amrBox = layout.AMRBox();
         auto const nGhosts = static_cast<int>(layout.nbrGhosts());
         for (auto d = 0u; d < dim; ++d)
         {
-            int const iCell = static_cast<int>(std::floor(mirrorPoint[d] / dx[d]));
-            if (iCell < amrBox.lower[d] - nGhosts || iCell > amrBox.upper[d] + nGhosts)
+            int const margin = (centerings[d] == QtyCentering::dual) ? 1 : 0;
+            int const iCell  = static_cast<int>(std::floor(point[d] / dx[d]));
+            if (iCell < amrBox.lower[d] - nGhosts + margin
+                || iCell > amrBox.upper[d] + nGhosts - margin)
                 return false;
         }
         return true;
