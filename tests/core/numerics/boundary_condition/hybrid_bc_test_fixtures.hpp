@@ -9,6 +9,7 @@
 #include "core/data/grid/gridlayoutimplyee.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/data/patch_field_accessor.hpp"
+#include "core/numerics/boundary_condition/boundary_condition_context.hpp"
 #include "core/utilities/box/box.hpp"
 #include "tests/core/data/tensorfield/test_tensorfield_fixtures.hpp"
 
@@ -67,6 +68,15 @@ struct NullFieldAccessorT : IPatchFieldAccessor<FieldT, HybridQuantity>
 };
 
 using NullFieldAccessor = NullFieldAccessorT<Field1D>;
+
+
+// Build a BC context bound to a single accessor; tests that don't care about the previous
+// substage state pass the same accessor for both new and old. time=0, dt=0 by default.
+template<typename FieldT>
+auto makeCtx(NullFieldAccessorT<FieldT> const& acc, double time = 0.0, double dt = 0.0)
+{
+    return PHARE::core::BoundaryConditionContext<FieldT, HybridQuantity>{acc, acc, time, dt};
+}
 
 
 // ─── 1D ghost-cell boxes ─────────────────────────────────────────────────────

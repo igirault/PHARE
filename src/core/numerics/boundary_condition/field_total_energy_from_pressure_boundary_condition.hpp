@@ -75,13 +75,14 @@ public:
 
     void apply(FieldT& Etot1Field, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-               double const time, Super::patch_field_accessor_type const& fieldAccessor) override
+               Super::boundary_condition_context_type const& ctx) override
     {
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
         QtyCentering const centering
             = GridLayoutT::centering(Etot1Field.physicalQuantity())[static_cast<size_t>(direction)];
 
+        auto const& fieldAccessor = ctx.accessor_new;
         auto& rhoField = fieldAccessor.getField(scalar_quantity_type::rho);
         auto& PField   = fieldAccessor.getField(scalar_quantity_type::P);
         auto rhoVField = fieldAccessor.getVecField(vector_quantity_type::rhoV);
@@ -123,10 +124,10 @@ public:
         }
 
         // Step 2: apply sub-BCs to fill ghost layers of ρ, ρv, B, P
-        rho_bc_->apply(rhoField, boundaryLocation, localGhostBox, gridLayout, time, fieldAccessor);
-        rhoV_bc_->apply(rhoVField, boundaryLocation, localGhostBox, gridLayout, time, fieldAccessor);
-        B1_bc_->apply(B1Field, boundaryLocation, localGhostBox, gridLayout, time, fieldAccessor);
-        P_bc_->apply(PField, boundaryLocation, localGhostBox, gridLayout, time, fieldAccessor);
+        rho_bc_->apply(rhoField, boundaryLocation, localGhostBox, gridLayout, ctx);
+        rhoV_bc_->apply(rhoVField, boundaryLocation, localGhostBox, gridLayout, ctx);
+        B1_bc_->apply(B1Field, boundaryLocation, localGhostBox, gridLayout, ctx);
+        P_bc_->apply(PField, boundaryLocation, localGhostBox, gridLayout, ctx);
 
         // Step 3: compute Etot in ghost cells from freshly filled P, ρ, ρv, B
         for (auto const& index : etotFieldBox)

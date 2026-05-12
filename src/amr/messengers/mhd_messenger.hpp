@@ -459,8 +459,17 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
-        void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime)
+        void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime,
+                               double const dt)
         {
+            // state-aware BCs (NSCBC/LODI) need dt; the field-refine patch strategies own it.
+            for (auto& s : rhoPatchStrats)
+                s->setDt(dt);
+            for (auto& s : momentumPatchStrats)
+                s->setDt(dt);
+            for (auto& s : totalEnergyPatchStrats)
+                s->setDt(dt);
+
             setNaNsOnFieldGhosts(state.rho, level);
             setNaNsOnVecfieldGhosts(state.rhoV, level);
             setNaNsOnFieldGhosts(state.Etot1, level);
@@ -618,6 +627,19 @@ namespace amr
                     {core::MHDQuantity::Vector::E, resolveID(info->ghostElectric[i])},
                 };
             }
+
+            // Shadow id-map for the previous substage state. Only quantities for which the messenger
+            // keeps an `*Old_` buffer are exposed; other quantities will fall through to "not
+            // registered" in the accessor and throw on access. State-aware outer BCs that need only
+            // these primitive moments (NSCBC/LODI HD outlet) read from this map via `ctx.accessor_old`.
+            oldScalarIdMap_ = {
+                {core::MHDQuantity::Scalar::rho, resolveID(rhoOld_.name())},
+                {core::MHDQuantity::Scalar::P, resolveID(Pold_.name())},
+                {core::MHDQuantity::Scalar::Etot1, resolveID(Etot1Old_.name())},
+            };
+            oldVectorIdMap_ = {
+                {core::MHDQuantity::Vector::rhoV, resolveID(rhoVold_.name())},
+            };
         }
 
 
@@ -639,7 +661,8 @@ namespace amr
                 auto&& [id] = resourcesManager_->getIDsList(keys[i]);
                 auto patchStrat
                     = std::make_shared<RefinePatchStrategyT>(*resourcesManager_, *boundaryManager_);
-                patchStrat->registerIDs(id, allScalarIdMaps_[i], allVectorIdMaps_[i]);
+                patchStrat->registerIDs(id, allScalarIdMaps_[i], allVectorIdMaps_[i],
+                                        oldScalarIdMap_, oldVectorIdMap_);
                 patchStrategies.push_back(patchStrat);
             }
         }
@@ -859,6 +882,8 @@ namespace amr
 
         std::vector<scalar_id_map_type> allScalarIdMaps_;
         std::vector<vector_id_map_type> allVectorIdMaps_;
+        scalar_id_map_type oldScalarIdMap_;
+        vector_id_map_type oldVectorIdMap_;
 
         MagneticRefinePatchStrategyT magneticRefinePatchStrategy_{*resourcesManager_,
                                                                   *boundaryManager_};

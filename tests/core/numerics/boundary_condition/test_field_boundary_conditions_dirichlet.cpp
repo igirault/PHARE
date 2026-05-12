@@ -10,7 +10,7 @@ TEST_F(FieldBC1D, DirichletSetsLowerGhostByLinearExtrapolation)
 {
     double const value = 3.0;
     FieldDirichletBoundaryCondition<Field1D, GridLayout1D> bc{value};
-    bc.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, 0.0, acc);
+    bc.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     // Interior is constant = interiorValue, so ghost = 2*value - interiorValue
     double expected = 2.0 * value - interiorValue;
@@ -22,7 +22,7 @@ TEST_F(FieldBC1D, DirichletSetsUpperGhostByLinearExtrapolation)
 {
     double const value = 3.0;
     FieldDirichletBoundaryCondition<Field1D, GridLayout1D> bc{value};
-    bc.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     double expected       = 2.0 * value - interiorValue;
     std::uint32_t allocSz = grid.shape()[0];

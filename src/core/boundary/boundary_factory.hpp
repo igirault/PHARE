@@ -118,6 +118,15 @@ public:
                         "FixedPressureOutflow boundary type is not supported for this physical "
                         "model.");
                 break;
+            case BoundaryType::CharacteristicFixedPressureOutflow:
+                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                    register_characteristic_fixed_pressure_outflow_conditions_(boundary, data,
+                                                                               quantities, thermo);
+                else
+                    throw std::runtime_error(
+                        "CharacteristicFixedPressureOutflow boundary type is not supported for "
+                        "this physical model.");
+                break;
 
             default: throw std::runtime_error("Boundary type not implemented.");
         }
@@ -416,6 +425,68 @@ private:
                 case (PhysicalQuantityT::Vector::rhoV):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
                         quantity);
+                    break;
+                case (PhysicalQuantityT::Vector::B1):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
+            }
+        }
+    }
+
+
+    /** @brief Register boundary conditions for a HD characteristic subsonic outflow with target
+     *  exit pressure (LODI / Poinsot-Lele).
+     *
+     *  A single BC type @c CharacteristicFixedPressureOutflow is registered for ρ, ρv, and
+     *  Etot1; each invocation writes the ghost values of the field it was called for using
+     *  the same LODI relations. B uses DivFreeNeumann (HD: B = 0). The pressure field, when
+     *  present in the quantity list, is given a Neumann placeholder — it is read from the
+     *  previous-substage state via the BC context, not from the current-state ghosts.
+     */
+    static void register_characteristic_fixed_pressure_outflow_conditions_(
+        boundary_ptr_type& boundary, initializer::PHAREDict const& data,
+        _model_menu_type const& quantities, std::shared_ptr<Thermo> thermo)
+        requires HasInflowQuantities<PhysicalQuantityT>
+    {
+        if (!thermo)
+            throw std::runtime_error(
+                "BoundaryFactory: a Thermo object is required for "
+                "CharacteristicFixedPressureOutflow boundaries but none was provided.");
+
+        double const pressure     = data["pressure"].to<double>();
+        double const sigma        = data["sigma"].to<double>();
+        double const length_scale = data["length_scale"].to<double>();
+
+        for (auto const quantity : quantities.scalars)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Scalar::rho):
+                case (PhysicalQuantityT::Scalar::Etot1):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::CharacteristicFixedPressureOutflow>(
+                        quantity, pressure, sigma, length_scale, thermo);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                        quantity);
+                    break;
+            }
+        }
+
+        for (auto const quantity : quantities.vectors)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Vector::rhoV):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::CharacteristicFixedPressureOutflow>(
+                        quantity, pressure, sigma, length_scale, thermo);
                     break;
                 case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<

@@ -37,8 +37,8 @@ public:
     void apply(ScalarOrTensorFieldT& /*scalarOrTensorField*/,
                BoundaryLocation const /*boundaryLocation*/,
                Box<std::uint32_t, dimension> const& /*localGhostBox*/,
-               GridLayoutT const& /*gridLayout*/, double const /*time*/,
-               [[maybe_unused]] Super::patch_field_accessor_type const& /*fieldAccessor*/) override
+               GridLayoutT const& /*gridLayout*/,
+               [[maybe_unused]] Super::boundary_condition_context_type const& /*ctx*/) override
     {
     }
 }; // class FieldNoneBoundaryCondition

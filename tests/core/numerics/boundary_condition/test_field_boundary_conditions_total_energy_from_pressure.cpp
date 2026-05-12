@@ -92,8 +92,8 @@ TEST_F(EtotFromPressureBC1D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -118,8 +118,8 @@ TEST_F(EtotFromPressureBC1D, InteriorEtotUnchangedAfterBC)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -209,10 +209,10 @@ TEST_F(EtotFromPressureBC2D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     for (auto const& idx : mhd2DXLowerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
@@ -240,10 +240,10 @@ TEST_F(EtotFromPressureBC2D, InteriorEtotUnchangedAfterBC)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
@@ -342,12 +342,12 @@ TEST_F(EtotFromPressureBC3D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     for (auto const& idx : mhd3DXLowerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
@@ -381,12 +381,12 @@ TEST_F(EtotFromPressureBC3D, InteriorEtotUnchangedAfterBC)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
@@ -557,8 +557,8 @@ TEST_F(FixedPressureOutflowBC1D, DirichletPressureGhostEtotMatchesExpected)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -585,8 +585,8 @@ TEST_F(FixedPressureOutflowBC1D, InteriorEtotUnchangedAfterBC)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -678,10 +678,10 @@ TEST_F(FixedPressureOutflowBC2D, DirichletPressureGhostEtotMatchesExpected)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     for (auto const& idx : fp2DXLowerNonCornerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_ghost, 1e-12)
@@ -711,10 +711,10 @@ TEST_F(FixedPressureOutflowBC2D, InteriorEtotUnchangedAfterBC)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
@@ -812,12 +812,12 @@ TEST_F(FixedPressureOutflowBC3D, DirichletPressureGhostEtotMatchesExpected)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     for (auto const& idx : fp3DXLowerNonCornerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_ghost, 1e-12)
@@ -853,12 +853,12 @@ TEST_F(FixedPressureOutflowBC3D, InteriorEtotUnchangedAfterBC)
     FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, thermo};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, 0.0, acc);
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, 0.0, acc);
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot1;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);

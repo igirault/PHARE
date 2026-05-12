@@ -83,7 +83,7 @@ public:
 
         bc.fillMagneticGhosts(statenew.B1, level, newTime);
 
-        bc.fillMomentsGhosts(statenew, level, newTime);
+        bc.fillMomentsGhosts(statenew, level, newTime, dt);
 
         if (model.hasInnerBoundary())
         {

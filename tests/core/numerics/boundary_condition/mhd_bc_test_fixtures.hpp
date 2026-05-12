@@ -6,6 +6,7 @@
 #include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/data/patch_field_accessor.hpp"
+#include "core/numerics/boundary_condition/boundary_condition_context.hpp"
 #include "core/utilities/box/box.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
@@ -69,6 +70,15 @@ struct MHDPatchFieldAccessorTest : IPatchFieldAccessor<FieldMHD<dim>, MHDQuantit
         }
     }
 };
+
+
+// Build a BC context bound to a single accessor; tests that don't care about the previous
+// substage state pass the same accessor for both new and old. time=0, dt=0 by default.
+template<std::size_t dim>
+auto makeCtx(MHDPatchFieldAccessorTest<dim> const& acc, double time = 0.0, double dt = 0.0)
+{
+    return BoundaryConditionContext<FieldMHD<dim>, MHDQuantity>{acc, acc, time, dt};
+}
 
 
 // ─── 1D MHD types and ghost boxes ────────────────────────────────────────────

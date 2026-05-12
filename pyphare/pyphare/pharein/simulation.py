@@ -364,6 +364,49 @@ def _check_fixed_pressure_outflow_data(location, bc):
     bc["data"] = data
 
 
+def _check_characteristic_fixed_pressure_outflow_data(location, bc, domain_extent):
+    """Validate and normalise the 'data' sub-dict for a HD subsonic characteristic outlet.
+
+    Required:
+        pressure  — target exit pressure (positive scalar).
+    Optional:
+        sigma         — Rudy-Strikwerda relaxation coefficient, default 0.25, in (0, 1].
+        length_scale  — characteristic length used in the LODI relaxation rate,
+                        default = `domain_extent` along the boundary normal direction
+                        (positive scalar).
+    """
+    data = bc.get("data", {})
+    if "pressure" not in data:
+        raise KeyError(
+            f"characteristic-fixed-pressure-outflow BC at '{location}' requires 'pressure' "
+            f"inside 'data'"
+        )
+    val = data["pressure"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'pressure' at characteristic-fixed-pressure-outflow boundary '{location}' must be a positive "
+            f"scalar, got {val!r}"
+        )
+
+    sigma = data.get("sigma", 0.25)
+    if not isinstance(sigma, (int, float)) or not (0.0 < sigma <= 1.0):
+        raise ValueError(
+            f"'sigma' at characteristic-fixed-pressure-outflow boundary '{location}' must lie in (0, 1], "
+            f"got {sigma!r}"
+        )
+    data["sigma"] = float(sigma)
+
+    length_scale = data.get("length_scale", domain_extent)
+    if not isinstance(length_scale, (int, float)) or length_scale <= 0:
+        raise ValueError(
+            f"'length_scale' at characteristic-fixed-pressure-outflow boundary '{location}' must be a positive "
+            f"scalar, got {length_scale!r}"
+        )
+    data["length_scale"] = float(length_scale)
+
+    bc["data"] = data
+
+
 def _check_free_pressure_inflow_data(location, bc):
     """Validate and normalise the 'data' sub-dict for a free-pressure-inflow BC.
 
@@ -390,7 +433,8 @@ def _check_free_pressure_inflow_data(location, bc):
 def check_boundary_conditions(ndim, **kwargs):
     valid_bc_types = ("open", "reflective", "none", "super-magnetofast-inflow",
                       "super-magnetofast-outflow", "free-pressure-inflow",
-                      "fixed-pressure-outflow")
+                      "fixed-pressure-outflow",
+                      "characteristic-fixed-pressure-outflow")
     all_directions = ["x", "y", "z"][:ndim]
     sides = "lower", "upper"
     boundary_types = kwargs["boundary_types"]
@@ -435,14 +479,24 @@ def check_boundary_conditions(ndim, **kwargs):
         if boundary_conditions[location]['type'] == 'none':
             raise KeyError(f"{location} is a physical boundary and should be provided with a valid type other than 'none'.")
 
+    # domain extent per direction (for default length_scale)
+    cells = kwargs.get("cells")
+    dl    = kwargs.get("dl")
+    domain_extents = {d: cells[i] * dl[i] for i, d in enumerate(all_directions)}
+
     # validate and normalise inflow-specific data
     for location in all_boundary_locations:
-        if boundary_conditions[location]['type'] == "super-magnetofast-inflow":
+        bc_type = boundary_conditions[location]['type']
+        if bc_type == "super-magnetofast-inflow":
             _check_inflow_data(location, boundary_conditions[location])
-        elif boundary_conditions[location]['type'] == "free-pressure-inflow":
+        elif bc_type == "free-pressure-inflow":
             _check_free_pressure_inflow_data(location, boundary_conditions[location])
-        elif boundary_conditions[location]['type'] == "fixed-pressure-outflow":
+        elif bc_type == "fixed-pressure-outflow":
             _check_fixed_pressure_outflow_data(location, boundary_conditions[location])
+        elif bc_type == "characteristic-fixed-pressure-outflow":
+            _check_characteristic_fixed_pressure_outflow_data(
+                location, boundary_conditions[location], domain_extents[location[0]]
+            )
 
     return boundary_conditions
 

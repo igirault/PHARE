@@ -59,8 +59,7 @@ public:
 
     void apply(VecFieldT& vecField, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-               double const time,
-               [[maybe_unused]] Super::patch_field_accessor_type const& fieldAccessor) override
+               Super::boundary_condition_context_type const& ctx) override
     {
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
@@ -76,7 +75,7 @@ public:
             {
                 field_type& tField = std::get<iTransverse>(fields);
                 scalar_neumann_condition_.apply(tField, boundaryLocation, localGhostBox, gridLayout,
-                                                time, fieldAccessor);
+                                                ctx);
             }
         });
 

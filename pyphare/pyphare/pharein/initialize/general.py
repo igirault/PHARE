@@ -139,6 +139,11 @@ def populateDict(sim):
             elif bc["type"] == "fixed-pressure-outflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/pressure", data["pressure"])
+            elif bc["type"] == "characteristic-fixed-pressure-outflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/pressure",     data["pressure"])
+                add_double(f"{bc_path}/data/sigma",        data["sigma"])
+                add_double(f"{bc_path}/data/length_scale", data["length_scale"])
 
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)

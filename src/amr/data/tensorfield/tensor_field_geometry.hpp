@@ -91,6 +91,7 @@ class TensorFieldGeometry : public TensorFieldGeometryBase<GridLayoutT::dimensio
 public:
     using Super           = TensorFieldGeometryBase<GridLayoutT::dimension, rank>;
     using FieldGeometry_t = FieldGeometry<GridLayoutT, typename PhysicalQuantity::Scalar>;
+
     static constexpr std::size_t dimension    = GridLayoutT::dimension;
     static constexpr std::size_t interp_order = GridLayoutT::interp_order;
 

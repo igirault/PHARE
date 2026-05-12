@@ -49,7 +49,7 @@ public:
     void apply(ScalarOrTensorFieldT& scalarOrTensorField,
                BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-               double const time, Super::patch_field_accessor_type const& fieldAccessor) override
+               Super::boundary_condition_context_type const& ctx) override
     {
         Direction const direction = getDirection(boundaryLocation);
 
@@ -65,16 +65,16 @@ public:
             if constexpr (is_scalar)
             {
                 scalar_neumann_condition_.apply(field, boundaryLocation, localGhostBox, gridLayout,
-                                                time, fieldAccessor);
+                                                ctx);
             }
             else
             {
                 if (static_cast<size_t>(i) != static_cast<size_t>(direction))
                     scalar_neumann_condition_.apply(field, boundaryLocation, localGhostBox,
-                                                    gridLayout, time, fieldAccessor);
+                                                    gridLayout, ctx);
                 else
                     scalar_dirichlet_condition_.apply(field, boundaryLocation, localGhostBox,
-                                                      gridLayout, time, fieldAccessor);
+                                                      gridLayout, ctx);
             }
         });
     }

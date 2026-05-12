@@ -12,8 +12,8 @@ TEST_F(VecFieldBC1D, DivergenceFreeTransverseDirichletAtXBoundaries)
 {
     std::array values{123.0, 7.0, 11.0};
     FieldDivergenceFreeTransverseDirichletBoundaryCondition<VecField1D, GridLayout1D> bc{values};
-    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     auto& Bx                  = B[0];
     auto bxQty                = HybridQuantity::Scalar::Bx;
@@ -45,8 +45,8 @@ TEST_F(VecFieldBC2D, DivergenceFreeTransverseDirichletAtXBoundaries)
 {
     std::array values{123.0, 7.0, 11.0};
     FieldDivergenceFreeTransverseDirichletBoundaryCondition<VecField2D, GridLayout2D> bc{values};
-    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
     auto& Bx          = B[0];
     auto bxQty        = HybridQuantity::Scalar::Bx;
@@ -89,8 +89,8 @@ TEST_F(VecFieldBC2D, DivergenceFreeTransverseDirichletAtYBoundaries)
 {
     std::array values{3.0, 123.0, 11.0};
     FieldDivergenceFreeTransverseDirichletBoundaryCondition<VecField2D, GridLayout2D> bc{values};
-    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
     auto& By          = B[1];
     auto byQty        = HybridQuantity::Scalar::By;
@@ -133,8 +133,8 @@ TEST_F(VecFieldBC2DNonUniformBy, DivergenceFreeTransverseDirichletKeepsXGhostDiv
 {
     FieldDivergenceFreeTransverseDirichletBoundaryCondition<VecField2D, GridLayout2D> bc{
         std::array{123.0, 0.0, 11.0}};
-    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
     auto& Bx = B[0];
     auto& By = B[1];
@@ -161,8 +161,8 @@ TEST_F(VecFieldBC3D, DivergenceFreeTransverseDirichletAtZBoundaries)
 {
     std::array values{3.0, 7.0, 123.0};
     FieldDivergenceFreeTransverseDirichletBoundaryCondition<VecField3D, GridLayout3D> bc{values};
-    bc.apply(B, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
 
     auto& Bz          = B[2];
     auto bzQty        = HybridQuantity::Scalar::Bz;

@@ -16,12 +16,12 @@ TEST_F(FieldBC1D, AntiSymmetricScalarEquivalentToDirichletZero)
     for (std::uint32_t i = 0; i < refGrid.shape()[0]; ++i)
         refField(i) = (i >= physStart && i <= physEnd) ? interiorValue : ghostSentinel;
     FieldDirichletBoundaryCondition<Field1D, GridLayout1D> dirichlet{0.0};
-    dirichlet.apply(refField, BoundaryLocation::XLower, lowerGhostCellBox(), layout, 0.0, acc);
-    dirichlet.apply(refField, BoundaryLocation::XUpper, upperGhostCellBox(), layout, 0.0, acc);
+    dirichlet.apply(refField, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    dirichlet.apply(refField, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     FieldAntiSymmetricBoundaryCondition<Field1D, GridLayout1D> antisym;
-    antisym.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, 0.0, acc);
-    antisym.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, 0.0, acc);
+    antisym.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    antisym.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     for (std::uint32_t i = 0; i < grid.shape()[0]; ++i)
         EXPECT_DOUBLE_EQ(field(i), refField(i)) << "at index " << i;
@@ -33,8 +33,8 @@ TEST_F(FieldBC1D, AntiSymmetricScalarEquivalentToDirichletZero)
 TEST_F(VecFieldBC1D, AntiSymmetricNormalComponentBxSetToNeumann)
 {
     FieldAntiSymmetricBoundaryCondition<VecField1D, GridLayout1D> bc;
-    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     auto& Bx                  = B[0];
     auto bxQty                = HybridQuantity::Scalar::Bx;
@@ -47,8 +47,8 @@ TEST_F(VecFieldBC1D, AntiSymmetricNormalComponentBxSetToNeumann)
 TEST_F(VecFieldBC1D, AntiSymmetricTangentialComponentsByBzSetToDirichletZero)
 {
     FieldAntiSymmetricBoundaryCondition<VecField1D, GridLayout1D> bc;
-    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
 
     auto byQty              = HybridQuantity::Scalar::By;
     std::uint32_t byPhysEnd = layout.physicalEndIndex(byQty, Direction::X);
@@ -67,8 +67,8 @@ TEST_F(VecFieldBC1D, AntiSymmetricTangentialComponentsByBzSetToDirichletZero)
 TEST_F(VecFieldBC2D, AntiSymmetricAtXBoundaries)
 {
     FieldAntiSymmetricBoundaryCondition<VecField2D, GridLayout2D> bc;
-    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
     // Bx: primal in X → Neumann
     {
@@ -107,8 +107,8 @@ TEST_F(VecFieldBC2D, AntiSymmetricAtXBoundaries)
 TEST_F(VecFieldBC2D, AntiSymmetricAtYBoundaries)
 {
     FieldAntiSymmetricBoundaryCondition<VecField2D, GridLayout2D> bc;
-    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
     // By: primal in Y → Neumann
     {
@@ -150,8 +150,8 @@ TEST_F(VecFieldBC2D, AntiSymmetricAtYBoundaries)
 TEST_F(VecFieldBC3D, AntiSymmetricAtZBoundaries)
 {
     FieldAntiSymmetricBoundaryCondition<VecField3D, GridLayout3D> bc;
-    bc.apply(B, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, 0.0, acc);
-    bc.apply(B, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, 0.0, acc);
+    bc.apply(B, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
 
     // Bz: primal in Z → Neumann
     {

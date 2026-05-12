@@ -5,6 +5,7 @@
 #include "core/data/vecfield/vecfield_traits.hpp"
 #include "core/numerics/boundary_condition/field_antisymmetric_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_characteristic_fixed_pressure_outflow_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp"
@@ -116,6 +117,11 @@ public:
                 throw std::runtime_error(
                     "TotalEnergyFromPressure condition only applies to scalar fields.");
             }
+        }
+        else if constexpr (type == FieldBoundaryConditionType::CharacteristicFixedPressureOutflow)
+        {
+            return std::make_unique<FieldCharacteristicFixedPressureOutflowBoundaryCondition<
+                ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
         }
         else
         {
