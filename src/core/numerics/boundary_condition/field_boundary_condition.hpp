@@ -24,7 +24,8 @@ enum class FieldBoundaryConditionType : int {
     Neumann,
     DivergenceFreeTransverseNeumann,
     DivergenceFreeTransverseDirichlet,
-    TotalEnergyFromPressure
+    TotalEnergyFromPressure,
+    CharacteristicFixedPressureOutflow
 };
 
 

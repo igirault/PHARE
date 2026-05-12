@@ -15,7 +15,8 @@ enum class BoundaryType {
     SuperMagnetofastOutflow,
     Open,
     FreePressureInflow,
-    FixedPressureOutflow
+    FixedPressureOutflow,
+    CharacteristicFixedPressureOutflow
 };
 
 /** @brief Possible codimension of a boundary. */
@@ -210,6 +211,8 @@ inline BoundaryType getBoundaryTypeFromString(std::string const& name)
         {"super-magnetofast-outflow", BoundaryType::SuperMagnetofastOutflow},
         {"free-pressure-inflow", BoundaryType::FreePressureInflow},
         {"fixed-pressure-outflow", BoundaryType::FixedPressureOutflow},
+        {"characteristic-fixed-pressure-outflow",
+         BoundaryType::CharacteristicFixedPressureOutflow},
     };
 
     auto it = typeMap_.find(name);
