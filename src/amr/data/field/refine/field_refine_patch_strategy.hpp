@@ -10,6 +10,7 @@
 #include "core/data/patch_field_accessor.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/boundary_condition_context.hpp"
 
 #include "SAMRAI/geom/CartesianPatchGeometry.h"
 #include "SAMRAI/hier/BoundaryBox.h"
@@ -125,6 +126,9 @@ public:
         , data_id_{-1}
         , all_scalar_ids_{}
         , all_vector_ids_{}
+        , old_scalar_ids_{}
+        , old_vector_ids_{}
+        , dt_{0.0}
     {
     }
 
@@ -139,14 +143,28 @@ public:
     /**
      * @brief Register the SAMRAI patch data identifier.
      * @param field_id Integer ID from the SAMRAI variable database.
+     * @param all_scalar_ids id-map of scalar fields exposed to BC appliers as the *current* state.
+     * @param all_vector_ids id-map of vector fields exposed to BC appliers as the *current* state.
+     * @param old_scalar_ids id-map of scalar fields exposed as the *previous-substage* state.
+     * @param old_vector_ids id-map of vector fields exposed as the *previous-substage* state.
      */
     void registerIDs(int const field_id, scalar_id_map_type all_scalar_ids = {},
-                     vector_id_map_type all_vector_ids = {})
+                     vector_id_map_type all_vector_ids = {},
+                     scalar_id_map_type old_scalar_ids = {},
+                     vector_id_map_type old_vector_ids = {})
     {
         data_id_        = field_id;
         all_scalar_ids_ = std::move(all_scalar_ids);
         all_vector_ids_ = std::move(all_vector_ids);
+        old_scalar_ids_ = std::move(old_scalar_ids);
+        old_vector_ids_ = std::move(old_vector_ids);
     }
+
+    /**
+     * @brief Set the substage time step used by state-aware boundary conditions.
+     *        Called by the messenger before each fillMomentsGhosts pass.
+     */
+    void setDt(double const dt) { dt_ = dt; }
 
     /**
      * @brief Apply physical boundary conditions via SAMRAI callback.
@@ -190,8 +208,13 @@ public:
             };
         }();
 
-        // build accessor for coupled BCs to retrieve other fields from this patch
+        // build two accessors: one for the current substage state, one for the previous one.
+        // State-aware BCs (e.g. NSCBC / LODI characteristic outflow) read from `accessor_old`,
+        // integrate over `dt`, and write into ghost cells reachable via `accessor_new`.
         patch_field_accessor_type fieldAccessor{patch, all_scalar_ids_, all_vector_ids_};
+        patch_field_accessor_type fieldAccessorOld{patch, old_scalar_ids_, old_vector_ids_};
+        core::BoundaryConditionContext<field_type, physical_quantity_type> const ctx{
+            fieldAccessor, fieldAccessorOld, fill_time, dt_};
 
         // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
         SAMRAI::hier::Box const& patch_box = patch.getBox();
@@ -234,8 +257,7 @@ public:
 
                 // apply the boundary condition as if the current boundary was belonging to the
                 // primary boundary
-                bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
-                          fill_time, fieldAccessor);
+                bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout, ctx);
             }
         });
     }
@@ -272,6 +294,9 @@ protected:
     int data_id_;
     scalar_id_map_type all_scalar_ids_;
     vector_id_map_type all_vector_ids_;
+    scalar_id_map_type old_scalar_ids_;
+    vector_id_map_type old_vector_ids_;
+    double dt_;
 };
 
 } // namespace PHARE::amr
