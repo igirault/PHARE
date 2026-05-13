@@ -155,8 +155,9 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/B/x", bx)
                 add_double(f"{bc_path}/data/B/y", by)
                 add_double(f"{bc_path}/data/B/z", bz)
-                add_double(f"{bc_path}/data/sigma",        data["sigma"])
-                add_double(f"{bc_path}/data/length_scale", data["length_scale"])
+                add_double(f"{bc_path}/data/relax_velocity_n", data["relax_velocity_n"])
+                add_double(f"{bc_path}/data/relax_velocity_t", data["relax_velocity_t"])
+                add_double(f"{bc_path}/data/relax_density",    data["relax_density"])
 
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)

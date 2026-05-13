@@ -130,7 +130,7 @@ public:
             case BoundaryType::NonReflectingHydroSubsonicInflow:
                 if constexpr (HasInflowQuantities<PhysicalQuantityT>)
                     register_non_reflecting_hydro_subsonic_inflow_conditions_(boundary, data,
-                                                                             quantities, thermo);
+                                                                              quantities, thermo);
                 else
                     throw std::runtime_error(
                         "NonReflectingHydroSubsonicInflow boundary type is not supported for "
@@ -304,7 +304,7 @@ private:
         double const rho = data["density"].to<double>();
         auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
         auto const B     = initializer::parseDimXYZType<double, 3>(data, "B");
-        auto const rhoV = vToRhoV(rho, v);
+        auto const rhoV  = vToRhoV(rho, v);
 
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
@@ -317,10 +317,9 @@ private:
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
                                                   GridLayoutT>(rhoV)};
-        auto B_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<
-                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT,
-                GridLayoutT>(B)};
+        auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT, GridLayoutT>(
+            B)};
         auto P_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
                                                   GridLayoutT>()};
@@ -402,10 +401,8 @@ private:
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
                                                   GridLayoutT>()};
-        auto B_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<
-                FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT,
-                GridLayoutT>()};
+        auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT>()};
 
         for (auto const quantity : quantities.scalars)
         {
@@ -530,11 +527,12 @@ private:
                 "BoundaryFactory: a Thermo object is required for "
                 "NonReflectingHydroSubsonicInflow boundaries but none was provided.");
 
-        double const rho_target   = data["density"].to<double>();
-        auto const v_target       = initializer::parseDimXYZType<double, 3>(data, "velocity");
-        auto const B_target       = initializer::parseDimXYZType<double, 3>(data, "B");
-        double const sigma        = data["sigma"].to<double>();
-        double const length_scale = data["length_scale"].to<double>();
+        double const rho_target       = data["density"].to<double>();
+        auto const v_target           = initializer::parseDimXYZType<double, 3>(data, "velocity");
+        auto const B_target           = initializer::parseDimXYZType<double, 3>(data, "B");
+        double const relax_velocity_n = data["relax_velocity_n"].to<double>();
+        double const relax_velocity_t = data["relax_velocity_t"].to<double>();
+        double const relax_density    = data["relax_density"].to<double>();
 
         for (auto const quantity : quantities.scalars)
         {
@@ -544,7 +542,8 @@ private:
                 case (PhysicalQuantityT::Scalar::Etot1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::NonReflectingHydroSubsonicInflow>(
-                        quantity, rho_target, v_target, sigma, length_scale, thermo);
+                        quantity, rho_target, v_target, relax_velocity_n, relax_velocity_t,
+                        relax_density, thermo);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
@@ -560,7 +559,8 @@ private:
                 case (PhysicalQuantityT::Vector::rhoV):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::NonReflectingHydroSubsonicInflow>(
-                        quantity, rho_target, v_target, sigma, length_scale, thermo);
+                        quantity, rho_target, v_target, relax_velocity_n, relax_velocity_t,
+                        relax_density, thermo);
                     break;
                 case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<
