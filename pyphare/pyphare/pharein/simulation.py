@@ -370,7 +370,8 @@ def _check_non_reflecting_hydro_subsonic_outflow_data(location, bc, domain_exten
     Required:
         pressure  — target exit pressure (positive scalar).
     Optional:
-        sigma         — Rudy-Strikwerda relaxation coefficient, default 0.25, in (0, 1].
+        sigma         — Rudy-Strikwerda relaxation coefficient, default 0.25.
+                        According to [Selle at al., AIAA Journal, 2004], should belong to [0.1, pi]
         length_scale  — characteristic length used in the LODI relaxation rate,
                         default = `domain_extent` along the boundary normal direction
                         (positive scalar).
@@ -408,21 +409,21 @@ def _check_non_reflecting_hydro_subsonic_outflow_data(location, bc, domain_exten
 
 
 def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent):
-    """Validate and normalise the 'data' sub-dict for a HD characteristic non-reflecting
-    subsonic inflow (LODI / Poinsot-Lele soft inflow).
+    """Validate and normalise the 'data' sub-dict for a HD non-reflecting subsonic
+    inflow (LODI / Poinsot-Lele soft inflow).
 
     Required:
-        density   — target inflow density (positive scalar).
-        velocity  — target inflow velocity (normalised via _normalize_inflow_velocity).
-        B         — target inflow magnetic field (normalised via _normalize_B).
-    Optional:
-        sigma         — Rudy-Strikwerda relaxation coefficient, default 0.25, in (0, 1].
-        length_scale  — characteristic length used in the LODI relaxation rate,
-                        default = `domain_extent` along the boundary normal direction
-                        (positive scalar).
+        density           — target inflow density (positive scalar).
+        velocity          — target inflow velocity (normalised via _normalize_inflow_velocity).
+        B                 — target inflow magnetic field (normalised via _normalize_B).
+        relax_velocity_n  — relaxation coefficient on the normal velocity (≥ 0).
+        relax_velocity_t  — relaxation coefficient on the tangential velocity components (≥ 0).
+        relax_density     — relaxation coefficient on the density (≥ 0).
+
     """
     data = bc.get("data", {})
-    for key in ("density", "velocity", "B"):
+    for key in ("density", "velocity", "B", "relax_velocity_n", "relax_velocity_t",
+                "relax_density"):
         if key not in data:
             raise KeyError(
                 f"non-reflecting-hydro-subsonic-inflow BC at '{location}' requires '{key}' "
@@ -437,21 +438,14 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
     data["B"]        = _normalize_B(location, data["B"])
 
-    sigma = data.get("sigma", 0.25)
-    if not isinstance(sigma, (int, float)) or not (0.0 < sigma <= 1.0):
-        raise ValueError(
-            f"'sigma' at non-reflecting-hydro-subsonic-inflow boundary '{location}' must lie in "
-            f"(0, 1], got {sigma!r}"
-        )
-    data["sigma"] = float(sigma)
-
-    length_scale = data.get("length_scale", domain_extent)
-    if not isinstance(length_scale, (int, float)) or length_scale <= 0:
-        raise ValueError(
-            f"'length_scale' at non-reflecting-hydro-subsonic-inflow boundary '{location}' must "
-            f"be a positive scalar, got {length_scale!r}"
-        )
-    data["length_scale"] = float(length_scale)
+    for key in ("relax_velocity_n", "relax_velocity_t", "relax_density"):
+        v = data[key]
+        if not isinstance(v, (int, float)) or v < 0.0:
+            raise ValueError(
+                f"'{key}' at non-reflecting-hydro-subsonic-inflow boundary '{location}' must be "
+                f"a non-negative scalar, got {v!r}"
+            )
+        data[key] = float(v)
 
     bc["data"] = data
 
