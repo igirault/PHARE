@@ -118,13 +118,22 @@ public:
                         "FixedPressureOutflow boundary type is not supported for this physical "
                         "model.");
                 break;
-            case BoundaryType::CharacteristicFixedPressureOutflow:
+            case BoundaryType::NonReflectingHydroSubsonicOutflow:
                 if constexpr (HasInflowQuantities<PhysicalQuantityT>)
-                    register_characteristic_fixed_pressure_outflow_conditions_(boundary, data,
+                    register_non_reflecting_hydro_subsonic_outflow_conditions_(boundary, data,
                                                                                quantities, thermo);
                 else
                     throw std::runtime_error(
-                        "CharacteristicFixedPressureOutflow boundary type is not supported for "
+                        "NonReflectingHydroSubsonicOutflow boundary type is not supported for "
+                        "this physical model.");
+                break;
+            case BoundaryType::NonReflectingHydroSubsonicInflow:
+                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                    register_non_reflecting_hydro_subsonic_inflow_conditions_(boundary, data,
+                                                                             quantities, thermo);
+                else
+                    throw std::runtime_error(
+                        "NonReflectingHydroSubsonicInflow boundary type is not supported for "
                         "this physical model.");
                 break;
 
@@ -442,13 +451,13 @@ private:
     /** @brief Register boundary conditions for a HD characteristic subsonic outflow with target
      *  exit pressure (LODI / Poinsot-Lele).
      *
-     *  A single BC type @c CharacteristicFixedPressureOutflow is registered for ρ, ρv, and
+     *  A single BC type @c NonReflectingHydroSubsonicOutflow is registered for ρ, ρv, and
      *  Etot1; each invocation writes the ghost values of the field it was called for using
      *  the same LODI relations. B uses DivFreeNeumann (HD: B = 0). The pressure field, when
      *  present in the quantity list, is given a Neumann placeholder — it is read from the
      *  previous-substage state via the BC context, not from the current-state ghosts.
      */
-    static void register_characteristic_fixed_pressure_outflow_conditions_(
+    static void register_non_reflecting_hydro_subsonic_outflow_conditions_(
         boundary_ptr_type& boundary, initializer::PHAREDict const& data,
         _model_menu_type const& quantities, std::shared_ptr<Thermo> thermo)
         requires HasInflowQuantities<PhysicalQuantityT>
@@ -456,7 +465,7 @@ private:
         if (!thermo)
             throw std::runtime_error(
                 "BoundaryFactory: a Thermo object is required for "
-                "CharacteristicFixedPressureOutflow boundaries but none was provided.");
+                "NonReflectingHydroSubsonicOutflow boundaries but none was provided.");
 
         double const pressure     = data["pressure"].to<double>();
         double const sigma        = data["sigma"].to<double>();
@@ -469,7 +478,7 @@ private:
                 case (PhysicalQuantityT::Scalar::rho):
                 case (PhysicalQuantityT::Scalar::Etot1):
                     boundary->template registerFieldCondition<
-                        FieldBoundaryConditionType::CharacteristicFixedPressureOutflow>(
+                        FieldBoundaryConditionType::NonReflectingHydroSubsonicOutflow>(
                         quantity, pressure, sigma, length_scale, thermo);
                     break;
                 default:
@@ -485,12 +494,78 @@ private:
             {
                 case (PhysicalQuantityT::Vector::rhoV):
                     boundary->template registerFieldCondition<
-                        FieldBoundaryConditionType::CharacteristicFixedPressureOutflow>(
+                        FieldBoundaryConditionType::NonReflectingHydroSubsonicOutflow>(
                         quantity, pressure, sigma, length_scale, thermo);
                     break;
                 case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
+            }
+        }
+    }
+
+
+    /** @brief Register boundary conditions for a HD characteristic non-reflecting subsonic
+     *  inflow (LODI / Poinsot-Lele soft inflow).
+     *
+     *  A single BC type @c NonReflectingHydroSubsonicInflow is registered for ρ, ρv, and
+     *  Etot1; each invocation writes the ghost values of the field it was called for using
+     *  the same LODI relations. B is prescribed via @c DivergenceFreeTransverseDirichlet
+     *  (target B from the user dict, same recipe as @c FreePressureInflow). Pressure is
+     *  left free — its evolution is set entirely by the outgoing acoustic wave coming from
+     *  the interior.
+     */
+    static void register_non_reflecting_hydro_subsonic_inflow_conditions_(
+        boundary_ptr_type& boundary, initializer::PHAREDict const& data,
+        _model_menu_type const& quantities, std::shared_ptr<Thermo> thermo)
+        requires HasInflowQuantities<PhysicalQuantityT>
+    {
+        if (!thermo)
+            throw std::runtime_error(
+                "BoundaryFactory: a Thermo object is required for "
+                "NonReflectingHydroSubsonicInflow boundaries but none was provided.");
+
+        double const rho_target   = data["density"].to<double>();
+        auto const v_target       = initializer::parseDimXYZType<double, 3>(data, "velocity");
+        auto const B_target       = initializer::parseDimXYZType<double, 3>(data, "B");
+        double const sigma        = data["sigma"].to<double>();
+        double const length_scale = data["length_scale"].to<double>();
+
+        for (auto const quantity : quantities.scalars)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Scalar::rho):
+                case (PhysicalQuantityT::Scalar::Etot1):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::NonReflectingHydroSubsonicInflow>(
+                        quantity, rho_target, v_target, sigma, length_scale, thermo);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                        quantity);
+                    break;
+            }
+        }
+
+        for (auto const quantity : quantities.vectors)
+        {
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Vector::rhoV):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::NonReflectingHydroSubsonicInflow>(
+                        quantity, rho_target, v_target, sigma, length_scale, thermo);
+                    break;
+                case (PhysicalQuantityT::Vector::B1):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity,
+                                                                                       B_target);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(

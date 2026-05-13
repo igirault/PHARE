@@ -5,7 +5,8 @@
 #include "core/data/vecfield/vecfield_traits.hpp"
 #include "core/numerics/boundary_condition/field_antisymmetric_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_characteristic_fixed_pressure_outflow_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_non_reflecting_hydro_subsonic_outflow_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_non_reflecting_hydro_subsonic_inflow_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp"
@@ -118,9 +119,14 @@ public:
                     "TotalEnergyFromPressure condition only applies to scalar fields.");
             }
         }
-        else if constexpr (type == FieldBoundaryConditionType::CharacteristicFixedPressureOutflow)
+        else if constexpr (type == FieldBoundaryConditionType::NonReflectingHydroSubsonicOutflow)
         {
-            return std::make_unique<FieldCharacteristicFixedPressureOutflowBoundaryCondition<
+            return std::make_unique<FieldNonReflectingHydroSubsonicOutflowBoundaryCondition<
+                ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
+        }
+        else if constexpr (type == FieldBoundaryConditionType::NonReflectingHydroSubsonicInflow)
+        {
+            return std::make_unique<FieldNonReflectingHydroSubsonicInflowBoundaryCondition<
                 ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
         }
         else
