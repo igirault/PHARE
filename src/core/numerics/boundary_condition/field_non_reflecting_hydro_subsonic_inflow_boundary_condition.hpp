@@ -1,5 +1,5 @@
-#ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_CHARACTERISTIC_FIXED_PRESSURE_OUTFLOW_BOUNDARY_CONDITION_HPP
-#define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_CHARACTERISTIC_FIXED_PRESSURE_OUTFLOW_BOUNDARY_CONDITION_HPP
+#ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_NON_REFLECTING_HYDRO_SUBSONIC_INFLOW_BOUNDARY_CONDITION_HPP
+#define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_NON_REFLECTING_HYDRO_SUBSONIC_INFLOW_BOUNDARY_CONDITION_HPP
 
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
@@ -19,51 +19,58 @@ namespace PHARE::core
 {
 
 /**
- * @brief Hydrodynamic LODI characteristic outflow with target pressure relaxation.
+ * @brief Hydrodynamic LODI characteristic non-reflecting subsonic inflow.
  *
- * Single BC class, registered separately for ρ, ρv, and Etot1 on the outflow side; each
- * apply() call dispatches on the physical quantity of the field and writes only the
- * ghost cells of that field.
+ * Counterpart to FieldNonReflectingHydroSubsonicOutflowBoundaryCondition. Prescribes a
+ * target inflow state (ρ*, V*) — pressure stays free, its value at the boundary is set
+ * entirely by the outgoing acoustic wave coming from the interior.
+ *
+ * Single BC class, registered for ρ, ρv, and Etot1; each apply() dispatches on the
+ * field's physical quantity.
  *
  * Discretisation
  * ──────────────
- * ρ, ρv, Etot1, P are cell-centered (dual along every direction). Per tangential slice
- * of the boundary face, gather
- *   • the LAST physical (interior) cell along the normal direction,
- *   • the FIRST ghost cell on the other side of the boundary face.
- * Both are at distance dn/2 from the boundary; their arithmetic mean is the boundary
- * face value of any cell-centered primitive, and `(outward - inward) / dn` is the
- * centered 2nd-order normal derivative AT the boundary.
+ * Same boundary-face evaluation as the outflow BC: per tangential slice, the LAST
+ * physical (interior) cell and the FIRST ghost cell flank the boundary face at distance
+ * dn/2 each. Their mean gives the cell-centered primitive at the boundary; the centered
+ * difference `(outward - inward) / dn` is a 2nd-order ∂/∂n AT the boundary.
  *
- * Wave amplitudes and forward-Euler LODI update at the boundary face (Poinsot-Lele):
+ * Eigenvalues in the outward-normal frame at a subsonic inflow (u_n_out < 0, |u_n|<c):
+ *     λ_+ = u_n + c  > 0 → L_4 outgoing (leaves the domain)
+ *     λ_0 = u_n      < 0 → L_2 (entropy), L_3 (shear) incoming
+ *     λ_- = u_n - c  < 0 → L_1 (acoustic) incoming
  *
- *     L1 = (u_n - c)(∂p/∂n - ρ c ∂u_n/∂n)    # incoming, soft-relaxed
- *     L2 =   u_n   (∂ρ/∂n - ∂p/∂n / c²)       # outgoing
- *     L3 =   u_n   ∂u_t/∂n                    # outgoing
- *     L4 = (u_n + c)(∂p/∂n + ρ c ∂u_n/∂n)    # outgoing
- *     L1 = sigma (1 - M²) c / L_box · (p_b - p_target)
+ * Outgoing L_4 from the same one-sided diff as the outflow BC:
+ *     L_4 = (u_n + c)(∂p/∂n + ρ c ∂u_n/∂n)
  *
- *     ρ_bdr_new   = ρ_b - dt/c² (L2 + ½(L1 + L4))
- *     u_n_bdr_new = u_n - dt/(2 ρ c)(L4 - L1)
- *     u_t_bdr_new = u_t - dt L3
- *     p_bdr_new   = p_b - dt ½(L1 + L4)
+ * The three incoming amplitudes are soft-relaxed (Poinsot-Lele 1992 soft inflow) toward
+ * the user-supplied targets, with relaxation rates set by the Rudy-Strikwerda formula
+ * K = σ (1 − M²) c / L_box:
+ *     L_1 = K · ρ c   (u_n   − u_n*)        # acoustic, drives normal velocity
+ *     L_2 = K · ρ c²  (ρ     − ρ*)          # entropy,  drives density
+ *     L_3 = K         (u_t   − u_t*)        # shear,    drives tangential velocity
  *
- * Once the new boundary values are known, ghost cells are filled by the same 2nd-order
- * extrapolation used by Dirichlet:
+ * Same LODI ODE (forward-Euler over ctx.dt) as the outflow:
+ *     ρ_bdr_new   = ρ_b   − dt (L_2 + ½(L_1 + L_4)) / c²
+ *     u_n_bdr_new = u_n   − dt (L_4 − L_1) / (2 ρ_b c)
+ *     u_t_bdr_new = u_t   − dt L_3
+ *     p_bdr_new   = p_b   − dt ½(L_1 + L_4)
  *
- *     φ_ghost_new = 2 φ_bdr_new - φ_mirror_new
+ * Ghost cells are filled by the same 2nd-order Dirichlet-style extrapolation:
+ *     φ_ghost_new = 2 φ_bdr_new − φ_mirror_new
  *
- * For Etot, the boundary value is reconstructed from (ρ_bdr_new, V_bdr_new, p_bdr_new,
- * B_bdr_new) via Thermo, and the same Dirichlet-style extrapolation is applied. B is
- * sampled at cell centers by projecting from face-centered storage (HD: B = 0).
+ * For Etot1, the boundary value is reconstructed from the LODI-derived
+ * (ρ_bdr, V_bdr, p_bdr) and B projected at cell centers, then extrapolated.
  *
- * Hydrodynamic only — the LODI relations carry no magnetic eigenmodes.
+ * Hydrodynamic only — the LODI relations carry no magnetic eigenmodes. B at the inlet
+ * is handled separately via a DivergenceFreeTransverseDirichlet BC (target B supplied
+ * through the user dict, same recipe as the existing free-pressure-inflow).
  *
  * @tparam ScalarOrTensorFieldT Scalar field (ρ, Etot1) or vector field (ρv).
  * @tparam GridLayoutT          Grid layout type.
  */
 template<typename ScalarOrTensorFieldT, typename GridLayoutT>
-class FieldCharacteristicFixedPressureOutflowBoundaryCondition
+class FieldNonReflectingHydroSubsonicInflowBoundaryCondition
     : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>
 {
 public:
@@ -77,10 +84,12 @@ public:
     static constexpr std::size_t dimension = Super::dimension;
     static constexpr bool is_scalar        = Super::is_scalar;
 
-    FieldCharacteristicFixedPressureOutflowBoundaryCondition(double p_target, double sigma,
-                                                             double length_scale,
-                                                             std::shared_ptr<Thermo> thermo)
-        : p_target_{p_target}
+    FieldNonReflectingHydroSubsonicInflowBoundaryCondition(double rho_target,
+                                                           std::array<double, 3> V_target,
+                                                           double sigma, double length_scale,
+                                                           std::shared_ptr<Thermo> thermo)
+        : rho_target_{rho_target}
+        , V_target_{V_target}
         , sigma_{sigma}
         , length_scale_{length_scale}
         , thermo_{std::move(thermo)}
@@ -89,7 +98,7 @@ public:
 
     FieldBoundaryConditionType getType() const override
     {
-        return FieldBoundaryConditionType::CharacteristicFixedPressureOutflow;
+        return FieldBoundaryConditionType::NonReflectingHydroSubsonicInflow;
     }
 
     void apply(ScalarOrTensorFieldT& field, BoundaryLocation const boundaryLocation,
@@ -102,9 +111,6 @@ public:
         double const sign_n       = (side == Side::Upper) ? +1.0 : -1.0;
         double const dn           = gridLayout.meshSize()[dir_n];
 
-        // Last interior cell and first ghost cell flanking the boundary face,
-        // along the normal direction. Indices on the tangential axis are filled per ghost
-        // cell during the loop.
         std::uint32_t const interior_n
             = (side == Side::Upper) ? gridLayout.physicalEndIndex(QtyCentering::dual, direction)
                                     : gridLayout.physicalStartIndex(QtyCentering::dual, direction);
@@ -112,8 +118,6 @@ public:
 
         std::map<TangentialKey, LODIResult> cache;
 
-        // helper to fill ghost cells of a scalar component using a Dirichlet-style
-        // 2nd-order extrapolation with a per-LODI boundary value picked by `pickBdr`.
         auto fillScalarGhosts = [&](field_type& comp, auto pickBdr) {
             auto fieldBox = gridLayout.toFieldBox(localGhostBox, comp.physicalQuantity());
             QtyCentering const centering
@@ -142,7 +146,6 @@ public:
                     return etotAtBoundary_(g, dir_n, interior_n, ghost_n, l, ctx);
                 });
             }
-            // other scalars (e.g. P) fall through to whatever earlier fill already wrote.
         }
         else
         {
@@ -173,8 +176,6 @@ private:
         double p_bdr;
     };
 
-    /// To group together ghost cells that have same tangential coordinates (aligned along the
-    /// normal)
     TangentialKey tangKey_(GhostIdx const& idx, std::size_t dir_n) const
     {
         TangentialKey k{};
@@ -185,8 +186,6 @@ private:
         return k;
     }
 
-    /// Build interior- and ghost-cell index points from the tangential coordinates of @p ghostIdx
-    /// and the normal indices given by @p interior_n / @p ghost_n.
     std::pair<GhostIdx, GhostIdx> pairAt_(GhostIdx const& ghostIdx, std::size_t dir_n,
                                           std::uint32_t interior_n, std::uint32_t ghost_n) const
     {
@@ -197,8 +196,6 @@ private:
         return {interior, ghost};
     }
 
-    /// Retrieve LODI results if ghost cell belongs to a group of cell already encountered, or
-    /// compute LODI quantities if not
     LODIResult const& lookupOrCompute_(std::map<TangentialKey, LODIResult>& cache,
                                        GhostIdx const& ghostIdx, std::size_t dir_n, double sign_n,
                                        double dn, std::uint32_t interior_n, std::uint32_t ghost_n,
@@ -228,9 +225,8 @@ private:
             return std::array<double, 3>{bx, by, bz};
         };
 
-        // Pressure is reconstructed cell-by-cell from Etot1 + ρ + ρv via the EOS.
-        // P_old is not guaranteed filled in the ghost layer; Etot1_old IS (registered as a
-        // moment in the messenger). HD assumption: B contribution is negligible / zero.
+        // Pressure reconstructed cell-by-cell from Etot1 + ρ + ρv via EOS.
+        // P_old is not guaranteed filled in the ghost layer; Etot1_old IS.
         auto pressureAt = [&](GhostIdx const& idx) {
             double const rho_c = rho_old(idx);
             double const Vx_c  = std::get<0>(rhoVc)(idx) / rho_c;
@@ -254,7 +250,7 @@ private:
         double const p_g   = pressureAt(ghostIdxBdr);
         double const p_i   = pressureAt(interiorIdx);
 
-        // boundary face = arithmetic mean of flanking cells (2nd-order)
+        // boundary face = arithmetic mean of flanking cells
         double const rho_b = 0.5 * (rho_g + rho_i);
         double const Vx_b  = 0.5 * (Vx_g + Vx_i);
         double const Vy_b  = 0.5 * (Vy_g + Vy_i);
@@ -265,23 +261,29 @@ private:
         double const u_n = sign_n * ((dir_n == 0) ? Vx_b : Vy_b);
         double const u_t = (dir_n == 0) ? Vy_b : Vx_b;
 
+        // target outward-normal / tangential velocities (from user-supplied cartesian V*)
+        double const u_n_target = sign_n * ((dir_n == 0) ? V_target_[0] : V_target_[1]);
+        double const u_t_target = (dir_n == 0) ? V_target_[1] : V_target_[0];
+
         thermo_->setState_DP(rho_b, p_b);
         double const c = thermo_->soundSpeed();
 
         // centered ∂/∂n at the boundary face: outward-side minus inward-side, divided by dn
-        auto diff_n          = [&](double f_g, double f_i) { return sign_n * (f_g - f_i) / dn; };
-        double const drho_dn = diff_n(rho_g, rho_i);
-        double const dP_dn   = diff_n(p_g, p_i);
-        double const duN_dn
-            = diff_n((dir_n == 0 ? Vx_g : Vy_g) * sign_n, (dir_n == 0 ? Vx_i : Vy_i) * sign_n);
-        double const duT_dn = diff_n((dir_n == 0 ? Vy_g : Vx_g), (dir_n == 0 ? Vy_i : Vx_i));
+        auto diff_n = [&](double f_g, double f_i) { return sign_n * (f_g - f_i) / dn; };
+        double const dP_dn  = diff_n(p_g, p_i);
+        double const duN_dn = diff_n((dir_n == 0 ? Vx_g : Vy_g) * sign_n,
+                                     (dir_n == 0 ? Vx_i : Vy_i) * sign_n);
 
-        double const M  = std::abs(u_n) / c;
-        double const K  = sigma_ * (1.0 - M * M) * c / length_scale_;
-        double const L1 = K * (p_b - p_target_);
-        double const L2 = u_n * (drho_dn - dP_dn / (c * c));
-        double const L3 = u_n * duT_dn;
+        // Outgoing acoustic wave (away from interior — only one outgoing at subsonic inflow)
         double const L4 = (u_n + c) * (dP_dn + rho_b * c * duN_dn);
+
+        // Incoming amplitudes soft-relaxed toward the target inflow state.
+        // Rates: K = σ (1 - M²) c / L_box; per-amplitude dimensional scaling.
+        double const M = std::abs(u_n) / c;
+        double const K = sigma_ * (1.0 - M * M) * c / length_scale_;
+        double const L1 = K * rho_b * c * (u_n - u_n_target);
+        double const L2 = K * rho_b * c * c * (rho_b - rho_target_);
+        double const L3 = K * (u_t - u_t_target);
 
         double const dt      = ctx.dt;
         double const rho_bdr = rho_b - dt * (L2 + 0.5 * (L1 + L4)) / (c * c);
@@ -299,7 +301,7 @@ private:
 
     /// Reconstruct Etot at the boundary face from LODI-derived primitives + B at the boundary.
     /// To stay consistent even with a non-zero magnetic field, but the BC shouldn't be use with
-    /// non-zero magnetic field
+    /// non-zero magnetic field.
     double etotAtBoundary_(GhostIdx const& ghostIdx, std::size_t dir_n, std::uint32_t interior_n,
                            std::uint32_t ghost_n, LODIResult const& lodi,
                            Super::boundary_condition_context_type const& ctx)
@@ -333,7 +335,8 @@ private:
                                              B_bdr[2]);
     }
 
-    double p_target_;
+    double rho_target_;
+    std::array<double, 3> V_target_;
     double sigma_;
     double length_scale_;
     std::shared_ptr<Thermo> thermo_;
@@ -341,4 +344,4 @@ private:
 
 } // namespace PHARE::core
 
-#endif // PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_CHARACTERISTIC_FIXED_PRESSURE_OUTFLOW_BOUNDARY_CONDITION_HPP
+#endif // PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_NON_REFLECTING_HYDRO_SUBSONIC_INFLOW_BOUNDARY_CONDITION_HPP

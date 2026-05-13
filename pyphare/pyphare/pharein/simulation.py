@@ -364,7 +364,7 @@ def _check_fixed_pressure_outflow_data(location, bc):
     bc["data"] = data
 
 
-def _check_characteristic_fixed_pressure_outflow_data(location, bc, domain_extent):
+def _check_non_reflecting_hydro_subsonic_outflow_data(location, bc, domain_extent):
     """Validate and normalise the 'data' sub-dict for a HD subsonic characteristic outlet.
 
     Required:
@@ -378,20 +378,20 @@ def _check_characteristic_fixed_pressure_outflow_data(location, bc, domain_exten
     data = bc.get("data", {})
     if "pressure" not in data:
         raise KeyError(
-            f"characteristic-fixed-pressure-outflow BC at '{location}' requires 'pressure' "
+            f"non-reflecting-hydro-subsonic-outflow BC at '{location}' requires 'pressure' "
             f"inside 'data'"
         )
     val = data["pressure"]
     if not isinstance(val, (int, float)) or val <= 0:
         raise ValueError(
-            f"'pressure' at characteristic-fixed-pressure-outflow boundary '{location}' must be a positive "
+            f"'pressure' at non-reflecting-hydro-subsonic-outflow boundary '{location}' must be a positive "
             f"scalar, got {val!r}"
         )
 
     sigma = data.get("sigma", 0.25)
     if not isinstance(sigma, (int, float)) or not (0.0 < sigma <= 1.0):
         raise ValueError(
-            f"'sigma' at characteristic-fixed-pressure-outflow boundary '{location}' must lie in (0, 1], "
+            f"'sigma' at non-reflecting-hydro-subsonic-outflow boundary '{location}' must lie in (0, 1], "
             f"got {sigma!r}"
         )
     data["sigma"] = float(sigma)
@@ -399,8 +399,57 @@ def _check_characteristic_fixed_pressure_outflow_data(location, bc, domain_exten
     length_scale = data.get("length_scale", domain_extent)
     if not isinstance(length_scale, (int, float)) or length_scale <= 0:
         raise ValueError(
-            f"'length_scale' at characteristic-fixed-pressure-outflow boundary '{location}' must be a positive "
+            f"'length_scale' at non-reflecting-hydro-subsonic-outflow boundary '{location}' must be a positive "
             f"scalar, got {length_scale!r}"
+        )
+    data["length_scale"] = float(length_scale)
+
+    bc["data"] = data
+
+
+def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent):
+    """Validate and normalise the 'data' sub-dict for a HD characteristic non-reflecting
+    subsonic inflow (LODI / Poinsot-Lele soft inflow).
+
+    Required:
+        density   — target inflow density (positive scalar).
+        velocity  — target inflow velocity (normalised via _normalize_inflow_velocity).
+        B         — target inflow magnetic field (normalised via _normalize_B).
+    Optional:
+        sigma         — Rudy-Strikwerda relaxation coefficient, default 0.25, in (0, 1].
+        length_scale  — characteristic length used in the LODI relaxation rate,
+                        default = `domain_extent` along the boundary normal direction
+                        (positive scalar).
+    """
+    data = bc.get("data", {})
+    for key in ("density", "velocity", "B"):
+        if key not in data:
+            raise KeyError(
+                f"non-reflecting-hydro-subsonic-inflow BC at '{location}' requires '{key}' "
+                f"inside 'data'"
+            )
+    val = data["density"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'density' at non-reflecting-hydro-subsonic-inflow boundary '{location}' must be a "
+            f"positive scalar, got {val!r}"
+        )
+    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
+    data["B"]        = _normalize_B(location, data["B"])
+
+    sigma = data.get("sigma", 0.25)
+    if not isinstance(sigma, (int, float)) or not (0.0 < sigma <= 1.0):
+        raise ValueError(
+            f"'sigma' at non-reflecting-hydro-subsonic-inflow boundary '{location}' must lie in "
+            f"(0, 1], got {sigma!r}"
+        )
+    data["sigma"] = float(sigma)
+
+    length_scale = data.get("length_scale", domain_extent)
+    if not isinstance(length_scale, (int, float)) or length_scale <= 0:
+        raise ValueError(
+            f"'length_scale' at non-reflecting-hydro-subsonic-inflow boundary '{location}' must "
+            f"be a positive scalar, got {length_scale!r}"
         )
     data["length_scale"] = float(length_scale)
 
@@ -434,7 +483,8 @@ def check_boundary_conditions(ndim, **kwargs):
     valid_bc_types = ("open", "reflective", "none", "super-magnetofast-inflow",
                       "super-magnetofast-outflow", "free-pressure-inflow",
                       "fixed-pressure-outflow",
-                      "characteristic-fixed-pressure-outflow")
+                      "non-reflecting-hydro-subsonic-outflow",
+                      "non-reflecting-hydro-subsonic-inflow")
     all_directions = ["x", "y", "z"][:ndim]
     sides = "lower", "upper"
     boundary_types = kwargs["boundary_types"]
@@ -493,8 +543,12 @@ def check_boundary_conditions(ndim, **kwargs):
             _check_free_pressure_inflow_data(location, boundary_conditions[location])
         elif bc_type == "fixed-pressure-outflow":
             _check_fixed_pressure_outflow_data(location, boundary_conditions[location])
-        elif bc_type == "characteristic-fixed-pressure-outflow":
-            _check_characteristic_fixed_pressure_outflow_data(
+        elif bc_type == "non-reflecting-hydro-subsonic-outflow":
+            _check_non_reflecting_hydro_subsonic_outflow_data(
+                location, boundary_conditions[location], domain_extents[location[0]]
+            )
+        elif bc_type == "non-reflecting-hydro-subsonic-inflow":
+            _check_non_reflecting_hydro_subsonic_inflow_data(
                 location, boundary_conditions[location], domain_extents[location[0]]
             )
 
