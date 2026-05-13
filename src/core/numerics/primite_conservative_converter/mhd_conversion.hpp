@@ -1,7 +1,7 @@
 #ifndef PHARE_CORE_NUMERICS_MHD_CONVERSION_HPP
 #define PHARE_CORE_NUMERICS_MHD_CONVERSION_HPP
 
-#include <tuple>
+#include <array>
 
 namespace PHARE::core
 {
@@ -16,10 +16,10 @@ inline auto kineticEnergy(auto const& rho, auto const& vx, auto const& vy, auto 
     return 0.5 * rho * (vx * vx + vy * vy + vz * vz);
 }
 
-inline auto totalMagneticComponents(auto const& b1x, auto const& b1y, auto const& b1z, auto const& b0x,
-                                    auto const& b0y, auto const& b0z)
+inline auto totalMagneticComponents(auto const& b1x, auto const& b1y, auto const& b1z,
+                                    auto const& b0x, auto const& b0y, auto const& b0z)
 {
-    return std::make_tuple(b1x + b0x, b1y + b0y, b1z + b0z);
+    return std::array{b1x + b0x, b1y + b0y, b1z + b0z};
 }
 
 inline auto totalMagneticEnergy(auto const& b1x, auto const& b1y, auto const& b1z, auto const& b0x,

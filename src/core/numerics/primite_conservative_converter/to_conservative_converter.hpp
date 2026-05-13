@@ -15,7 +15,12 @@ inline auto vToRhoV(auto const& rho, auto const& Vx, auto const& Vy, auto const&
     auto const rhoVy = rho * Vy;
     auto const rhoVz = rho * Vz;
 
-    return std::make_tuple(rhoVx, rhoVy, rhoVz);
+    return std::array{rhoVx, rhoVy, rhoVz};
+}
+
+inline auto vToRhoV(auto const& rho, auto const& V)
+{
+    return vToRhoV(rho, V[0], V[1], V[2]);
 }
 
 template<typename GridLayout>

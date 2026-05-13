@@ -71,6 +71,7 @@ public:
         for (auto const& s : extra_states_)
         {
             info.ghostDensity.push_back(s.rho.name());
+            info.ghostPressure.push_back(s.P.name());
             info.ghostMomentum.push_back(s.rhoV.name());
             info.ghostEtot1.push_back(s.Etot1.name());
             info.ghostElectric.push_back(s.E.name());
