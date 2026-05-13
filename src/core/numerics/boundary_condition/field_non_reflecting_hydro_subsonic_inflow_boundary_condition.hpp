@@ -278,11 +278,16 @@ private:
         double const L4 = (u_n + c) * (dP_dn + rho_b * c * duN_dn);
 
         // Incoming amplitudes soft-relaxed toward the target inflow state.
-        // Rates: K = σ (1 - M²) c / L_box; per-amplitude dimensional scaling.
-        double const M = std::abs(u_n) / c;
-        double const K = sigma_ * (1.0 - M * M) * c / length_scale_;
-        double const L1 = K * rho_b * c * (u_n - u_n_target);
-        double const L2 = K * rho_b * c * c * (rho_b - rho_target_);
+        // Sign/factor convention chosen so that — when L_i are plugged into the LODI ODE
+        // — each primitive decays toward its target with rate K (in the limit L_4 → 0):
+        //     dρ/dt   = -(L_2 + ½(L_1+L_4)) / c²   →   L_2 = +c² K (ρ-ρ*)        gives dρ/dt   ≃ -K δρ
+        //     du_n/dt = -(L_4 - L_1) / (2 ρ c)     →   L_1 = -2 ρ c K (u_n-u_n*) gives du_n/dt ≃ -K δu_n
+        //     du_t/dt = -L_3                         →   L_3 = +K (u_t-u_t*)       gives du_t/dt ≃ -K δu_t
+        // K = σ (1 - M²) c / L_box  (Rudy-Strikwerda / Yoo-Im rate).
+        double const M  = std::abs(u_n) / c;
+        double const K  = sigma_ * (1.0 - M * M) * c / length_scale_;
+        double const L1 = -2.0 * K * rho_b * c * (u_n - u_n_target);
+        double const L2 = K * c * c * (rho_b - rho_target_);
         double const L3 = K * (u_t - u_t_target);
 
         double const dt      = ctx.dt;
