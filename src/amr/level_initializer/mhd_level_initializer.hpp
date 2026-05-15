@@ -4,15 +4,12 @@
 #include "amr/level_initializer/level_initializer.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
-#include "amr/solvers/mhd_inactive_cell_reset.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 
-#include "core/utilities/mpi_utils.hpp"
 #include "core/inner_boundary/inner_bc_context.hpp"
-#include "core/inner_boundary/inner_boundary_mesh_data.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/logger.hpp"
 #include "core/utilities/index/index.hpp"
-
-#include "initializer/data_provider.hpp"
 
 namespace PHARE::solver
 {
@@ -25,10 +22,12 @@ class MHDLevelInitializer : public LevelInitializer<typename MHDModel::amr_types
     using patch_t                      = amr_types::patch_t;
     using IPhysicalModelT              = IPhysicalModel<amr_types>;
     using IMessengerT                  = amr::IMessenger<IPhysicalModelT>;
-    using MHDMessenger                 = amr::MHDMessenger<MHDModel>;
-    using GridLayoutT                  = MHDModel::gridlayout_type;
-    static constexpr auto dimension    = GridLayoutT::dimension;
-    static constexpr auto interp_order = GridLayoutT::interp_order;
+    using gridlayout_type              = MHDModel::gridlayout_type;
+    using state_type                   = MHDModel::state_type;
+    using resources_manager_type       = MHDModel::resources_manager_type;
+    using inner_boundary_manager_type  = MHDModel::inner_boundary_manager_type;
+    static constexpr auto dimension    = gridlayout_type::dimension;
+    static constexpr auto interp_order = gridlayout_type::interp_order;
 
     inline bool isRootLevel(int levelNumber) const { return levelNumber == 0; }
 
@@ -42,8 +41,6 @@ public:
     {
         auto& mhdModel = static_cast<MHDModel&>(model);
         auto& level    = amr_types::getLevel(*hierarchy, levelNumber);
-
-
 
         if (isRegridding)
         {
@@ -71,57 +68,43 @@ public:
             }
         }
 
+        /// @todo init block for inner boundary could be wrapped as a model's method
         if (mhdModel.hasInnerBoundary())
         {
-            for (auto& patch : level)
-            {
-                auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-                auto _
-                    = mhdModel.resourcesManager->setOnPatch(*patch, *mhdModel.innerBoundaryManager);
-                mhdModel.innerBoundaryManager->classify(layout);
-            }
+            resources_manager_type& rm       = *mhdModel.resourcesManager;
+            inner_boundary_manager_type& ibm = *mhdModel.innerBoundaryManager;
+
+            // classification of mesh elements wrt the inner boundary
+            amr::visitLevel<gridlayout_type>(
+                level, rm, [&](auto& layout, auto&&, auto&&) { ibm.classify(layout); }, ibm);
+
 
             // Set inactive cells to a safe physical state so the Riemann solver
             // never receives pathological input (negative or zero rho/P) from them.
-            // Ghost cells are intentionally skipped here: applyBC below will fill them
-            // with physics-consistent mirror values.
-            for (auto& patch : level)
-            {
-                auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-                auto _guard = mhdModel.resourcesManager->setOnPatch(
-                    *patch, *mhdModel.innerBoundaryManager, mhdModel.state);
+            amr::visitLevel<gridlayout_type>(
+                level, rm,
+                [&](auto& layout, auto&&, auto&&) {
+                    auto& meshData   = ibm.getMeshData();
+                    auto& cellStatus = meshData.cellStatusField();
+                    layout.evalOnGhostBox(mhdModel.state.rho, [&](auto&... args) {
+                        auto idx = core::MeshIndex<dimension>{args...};
+                        if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
+                            mhdModel.state.safeResetInactiveCell(idx, layout, *mhdModel.thermo);
+                    });
+                },
+                ibm, mhdModel.state);
 
-                auto& meshData   = mhdModel.innerBoundaryManager->getMeshData();
-                auto& cellStatus = meshData.cellStatusField();
-
-                layout.evalOnGhostBox(mhdModel.state.rho, [&](auto&... args) {
-                    auto idx = core::MeshIndex<dimension>{args...};
-                    if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
-                        safeResetInactiveMHDCell<GridLayoutT>(idx, mhdModel.state,
-                                                              *mhdModel.thermo);
-                });
-            }
-
-            core::InnerBCContext<std::remove_reference_t<decltype(mhdModel.state)>> ctx{
-                mhdModel.state, mhdModel.state, initDataTime, 0.0};
-
-            for (auto& patch : level)
-            {
-                auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-                auto _      = mhdModel.resourcesManager->setOnPatch(
-                    *patch, *mhdModel.innerBoundaryManager, mhdModel.state);
-
-                mhdModel.innerBoundaryManager->applyBC(
-                    MHDModel::physical_quantity_type::Vector::B1, mhdModel.state.B1, layout, ctx);
-                mhdModel.innerBoundaryManager->applyBC(
-                    MHDModel::physical_quantity_type::Vector::rhoV, mhdModel.state.rhoV, layout,
-                    ctx);
-                mhdModel.innerBoundaryManager->applyBC(
-                    MHDModel::physical_quantity_type::Scalar::rho, mhdModel.state.rho, layout, ctx);
-                mhdModel.innerBoundaryManager->applyBC(
-                    MHDModel::physical_quantity_type::Scalar::Etot1, mhdModel.state.Etot1, layout,
-                    ctx);
-            }
+            // apply inner boundary conditions to the initial state
+            core::InnerBCContext<state_type> ctx{mhdModel.state, mhdModel.state, initDataTime, 0.0};
+            amr::visitLevel<gridlayout_type>(
+                level, rm,
+                [&](auto& layout, auto&&, auto&&) {
+                    ibm.applyBC(mhdModel.state.B1, layout, ctx);
+                    ibm.applyBC(mhdModel.state.rhoV, layout, ctx);
+                    ibm.applyBC(mhdModel.state.rho, layout, ctx);
+                    ibm.applyBC(mhdModel.state.Etot1, layout, ctx);
+                },
+                ibm, mhdModel.state);
         }
     }
 };

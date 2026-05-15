@@ -149,9 +149,8 @@ TEST(InnerBoundaryManager, reflectiveScalarIsNeumann)
     constexpr double C = 5.0;
 
     PHARE::core::NdArrayVector<2, double> storage{
-        layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)};
-    ScalarField rho{"rho", PHARE::core::MHDQuantity::Scalar::CellCentered, storage.data(),
-                    storage.shape()};
+        layout.allocSize(PHARE::core::MHDQuantity::Scalar::rho)};
+    ScalarField rho{"rho", PHARE::core::MHDQuantity::Scalar::rho, storage.data(), storage.shape()};
 
     for (auto i = 0u; i < rho.shape()[0]; ++i)
         for (auto j = 0u; j < rho.shape()[1]; ++j)
@@ -159,7 +158,7 @@ TEST(InnerBoundaryManager, reflectiveScalarIsNeumann)
 
     DummyState state;
     PHARE::core::InnerBCContext<DummyState> ctx{state, state, 0.0};
-    fix.manager.applyBC(PHARE::core::MHDQuantity::Scalar::rho, rho, layout, ctx);
+    fix.manager.applyBC(rho, layout, ctx);
 
     for (auto i = 0u; i < rho.shape()[0]; ++i)
         for (auto j = 0u; j < rho.shape()[1]; ++j)
@@ -195,7 +194,7 @@ TEST(InnerBoundaryManager, reflectiveRhoVIsSymmetric_normalComponentFlips)
 
     DummyState state;
     PHARE::core::InnerBCContext<DummyState> ctx{state, state, 0.0};
-    fix.manager.applyBC(PHARE::core::MHDQuantity::Vector::rhoV, rhoV, layout, ctx);
+    fix.manager.applyBC(rhoV, layout, ctx);
 
     constexpr std::array<PHARE::core::QtyCentering, 2> kCellC
         = {PHARE::core::QtyCentering::dual, PHARE::core::QtyCentering::dual};
@@ -255,7 +254,7 @@ TEST(InnerBoundaryManager, reflectiveEIsAntisymmetric_tangentialComponentFlips)
 
     DummyState state;
     PHARE::core::InnerBCContext<DummyState> ctx{state, state, 0.0};
-    fix.manager.applyBC(PHARE::core::MHDQuantity::Vector::E, E, layout, ctx);
+    fix.manager.applyBC(E, layout, ctx);
 
     // In 2D, EdgeCenteredX has centering (dual,primal) and EdgeCenteredY has (primal,dual).
     // EdgeCenteredZ collapses to all-primal = node centering, shared with Ez.
@@ -295,9 +294,8 @@ TEST(InnerBoundaryManager, applyBCIsNoopForUnregisteredScalar)
     auto const& layout = fix.layout;
 
     PHARE::core::NdArrayVector<2, double> storage{
-        layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)};
-    ScalarField field{"P", PHARE::core::MHDQuantity::Scalar::CellCentered, storage.data(),
-                      storage.shape()};
+        layout.allocSize(PHARE::core::MHDQuantity::Scalar::P)};
+    ScalarField field{"P", PHARE::core::MHDQuantity::Scalar::P, storage.data(), storage.shape()};
 
     constexpr double C = 42.0;
     for (auto i = 0u; i < field.shape()[0]; ++i)
@@ -306,8 +304,8 @@ TEST(InnerBoundaryManager, applyBCIsNoopForUnregisteredScalar)
 
     DummyState state;
     PHARE::core::InnerBCContext<DummyState> ctx{state, state, 0.0};
-    // P was not registered — should be a no-op, not a crash
-    fix.manager.applyBC(PHARE::core::MHDQuantity::Scalar::P, field, layout, ctx);
+    // P was not registered — field.physicalQuantity() lookup misses, applyBC must no-op.
+    fix.manager.applyBC(field, layout, ctx);
 
     for (auto i = 0u; i < field.shape()[0]; ++i)
         for (auto j = 0u; j < field.shape()[1]; ++j)

@@ -10,10 +10,10 @@
 #include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
+
 #include "initializer/data_provider.hpp"
 
 #include <memory>
-#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -26,9 +26,9 @@ namespace PHARE::core
  * Owns the embedded boundary geometry, the per-patch mesh classification data,
  * and the per-quantity BC objects. Exposes:
  *   - classify(layout)                   — fill mesh data (call once per patch setup)
- *   - applyBC(Scalar, field, layout, ctx) — enforce BC on a scalar quantity
- *   - applyBC(Vector, field, layout, ctx) — enforce BC on a vector quantity
- *   - ResourcesUser interface             — expose mesh data to SAMRAI resource manager
+ *   - applyBC(field, layout, ctx)        — enforce BC on a scalar quantity
+ *   - applyBC(vecfield, layout, ctx)     — enforce BC on a vector quantity
+ *   - ResourcesUser interface            — expose mesh data to SAMRAI resource manager
  *
  * @tparam PhysicalQuantityT  Quantity traits (MHDQuantity, HybridQuantity, …).
  * @tparam FieldT             Scalar field type.
@@ -43,8 +43,8 @@ public:
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
     using vecfield_type   = VecField<FieldT, PhysicalQuantityT>;
-    using scalar_qty      = typename PhysicalQuantityT::Scalar;
-    using vector_qty      = typename PhysicalQuantityT::Vector;
+    using scalar_qty      = PhysicalQuantityT::Scalar;
+    using vector_qty      = PhysicalQuantityT::Vector;
     using geometry_type   = InnerBoundaryGeometry<dimension>;
     using mesh_data_type  = InnerBoundaryMeshData<dimension, PhysicalQuantityT>;
     using classifier_type = InnerBoundaryMeshClassifier<dimension, GridLayoutT, PhysicalQuantityT>;
@@ -127,14 +127,13 @@ public:
     /**
      * @brief Apply the inner BC for a scalar quantity.
      *
-     * @param qty    Scalar quantity identifying which BC to use.
      * @param field  Field whose ghost cells are updated in place.
      * @param layout Grid layout of the current patch.
      * @param ctx    State context (statenew, state, time, dt).
      */
-    void applyBC(scalar_qty qty, FieldT& field, GridLayoutT const& layout, context_type const& ctx)
+    void applyBC(FieldT& field, GridLayoutT const& layout, context_type const& ctx)
     {
-        auto it = scalarBCs_.find(qty);
+        auto it = scalarBCs_.find(field.physicalQuantity());
         if (it == scalarBCs_.end())
             return; // quantity not registered — no-op
         it->second->apply(field, layout, meshData_, ctx);
@@ -143,15 +142,13 @@ public:
     /**
      * @brief Apply the inner BC for a vector quantity.
      *
-     * @param qty      Vector quantity identifying which BC to use.
      * @param vecfield VecField whose ghost cells are updated in place.
      * @param layout   Grid layout of the current patch.
      * @param ctx      State context (statenew, state, time, dt).
      */
-    void applyBC(vector_qty qty, vecfield_type& vecfield, GridLayoutT const& layout,
-                 context_type const& ctx)
+    void applyBC(vecfield_type& vecfield, GridLayoutT const& layout, context_type const& ctx)
     {
-        auto it = vectorBCs_.find(qty);
+        auto it = vectorBCs_.find(vecfield.physicalQuantity());
         if (it == vectorBCs_.end())
             return; // quantity not registered — no-op
         it->second->apply(vecfield, layout, meshData_, ctx);
