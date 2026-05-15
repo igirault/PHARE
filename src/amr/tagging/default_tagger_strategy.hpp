@@ -1,31 +1,40 @@
 #ifndef DEFAULT_TAGGER_STRATEGY_H
 #define DEFAULT_TAGGER_STRATEGY_H
 
-#include "tagger_strategy.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
-#include <cstddef>
+#include "core/data/vecfield/vecfield_component.hpp"
+#include "core/utilities/box/box.hpp"
+
 #include "initializer/data_provider.hpp"
+
+#include <cstddef>
+#include <optional>
+
+#include "tagger_strategy.hpp"
 
 namespace PHARE::amr
 {
 template<typename Model>
 class DefaultTaggerStrategy : public TaggerStrategy<Model>
 {
-    using gridlayout_type           = typename Model::gridlayout_type;
+    using gridlayout_type           = Model::gridlayout_type;
     static auto constexpr dimension = Model::dimension;
 
 
 public:
     DefaultTaggerStrategy(initializer::PHAREDict const& dict)
         : threshold_{cppdict::get_value(dict, "threshold", 0.1)}
+        , innerBoundaryHalo_{dict.contains("inner_boundary_halo")
+                                 ? std::optional{dict["inner_boundary_halo"].template to<double>()}
+                                 : std::nullopt}
     {
     }
     void tag(Model& model, gridlayout_type const& layout, int* tags) const override;
 
 private:
     double threshold_ = 0.1;
+    std::optional<double> innerBoundaryHalo_;
 };
 
 template<typename Model>
@@ -187,7 +196,25 @@ void DefaultTaggerStrategy<Model>::tag(Model& model, gridlayout_type const& layo
             }
         }
     }
+
+    if constexpr (requires { model.innerBoundaryManager; })
+    {
+        if (model.hasInnerBoundary() && innerBoundaryHalo_)
+        {
+            auto const& geom  = model.innerBoundaryManager->getGeometry();
+            auto const amrBox = layout.AMRBox();
+            auto const tagBox = boxFromNbrCells(layout.nbrCells());
+
+            for (auto const [amrPoint, tagPoint] : core::boxes_iterator{amrBox, tagBox})
+            {
+                auto amrCoords = layout.cellCenteredCoordinates(amrPoint);
+                if (geom.signedDistance(amrCoords) <= *innerBoundaryHalo_)
+                    tagsv(tagPoint.toArray()) = 0;
+            }
+        }
+    }
 }
+
 } // namespace PHARE::amr
 
 #endif // DEFAULT_HYBRID_TAGGER_STRATEGY_H

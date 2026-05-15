@@ -594,9 +594,9 @@ namespace amr
             // boundaries.
             registerGhostRefinePatchStrategies_(elecPatchStrats, info->ghostElectric);
             for (size_t i = 0; i < info->ghostElectric.size(); ++i)
-                elecGhostsRefiners_.addStaticRefiner(info->ghostElectric[i], nullptr,
-                                                     info->ghostElectric[i], nullptr,
-                                                     elecPatchStrats[i]);
+                elecGhostsRefiners_.addStaticRefiner(
+                    info->ghostElectric[i], EfieldRefineOp_, info->ghostElectric[i],
+                    nonOverwriteInteriorTFfillPattern, elecPatchStrats[i]);
         }
 
 

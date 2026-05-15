@@ -1,17 +1,24 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 
-#include "initializer/data_provider.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
+
+#include "core/inner_boundary/inner_bc_context.hpp"
+
+#include "initializer/data_provider.hpp"
 
 namespace PHARE::solver
 {
 template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
-    using level_t       = typename MHDModel::level_t;
-    using Layout        = typename MHDModel::gridlayout_type;
-    using Dispatchers_t = Dispatchers<Layout>;
+    using level_t                     = MHDModel::level_t;
+    using gridlayout_type             = MHDModel::gridlayout_type;
+    using state_type                  = MHDModel::state_type;
+    using resources_manager_type      = MHDModel::resources_manager_type;
+    using inner_boundary_manager_type = MHDModel::inner_boundary_manager_type;
+    using Dispatchers_t               = Dispatchers<gridlayout_type>;
 
     using Ampere_t = Dispatchers_t::Ampere_t;
 
@@ -67,7 +74,17 @@ public:
         //
         ct_(level, model, state, fluxes);
 
-        // bc.fillElectricGhosts(state.E, level, newTime);
+        bc.fillElectricGhosts(state.E, level, newTime);
+
+        if (model.hasInnerBoundary())
+        {
+            resources_manager_type& rm       = *model.resourcesManager;
+            inner_boundary_manager_type& ibm = *model.innerBoundaryManager;
+            core::InnerBCContext<state_type> ctx{state, state, newTime};
+            amr::visitLevel<gridlayout_type>(
+                level, rm, [&](auto& layout, auto&&, auto&&) { ibm.applyBC(state.E, layout, ctx); },
+                ibm, state);
+        }
     }
 
     void registerResources(MHDModel& model)

@@ -1,6 +1,8 @@
 #ifndef PHARE_MHD_MODEL_HPP
 #define PHARE_MHD_MODEL_HPP
 
+#include "core/inner_boundary/inner_boundary_manager.hpp"
+
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/resources_manager/resources_manager.hpp"
@@ -13,6 +15,7 @@
 #include "core/numerics/thermo/thermo.hpp"
 #include "core/numerics/thermo/thermo_factory.hpp"
 
+#include <memory>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -31,13 +34,16 @@ public:
     using level_t   = amr_types::level_t;
     using Interface = IPhysicalModel<AMR_Types>;
 
-    using physical_quantity_type = core::MHDQuantity;
     using vecfield_type          = VecFieldT;
     using field_type             = vecfield_type::field_type;
     using state_type             = core::MHDState<vecfield_type>;
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
+    using physical_quantity_type = core::MHDQuantity;
+    using inner_boundary_manager_type
+        = core::InnerBoundaryManager<physical_quantity_type, field_type, gridlayout_type,
+                                     state_type>;
     using boundary_manager_type
         = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type>;
 
@@ -57,8 +63,10 @@ public:
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
-    field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
-    vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+    field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::NodeCentered};
+    vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::NodeCentered};
+
+    std::unique_ptr<inner_boundary_manager_type> innerBoundaryManager;
 
     void initialize(level_t& level) override;
 
@@ -73,6 +81,8 @@ public:
         resourcesManager->allocate(EtotTotal_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
+        if (innerBoundaryManager)
+            resourcesManager->allocate(*innerBoundaryManager, patch, allocateTime);
     }
 
 
@@ -105,6 +115,13 @@ public:
             core::MHDQuantity::Vector::E,
             core::MHDQuantity::Vector::rhoV,
         };
+
+        innerBoundaryManager
+            = inner_boundary_manager_type::create(dict, scalarQuantities, vectorQuantities);
+        if (innerBoundaryManager)
+            resourcesManager->registerResources(*innerBoundaryManager);
+
+
         boundaryManager = std::make_shared<boundary_manager_type>(
             dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities, thermo);
     }
@@ -118,6 +135,8 @@ public:
     auto get_B0() -> auto& { return state.B0; }
 
     auto get_B0() const -> auto& { return state.B0; }
+
+    bool hasInnerBoundary() const { return innerBoundaryManager != nullptr; }
 
     //-------------------------------------------------------------------------
     //                  start the ResourcesUser interface

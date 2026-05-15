@@ -1,14 +1,16 @@
 #ifndef PHARE_MHD_STATE_HPP
 #define PHARE_MHD_STATE_HPP
 
-#include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/data/vecfield/vecfield_component.hpp"
-#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/data/field/initializers/field_user_initializer.hpp"
+#include "core/data/vecfield/vecfield_component.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
 #include "core/def.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/models/physical_state.hpp"
+#include "core/numerics/primite_conservative_converter/conversion_utils.hpp"
+#include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/utilities/index/index.hpp"
+
 #include "initializer/data_provider.hpp"
 
 namespace PHARE
@@ -81,7 +83,7 @@ namespace core
             , totalBInit_{dict["magnetic"]["initializer"]}
             , B0init_{dict["external_magnetic"]["initializer"]}
             , Pinit_{dict["pressure"]["initializer"]
-                          .template to<initializer::InitFunction<dimension>>()}
+                         .template to<initializer::InitFunction<dimension>>()}
             , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
         {
         }
@@ -111,6 +113,47 @@ namespace core
             B0init_.initialize(B0, layout);
         }
 
+        /**
+         * @brief Reset a single inactive/ghost cell to a physically safe state.
+         *
+         * Inactive cells sit deep inside an embedded body and play no role in the fluid
+         * solve, but their conservative values still flow through to-primitive conversion,
+         * mixing steps, and diagnostics. Pin them to (rho=1, P=1, V=0) and recompute Etot
+         * from the current face-centered B at the cell centre.
+         *
+         * Caller is responsible for checking cellStatus(idx) before invoking.
+         */
+        template<typename GridLayout, typename Thermo>
+        void safeResetInactiveCell(MeshIndex<dimension> const& idx, GridLayout const& /*layout*/,
+                                   Thermo& thermo)
+        {
+            constexpr double safeRho = 1.0;
+            constexpr double safeP   = 1.0;
+
+            rho(idx) = safeRho;
+            P(idx)   = safeP;
+
+            V(Component::X)(idx) = 0.0;
+            V(Component::Y)(idx) = 0.0;
+            V(Component::Z)(idx) = 0.0;
+
+            rhoV(Component::X)(idx) = 0.0;
+            rhoV(Component::Y)(idx) = 0.0;
+            rhoV(Component::Z)(idx) = 0.0;
+
+            auto const bx = GridLayout::template project<GridLayout::faceXToCellCenter>(
+                B1(Component::X), idx);
+            auto const by = GridLayout::template project<GridLayout::faceYToCellCenter>(
+                B1(Component::Y), idx);
+            auto const bz = GridLayout::template project<GridLayout::faceZToCellCenter>(
+                B1(Component::Z), idx);
+
+            thermo.setState_DP(safeRho, safeP);
+            auto const e_int = safeRho * thermo.internalEnergy();
+            Etot1(idx) = totalEnergyFromInternalEnergy(e_int, safeRho, 0., 0., 0., bx, by, bz);
+        }
+
+
         template<typename GridLayout>
         void initialize(GridLayout const& layout)
         {
@@ -124,14 +167,13 @@ namespace core
             {
                 auto& B1c       = B1(component);
                 auto const& B0c = B0(component);
-                layout.evalOnGhostBox(B1c, [&](auto&... args) mutable {
-                    B1c(args...) -= B0c(args...);
-                });
+                layout.evalOnGhostBox(B1c,
+                                      [&](auto&... args) mutable { B1c(args...) -= B0c(args...); });
             }
 
             ToConservativeConverter_ref{layout, gamma_}(
                 rho, V, B1, B0, P, rhoV, Etot1); // initial to conservative conversion because we
-                                             // store conservative quantities on the grid
+                                                 // store conservative quantities on the grid
         }
 
         field_type rho;

@@ -17,7 +17,7 @@ class ElectromagDiagnosticWriter : public H5TypeWriter<H5Writer>
     using Super              = H5TypeWriter<H5Writer>;
     using VTKFileWriter      = Super::VTKFileWriter;
     using VTKFileInitializer = Super::VTKFileInitializer;
-    using GridLayout         = typename H5Writer::GridLayout;
+    using GridLayout         = H5Writer::GridLayout;
 
 public:
     ElectromagDiagnosticWriter(H5Writer& h5Writer)
@@ -52,16 +52,19 @@ void ElectromagDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnos
         return;
 
     auto& modelView = this->h5Writer_.modelView();
-    if constexpr (!(requires { modelView.getB1(); modelView.getB0(); }))
+    if constexpr (!(requires {
+                      modelView.getB1();
+                      modelView.getB0();
+                  }))
         return;
     else
     {
-        auto minLvl     = this->h5Writer_.minLevel;
-        auto maxLvl     = this->h5Writer_.maxLevel;
+        auto minLvl = this->h5Writer_.minLevel;
+        auto maxLvl = this->h5Writer_.maxLevel;
 
-        auto& B         = modelView.getB();
-        auto const& B1  = modelView.getB1();
-        auto const& B0  = modelView.getB0();
+        auto& B        = modelView.getB();
+        auto const& B1 = modelView.getB1();
+        auto const& B0 = modelView.getB0();
 
         auto reconstructB = [&](GridLayout& layout, std::string const&, std::size_t) {
             auto& Bx        = B.getComponent(core::Component::X);
@@ -74,12 +77,12 @@ void ElectromagDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnos
             auto const& B0y = B0.getComponent(core::Component::Y);
             auto const& B0z = B0.getComponent(core::Component::Z);
 
-            auto const rebuildComponent = [&](auto& dst, auto const& perturbed,
-                                             auto const& background) {
-                layout.evalOnGhostBox(dst, [&](auto&... args) mutable {
-                    dst(args...) = perturbed(args...) + background(args...);
-                });
-            };
+            auto const rebuildComponent
+                = [&](auto& dst, auto const& perturbed, auto const& background) {
+                      layout.evalOnGhostBox(dst, [&](auto&... args) mutable {
+                          dst(args...) = perturbed(args...) + background(args...);
+                      });
+                  };
 
             rebuildComponent(Bx, B1x, B0x);
             rebuildComponent(By, B1y, B0y);

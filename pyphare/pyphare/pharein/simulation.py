@@ -552,6 +552,76 @@ def check_boundary_conditions(ndim, **kwargs):
 # ------------------------------------------------------------------------------
 
 
+def check_inner_boundary(ndim, **kwargs):
+    inner_boundary = kwargs.get("inner_boundary", None)
+    if inner_boundary is None:
+        return None
+
+    if not isinstance(inner_boundary, dict):
+        raise ValueError("Error: inner_boundary must be a dictionary")
+
+    for key in ("shape", "name"):
+        if key not in inner_boundary:
+            raise ValueError(f"Error: inner_boundary requires a '{key}' key")
+
+    shape = inner_boundary["shape"]
+    valid_shapes = {"sphere", "plane"}
+    if shape not in valid_shapes:
+        raise ValueError(
+            f"Error: inner_boundary shape '{shape}' is invalid, valid shapes are {valid_shapes}"
+        )
+
+    valid_condition_types = {"reflective"}
+    condition_type = inner_boundary.get("condition_type", "reflective")
+    if condition_type not in valid_condition_types:
+        raise ValueError(
+            f"Error: inner_boundary condition_type '{condition_type}' is invalid, "
+            f"valid types are {valid_condition_types}"
+        )
+
+    common_keys = {"shape", "name", "condition_type"}
+    shape_keys = {"sphere": {"center", "radius"}, "plane": {"point", "normal"}}
+    unknown = set(inner_boundary.keys()) - (common_keys | shape_keys[shape])
+    if unknown:
+        raise ValueError(
+            f"Error: invalid inner_boundary keys for {shape}: {sorted(unknown)}"
+        )
+
+    result = {"shape": shape, "name": inner_boundary["name"], "condition_type": condition_type}
+
+    if shape == "sphere":
+        if "center" not in inner_boundary or "radius" not in inner_boundary:
+            raise ValueError("Error: sphere inner_boundary requires both 'center' and 'radius'")
+        center = phare_utilities.listify(inner_boundary["center"])
+        if len(center) != ndim:
+            raise ValueError(
+                f"Error: sphere center must have length {ndim}, got {len(center)}"
+            )
+        radius = float(inner_boundary["radius"])
+        if radius <= 0:
+            raise ValueError("Error: sphere radius must be > 0")
+        result.update({"center": [float(v) for v in center], "radius": radius})
+
+    else:  # plane
+        if "point" not in inner_boundary or "normal" not in inner_boundary:
+            raise ValueError("Error: plane inner_boundary requires both 'point' and 'normal'")
+        point = phare_utilities.listify(inner_boundary["point"])
+        normal = phare_utilities.listify(inner_boundary["normal"])
+        if len(point) != ndim:
+            raise ValueError(f"Error: plane point must have length {ndim}, got {len(point)}")
+        if len(normal) != ndim:
+            raise ValueError(f"Error: plane normal must have length {ndim}, got {len(normal)}")
+        normal = [float(v) for v in normal]
+        if np.linalg.norm(np.asarray(normal)) == 0:
+            raise ValueError("Error: plane normal cannot be the zero vector")
+        result.update({"point": [float(v) for v in point], "normal": normal})
+
+    return result
+
+
+# ------------------------------------------------------------------------------
+
+
 # See: https://github.com/PHAREHUB/PHARE/wiki/exactSplitting
 # This should match possibleSimulators() in meta_utilities.h
 valid_refined_particle_nbr = {
@@ -791,6 +861,13 @@ def check_diag_options(**kwargs):
                 raise ValueError(
                     f"Invalid diagnostics mode {mode}, valid modes are {valid_modes}"
                 )
+        if "options" in diag_options:
+            valid_option_keys = {"dir", "mode", "allow_emergency_dumps", "fine_dump_lvl_max"}
+            unknown = set(diag_options["options"].keys()) - valid_option_keys
+            if unknown:
+                raise ValueError(
+                    f"Unknown diag_options keys: {unknown}. Valid keys: {valid_option_keys}"
+                )
         if (
             "options" in diag_options
             and "allow_emergency_dumps" in diag_options["options"]
@@ -1015,6 +1092,7 @@ def checker(func):
             "refinement_boxes",
             "refinement",
             "tagging_threshold",
+            "inner_boundary_refinement_halo",
             "clustering",
             "smallest_patch_size",
             "largest_patch_size",
@@ -1041,6 +1119,7 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "inner_boundary",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -1079,6 +1158,7 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
+        kwargs["inner_boundary"] = check_inner_boundary(ndim, **kwargs)
         kwargs["boundary_conditions"] = check_boundary_conditions(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
@@ -1106,6 +1186,7 @@ def checker(func):
 
             kwargs["refinement_boxes"] = None
             kwargs["tagging_threshold"] = kwargs.get("tagging_threshold", 0.1)
+            kwargs["inner_boundary_refinement_halo"] = kwargs.get("inner_boundary_refinement_halo", None)
 
         kwargs["resistivity"] = check_resistivity(**kwargs)
 
@@ -1351,6 +1432,12 @@ class Simulation(object):
         * **resistivity** (``float``), resistivity value (default=0.0)
         * **hyper-resistivity** (``float``), hyper-resistivity value (default=0.0)
         * **boundary_types** (``str`` or ``tuple``) type of boundary conditions (default is "periodic" for each direction)
+        * **inner_boundary** (``dict``), optional embedded boundary definition.
+          Required keys: ``shape``, ``name``.
+          Optional key: ``condition_type`` (default: ``"reflective"``).
+          Supported shapes:
+            * sphere: ``{"shape": "sphere", "name": "...", "center": (...), "radius": r}``
+            * plane: ``{"shape": "plane", "name": "...", "point": (...), "normal": (...)}``
 
     """
 

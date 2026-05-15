@@ -677,10 +677,10 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto localToAMR(Point<T, dimension> const& localPoint) const
+        NO_DISCARD auto localToAMR(Point<T, dimension> localPoint) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
-            Point<int, dimension> pointAMR;
+            Point<T, dimension> pointAMR;
 
             // any direction, it's the same because we want cells
             auto localStart = physicalStartIndex(QtyCentering::dual, Direction::X);
@@ -698,10 +698,10 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto localToAMR(Box<T, dimension> const& localBox) const
+        NO_DISCARD auto localToAMR(Box<T, dimension> localBox) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
-            auto AMRBox = Box<int, dimension>{};
+            auto AMRBox = Box<T, dimension>{};
 
             AMRBox.lower = localToAMR(localBox.lower);
             AMRBox.upper = localToAMR(localBox.upper);
@@ -714,7 +714,7 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto AMRToLocal(Point<T, dimension> const& AMRPoint) const
+        NO_DISCARD auto AMRToLocal(Point<T, dimension> AMRPoint) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
             Point<std::uint32_t, dimension> localPoint;
@@ -737,7 +737,7 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto AMRToLocal(Box<T, dimension> const& AMRBox) const
+        NO_DISCARD auto AMRToLocal(Box<T, dimension> AMRBox) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
             auto localBox = Box<std::uint32_t, dimension>{};
@@ -747,8 +747,6 @@ namespace core
 
             return localBox;
         }
-
-
 
         template<auto func, typename Field>
         NO_DISCARD static typename Field::type project(Field const& field,
@@ -853,6 +851,7 @@ namespace core
             mirroredPoint[iDir]    = boundaryMirrored(direction, side, centering, point[iDir]);
             return mirroredPoint;
         }
+
 
         // ----------------------------------------------------------------------
         //                      LAYOUT SPECIFIC METHODS

@@ -102,18 +102,15 @@ public:
 
             layout_->evalOnBiggerBox(
                 fluxes.template expose_centering<direction>(),
-                getGrow<direction, dimension>(Reconstruction_t::nghosts),
-                [&](auto&... indices) {
+                getGrow<direction, dimension>(Reconstruction_t::nghosts), [&](auto&... indices) {
                     if constexpr (Hall)
                     {
                         auto&& [uL, uR]
                             = Reconstructor_t::template reconstruct<direction>(state, {indices...});
 
-                        auto const& [jL, jR]
-                            = Reconstructor_t::template center_reconstruct<
-                                direction, GridLayout::edgeXToCellCenter,
-                                GridLayout::edgeYToCellCenter, GridLayout::edgeZToCellCenter>(
-                                state.J, {indices...});
+                        auto const& [jL, jR] = Reconstructor_t::template center_reconstruct<
+                            direction, GridLayout::edgeXToCellCenter, GridLayout::edgeYToCellCenter,
+                            GridLayout::edgeZToCellCenter>(state.J, {indices...});
 
                         auto&& u      = std::forward_as_tuple(uL, uR);
                         auto const& j = std::forward_as_tuple(jL, jR);
@@ -192,45 +189,44 @@ public:
                 layout_->evalOnBox(
                     fluxes.template expose_centering<direction>(), [&](auto&... indices) {
                         auto& Jt      = ct.template getJt<direction>();
-                            auto& Bt      = getBt_<direction>();
-                            auto& BtTotal = getBtTotal_<direction>();
-                            auto const& F = fluxes.template get_dir<direction>({indices...});
-                            auto& F_B     = F.B;
-                            auto& F_Etot  = F.Etot();
+                        auto& Bt      = getBt_<direction>();
+                        auto& BtTotal = getBtTotal_<direction>();
+                        auto const& F = fluxes.template get_dir<direction>({indices...});
+                        auto& F_B     = F.B;
+                        auto& F_Etot  = F.Etot();
 
-                            auto const& Btidx = toPerIndexVector(Bt, {indices...});
-                            auto const& BtTotalidx = toPerIndexVector(BtTotal, {indices...});
+                        auto const& Btidx      = toPerIndexVector(Bt, {indices...});
+                        auto const& BtTotalidx = toPerIndexVector(BtTotal, {indices...});
 
-                            if (resistivity_)
-                            {
-                                // transverse B field components (probably a riemann operation).
-                                auto const& Jtidx = toPerIndexVector(Jt, {indices...});
+                        if (resistivity_)
+                        {
+                            // transverse B field components (probably a riemann operation).
+                            auto const& Jtidx = toPerIndexVector(Jt, {indices...});
                             equations_.template resistive_contributions<direction>(
                                 eta_, Btidx, Jtidx, F_B, F_Etot);
                         }
-                            if (hyper_resistivity_)
+                        if (hyper_resistivity_)
+                        {
+                            auto const vecLaplJ
+                                = transverse_laplacian_<direction>(Jt, {indices...});
+
+                            if (hyper_mode_ == HyperMode::constant)
+                                return constant_hyperresistive_<direction>(Btidx, vecLaplJ, F_B,
+                                                                           F_Etot);
+                            else if (hyper_mode_ == HyperMode::spatial)
                             {
-                                auto const vecLaplJ
-                                    = transverse_laplacian_<direction>(Jt, {indices...});
+                                auto const& B1n = toPerIndexVector(state.B1, {indices...});
+                                auto const& B0n = toPerIndexVector(state.B0, {indices...});
+                                auto const Bn = PerIndexVector<double>{B1n.x + B0n.x, B1n.y + B0n.y,
+                                                                       B1n.z + B0n.z};
+                                auto const& rhot = ct.template getRhot<direction>()(indices...);
 
-                                if (hyper_mode_ == HyperMode::constant)
-                                    return constant_hyperresistive_<direction>(Btidx, vecLaplJ, F_B,
-                                                                               F_Etot);
-                                else if (hyper_mode_ == HyperMode::spatial)
-                                {
-                                    auto const& B1n  = toPerIndexVector(state.B1, {indices...});
-                                    auto const& B0n  = toPerIndexVector(state.B0, {indices...});
-                                    auto const Bn = PerIndexVector<double>{
-                                        B1n.x + B0n.x, B1n.y + B0n.y, B1n.z + B0n.z};
-                                    auto const& rhot = ct.template getRhot<direction>()(indices...);
-
-                                    return spatial_hyperresistive_<direction>(Btidx, BtTotalidx, Bn,
-                                                                              vecLaplJ, rhot,
-                                                                              F_B, F_Etot);
-                                }
-                                else
-                                    throw std::runtime_error("Error - Ohm - unknown hyper_mode");
+                                return spatial_hyperresistive_<direction>(
+                                    Btidx, BtTotalidx, Bn, vecLaplJ, rhot, F_B, F_Etot);
                             }
+                            else
+                                throw std::runtime_error("Error - Ohm - unknown hyper_mode");
+                        }
                     });
             }
         });
@@ -298,7 +294,7 @@ private:
         auto const Bidx = riemann_.vector_riemann_averaging(uL.perturbationB(), uR.perturbationB());
         auto const BTotalidx = riemann_.vector_riemann_averaging(uL.B, uR.B);
 
-        auto& Bt = getBt_<direction>();
+        auto& Bt      = getBt_<direction>();
         auto& BtTotal = getBtTotal_<direction>();
 
         Bt(Component::X)(idx) = Bidx.x;

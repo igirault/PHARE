@@ -164,6 +164,19 @@ def populateDict(sim):
     add_double("simulation/time_step", sim.time_step)
     add_int("simulation/time_step_nbr", sim.time_step_nbr)
 
+    if sim.inner_boundary is not None:
+        inner_boundary = sim.inner_boundary
+        base = "simulation/inner_boundary"
+        add_string(f"{base}/name", inner_boundary["name"])
+        add_string(f"{base}/shape", inner_boundary["shape"])
+        add_string(f"{base}/condition_type", inner_boundary["condition_type"])
+        if inner_boundary["shape"] == "sphere":
+            pp.add_array_as_vector(f"{base}/center", np.asarray(inner_boundary["center"]))
+            add_double(f"{base}/radius", inner_boundary["radius"])
+        elif inner_boundary["shape"] == "plane":
+            pp.add_array_as_vector(f"{base}/point", np.asarray(inner_boundary["point"]))
+            pp.add_array_as_vector(f"{base}/normal", np.asarray(inner_boundary["normal"]))
+
     add_string("simulation/AMR/clustering", sim.clustering)
     add_vector_int("simulation/AMR/nesting_buffer", sim.nesting_buffer)
     add_int("simulation/AMR/tag_buffer", sim.tag_buffer)
@@ -206,6 +219,8 @@ def populateDict(sim):
         # they will become configurable when we have multi-models or several methods
         # per model
         add_double("simulation/AMR/refinement/tagging/threshold", sim.tagging_threshold)
+        if sim.inner_boundary_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/inner_boundary_halo", sim.inner_boundary_refinement_halo)
     else:
         add_string(
             "simulation/AMR/refinement/tagging/method", "none"
