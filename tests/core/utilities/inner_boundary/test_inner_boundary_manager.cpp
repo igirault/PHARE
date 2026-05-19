@@ -13,6 +13,7 @@
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/mhd/mhd_quantities.hpp"
+#include "core/numerics/interpolator/field_at_point.hpp"
 #include "core/utilities/box/box.hpp"
 #include "initializer/data_provider.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
@@ -265,11 +266,25 @@ TEST(InnerBoundaryManager, reflectiveEIsAntisymmetric_tangentialComponentFlips)
         = {PHARE::core::QtyCentering::dual, PHARE::core::QtyCentering::primal};
     constexpr std::array<PHARE::core::QtyCentering, 2> kEdgeYC // EdgeCenteredY
         = {PHARE::core::QtyCentering::primal, PHARE::core::QtyCentering::dual};
+    constexpr std::array<PHARE::core::QtyCentering, 2> kEdgeZC // EdgeCenteredZ (2D: all-primal)
+        = {PHARE::core::QtyCentering::primal, PHARE::core::QtyCentering::primal};
+
+    // Antisymmetric BC skips a ghost when any sibling centering fails interpolability at
+    // the mirror point (see field_antisymmetric_inner_boundary_condition.hpp). Mirror that
+    // logic here: only assert BC behaviour on ghosts where all three sibling centerings
+    // accept the mirror.
+    auto siblings_ok = [&](auto const& g, auto const& sibA, auto const& sibB) {
+        return PHARE::core::FieldAtPoint<2, 1>::pointIsInterpolable(layout, g.mirrorPoint, sibA)
+               && PHARE::core::FieldAtPoint<2, 1>::pointIsInterpolable(layout, g.mirrorPoint,
+                                                                       sibB);
+    };
 
     bool foundAnyEdge = false;
     for (auto const& g : meshData.getGhostDataFromCentering(kEdgeXC))
     {
         if (!g.mirrorIsInterpolable)
+            continue;
+        if (!siblings_ok(g, kEdgeYC, kEdgeZC))
             continue;
         foundAnyEdge = true;
         EXPECT_NEAR(Ex_field(g.index), Ex, eps) << "Ex (normal component) should be preserved";
@@ -277,6 +292,8 @@ TEST(InnerBoundaryManager, reflectiveEIsAntisymmetric_tangentialComponentFlips)
     for (auto const& g : meshData.getGhostDataFromCentering(kEdgeYC))
     {
         if (!g.mirrorIsInterpolable)
+            continue;
+        if (!siblings_ok(g, kEdgeXC, kEdgeZC))
             continue;
         foundAnyEdge = true;
         EXPECT_NEAR(Ey_field(g.index), -Ey, eps) << "Ey (tangential component) should be negated";
