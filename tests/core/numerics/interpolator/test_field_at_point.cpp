@@ -261,6 +261,57 @@ TEST(FieldAtPoint2DOrder1, FaceCentredXBilinearExact)
     }
 }
 
+// ---------------------------------------------------------------------------
+// pointIsInterpolable: primal vs dual margin
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief The stencil reserves 1 cell of slack at each end of the ghost box for
+ * dual-centred directions but 0 for primal-centred ones. So a point one cell
+ * outside the ghost box upper bound is interpolable for primal but not for
+ * dual along that direction. The sibling-component check in
+ * Field{,Anti}SymmetricInnerBoundaryCondition relies on this asymmetry.
+ */
+TEST(FieldAtPointInterpolable, primalAndDualDifferAtSlackMargin)
+{
+    using GridLayoutImpl = GridLayoutImplYeeMHD<2, 2, 1>;
+    using GridLayoutT    = GridLayout<GridLayoutImpl>;
+
+    Box<int, 2> amr_box{{-2, 0}, {1, 1}};
+    GridLayoutT layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
+
+    auto const nG = static_cast<int>(layout.nbrGhosts());
+    ASSERT_GE(nG, 1);
+
+    // Interior point: inside both primal and dual ghost boxes.
+    Point<double, 2> interior{0.5, 0.5};
+    EXPECT_TRUE((FieldAtPoint<2, 1>::pointIsInterpolable(
+        layout, interior, {QtyCentering::primal, QtyCentering::primal})));
+    EXPECT_TRUE((FieldAtPoint<2, 1>::pointIsInterpolable(
+        layout, interior, {QtyCentering::dual, QtyCentering::dual})));
+
+    // Point in the dual-margin slack along x: floor(x/dx) == amr_box.lower[0] - nG.
+    // Primal margin 0 -> still interpolable; dual margin 1 -> rejected.
+    double const x_slack = (amr_box.lower[0] - nG) + 0.5; // dx = 1
+    Point<double, 2> slack_x{x_slack, 0.5};
+    EXPECT_TRUE((FieldAtPoint<2, 1>::pointIsInterpolable(
+        layout, slack_x, {QtyCentering::primal, QtyCentering::primal})));
+    EXPECT_FALSE((FieldAtPoint<2, 1>::pointIsInterpolable(
+        layout, slack_x, {QtyCentering::dual, QtyCentering::primal})));
+
+    // Same idea on the upper-y end: floor(y/dy) == amr_box.upper[1] + nG.
+    double const y_slack = (amr_box.upper[1] + nG) + 0.5;
+    Point<double, 2> slack_y{0.5, y_slack};
+    EXPECT_TRUE((FieldAtPoint<2, 1>::pointIsInterpolable(
+        layout, slack_y, {QtyCentering::primal, QtyCentering::primal})));
+    EXPECT_FALSE((FieldAtPoint<2, 1>::pointIsInterpolable(
+        layout, slack_y, {QtyCentering::primal, QtyCentering::dual})));
+
+    // Mixed centering: primal in slack direction, dual orthogonal -> accepted.
+    EXPECT_TRUE((FieldAtPoint<2, 1>::pointIsInterpolable(
+        layout, slack_x, {QtyCentering::primal, QtyCentering::dual})));
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

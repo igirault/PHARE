@@ -63,6 +63,23 @@ public:
                 if (!ghostElem.mirrorIsInterpolable)
                     continue;
 
+                // ghostElem.mirrorIsInterpolable was vetted only for component i's centering.
+                // Antisymmetric BC interpolates ALL sibling components at the same mirror, so
+                // every component j must also be interpolable for its own centering.
+                bool allInterpolable = true;
+                for_N<N>([&](auto jc) {
+                    constexpr auto j = jc();
+                    if constexpr (j != i)
+                    {
+                        auto const centering_j = GridLayoutT::centering(std::get<j>(fields));
+                        if (!interpolator_type::pointIsInterpolable(layout, ghostElem.mirrorPoint,
+                                                                    centering_j))
+                            allInterpolable = false;
+                    }
+                });
+                if (!allInterpolable)
+                    continue;
+
                 // get interpolated value of all components at the mirror point
                 Point<value_type, N> interpolatedComponents;
                 for_N<N>([&](auto jc) {

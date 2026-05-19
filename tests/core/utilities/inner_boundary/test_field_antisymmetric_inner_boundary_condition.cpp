@@ -11,6 +11,7 @@
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/inner_boundary/field_antisymmetric_inner_boundary_condition.hpp"
+#include "core/numerics/interpolator/field_at_point.hpp"
 #include "core/utilities/box/box.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
@@ -339,6 +340,109 @@ TEST(FieldAntisymmetricInnerBoundaryCondition, vectorLinearField_correctTransfor
             << "Vz ghost at (" << g.index[0] << "," << g.index[1] << ")";
     }
     EXPECT_TRUE(foundInPatch) << "at least one in-patch ghost must exist";
+}
+
+/**
+ * @brief Regression: when a ghost's mirror is interpolable for component i but NOT for some
+ *        sibling component j (different centering), the BC must skip that ghost rather than
+ *        read OOB while interpolating component j.
+ *
+ * Uses MHDQuantity::Vector::B in 2D Yee MHD where centerings differ per component:
+ *   Bx: (primal, dual)   By: (dual, primal)   Bz: (dual, dual)
+ *
+ * The dual-margin reserves one extra cell of slack per dual direction. So there can exist
+ * mirror points interpolable for one centering combination but not for another. The fix in
+ * field_antisymmetric_inner_boundary_condition.hpp guards the per-component loop by
+ * re-checking pointIsInterpolable for every sibling centering before touching the field.
+ */
+TEST(FieldAntisymmetricInnerBoundaryCondition, vectorMixedCenterings_skipGhostWhenSiblingNotInterpolable)
+{
+    using PHARE::core::Component;
+    using PHARE::core::FieldAtPoint;
+    using PHARE::core::MHDQuantity;
+    using PHARE::core::Point;
+    using PHARE::core::QtyCentering;
+
+    AntisymmetricBCFixture fix;
+    auto const& layout   = fix.layout;
+    auto const& meshData = fix.buffers.tags;
+
+    VecFieldMHD2 B{"B", layout, MHDQuantity::Vector::B};
+    auto& Bx = B.getComponent(Component::X);
+    auto& By = B.getComponent(Component::Y);
+    auto& Bz = B.getComponent(Component::Z);
+
+    std::array<std::array<QtyCentering, 2>, 3> const compCentering{
+        {GridLayout::centering(MHDQuantity::Scalar::Bx),
+         GridLayout::centering(MHDQuantity::Scalar::By),
+         GridLayout::centering(MHDQuantity::Scalar::Bz)}};
+
+    // Locate ghosts (per component-i list) whose mirror is interpolable for i but not
+    // for at least one sibling j != i.
+    struct Trigger
+    {
+        std::size_t i;
+        Point<std::uint32_t, 2> idx;
+    };
+    std::vector<Trigger> triggers;
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        for (auto const& g : meshData.getGhostDataFromCentering(compCentering[i]))
+        {
+            if (!g.mirrorIsInterpolable)
+                continue;
+            for (std::size_t j = 0; j < 3; ++j)
+            {
+                if (j == i)
+                    continue;
+                if (!FieldAtPoint<2, 1>::pointIsInterpolable(layout, g.mirrorPoint,
+                                                             compCentering[j]))
+                {
+                    triggers.push_back({i, g.index});
+                    break;
+                }
+            }
+        }
+    }
+
+    ASSERT_FALSE(triggers.empty())
+        << "fixture geometry produces no ghost where one component is interpolable but a "
+           "sibling is not; cannot exercise the sibling-check regression";
+
+    // Sentinel-fill every component at every trigger index. After bc.apply the sentinel
+    // MUST remain — the new guard skips those ghosts.
+    constexpr double sentinel = 12345.6789;
+    for (auto i = 0u; i < Bx.shape()[0]; ++i)
+        for (auto j = 0u; j < Bx.shape()[1]; ++j)
+            Bx(i, j) = 1.0;
+    for (auto i = 0u; i < By.shape()[0]; ++i)
+        for (auto j = 0u; j < By.shape()[1]; ++j)
+            By(i, j) = 2.0;
+    for (auto i = 0u; i < Bz.shape()[0]; ++i)
+        for (auto j = 0u; j < Bz.shape()[1]; ++j)
+            Bz(i, j) = 3.0;
+
+    for (auto const& t : triggers)
+    {
+        if (t.i == 0)
+            Bx(t.idx) = sentinel;
+        else if (t.i == 1)
+            By(t.idx) = sentinel;
+        else
+            Bz(t.idx) = sentinel;
+    }
+
+    PHARE::core::FieldAntisymmetricInnerBoundaryCondition<VecFieldMHD2, GridLayout, DummyState> bc;
+    DummyState state;
+    bc.apply(B, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
+
+    for (auto const& t : triggers)
+    {
+        double const got = (t.i == 0) ? Bx(t.idx) : (t.i == 1) ? By(t.idx) : Bz(t.idx);
+        EXPECT_NEAR(got, sentinel, eps)
+            << "component i=" << t.i << " at local (" << t.idx[0] << "," << t.idx[1]
+            << ") was overwritten despite a sibling being non-interpolable";
+    }
 }
 
 int main(int argc, char** argv)

@@ -34,6 +34,34 @@ class FieldAtPoint : private Interpolator<dim, interpOrder>
 
 public:
     /**
+     * @brief Return `true` iff @p point sits inside the (ghost-included) domain with
+     * enough slack on every direction for this interpolator's stencil to fit.
+     *
+     * Currently the stencil uses **two consecutive grid values per direction**
+     * (so 4 values in 2D, 8 in 3D). Per direction the slack required at each end of
+     * the ghost box depends on the centering of the field being interpolated:
+     *   - primal: stencil straddles integer node positions — no slack (margin = 0);
+     *   - dual:   stencil straddles half-integer cell centres — 1 cell slack (margin = 1).
+     */
+    template<typename GridLayout>
+    static bool pointIsInterpolable(GridLayout const& layout, Point<double, dim> const& point,
+                                    std::array<QtyCentering, dim> const& centerings)
+    {
+        auto const& dx     = layout.meshSize();
+        auto const& amrBox = layout.AMRBox();
+        auto const nGhosts = static_cast<int>(layout.nbrGhosts());
+        for (auto d = 0u; d < dim; ++d)
+        {
+            int const margin = (centerings[d] == QtyCentering::dual) ? 1 : 0;
+            int const iCell  = static_cast<int>(std::floor(point[d] / dx[d]));
+            if (iCell < amrBox.lower[d] - nGhosts + margin
+                || iCell > amrBox.upper[d] + nGhosts - margin)
+                return false;
+        }
+        return true;
+    }
+
+    /**
      * @brief Evaluate @p field at @p physPoint using order-interpOrder interpolation.
      *
      * The field centering is resolved at compile time from @p quantity.
