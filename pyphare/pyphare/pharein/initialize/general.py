@@ -219,8 +219,29 @@ def populateDict(sim):
         # they will become configurable when we have multi-models or several methods
         # per model
         add_double("simulation/AMR/refinement/tagging/threshold", sim.tagging_threshold)
-        if sim.inner_boundary_refinement_halo:
-            add_double("simulation/AMR/refinement/tagging/inner_boundary_halo", sim.inner_boundary_refinement_halo)
+        if sim.inner_boundary_no_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/inner_boundary_no_refinement_halo", sim.inner_boundary_no_refinement_halo)
+        if sim.physical_boundary_no_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/physical_boundary_no_refinement_halo", sim.physical_boundary_no_refinement_halo)
+            axes = ("x", "y", "z")[: sim.ndim]
+            for d, axis in enumerate(axes):
+                add_double(
+                    f"simulation/AMR/refinement/tagging/domain_lower_{axis}", 0.0
+                )
+                add_double(
+                    f"simulation/AMR/refinement/tagging/domain_upper_{axis}",
+                    sim.cells[d] * sim.dl[d],
+                )
+                add_bool(
+                    f"simulation/AMR/refinement/tagging/bdry_periodic_{axis}",
+                    sim.boundary_types[d] == "periodic",
+                )
+        if getattr(sim, "tag_fields", None):
+            add_size_t("simulation/AMR/refinement/tagging/nbr_fields", len(sim.tag_fields))
+            for i, name in enumerate(sim.tag_fields):
+                add_string(
+                    f"simulation/AMR/refinement/tagging/field{i}", str(name)
+                )
     else:
         add_string(
             "simulation/AMR/refinement/tagging/method", "none"

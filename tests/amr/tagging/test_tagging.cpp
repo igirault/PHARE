@@ -295,7 +295,7 @@ TEST(InnerBoundaryTagger, doesNotTagCellsNearBoundary)
 
     PHARE::initializer::PHAREDict dict;
     dict["threshold"]           = 0.1; // gradient pass tags all cells = 1
-    dict["inner_boundary_halo"] = halo;
+    dict["inner_boundary_no_refinement_halo"] = halo;
 
     DefaultTaggerStrategy<IBTaggerMockModel> strat{dict};
 
@@ -318,6 +318,177 @@ TEST(InnerBoundaryTagger, doesNotTagCellsNearBoundary)
         EXPECT_EQ(tagsv(tag.toArray()), expected)
             << "cell (" << amr[0] << "," << amr[1] << ") sd=" << sd;
     }
+}
+
+
+namespace
+{
+struct TagFieldsMockState
+{
+    UsableVecField<ib_tagger_dim>& B;
+    UsableVecField<ib_tagger_dim>& E;
+    auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(B, E); }
+    auto getCompileTimeResourcesViewList() const { return std::forward_as_tuple(B, E); }
+};
+
+struct TagFieldsMockModel
+{
+    using gridlayout_type                  = IBTaggerGridLayout;
+    static constexpr std::size_t dimension = ib_tagger_dim;
+
+    TagFieldsMockState state;
+    UsableVecField<ib_tagger_dim>* B_ptr = nullptr;
+
+    bool hasInnerBoundary() const { return false; }
+    auto& get_B() { return *B_ptr; }
+};
+
+// fill component (ix,iy) with `ix` -> gradient large enough to tag every cell at threshold=0.1
+template<typename Field, typename Layout, typename Qty>
+void fillRamp(Field& f, Layout const& layout, Qty qty)
+{
+    auto const alloc = layout.allocSize(qty);
+    for (std::size_t ix = 0; ix < alloc[0]; ++ix)
+        for (std::size_t iy = 0; iy < alloc[1]; ++iy)
+            f(ix, iy) = static_cast<double>(ix);
+}
+
+template<typename Field, typename Layout, typename Qty>
+void fillZero(Field& f, Layout const& layout, Qty qty)
+{
+    auto const alloc = layout.allocSize(qty);
+    for (std::size_t ix = 0; ix < alloc[0]; ++ix)
+        for (std::size_t iy = 0; iy < alloc[1]; ++iy)
+            f(ix, iy) = 0.0;
+}
+} // namespace
+
+
+TEST(DefaultTaggerStrategy, BvecMatchesDefaultBehavior)
+{
+    constexpr std::size_t dim = ib_tagger_dim;
+    auto const layout         = TestGridLayout<IBTaggerGridLayout>::make(20);
+
+    UsableVecField<dim> B{"B", layout, HybridQuantity::Vector::B};
+    UsableVecField<dim> E{"E", layout, HybridQuantity::Vector::E};
+    fillRamp(B.getComponent(PHARE::core::Component::Y), layout, HybridQuantity::Scalar::By);
+
+    TagFieldsMockModel model{TagFieldsMockState{B, E}, &B};
+
+    auto const ncells = layout.nbrCells();
+    std::vector<int> tagsDefault(ncells[0] * ncells[1], 0);
+    std::vector<int> tagsExplicit(ncells[0] * ncells[1], 0);
+
+    PHARE::initializer::PHAREDict dictDefault;
+    dictDefault["threshold"] = 0.1;
+    DefaultTaggerStrategy<TagFieldsMockModel> stratDefault{dictDefault};
+    stratDefault.tag(model, layout, tagsDefault.data());
+
+    PHARE::initializer::PHAREDict dictExplicit;
+    dictExplicit["threshold"]  = 0.1;
+    dictExplicit["nbr_fields"] = std::size_t{1};
+    dictExplicit["field0"]     = std::string{"B"};
+    DefaultTaggerStrategy<TagFieldsMockModel> stratExplicit{dictExplicit};
+    stratExplicit.tag(model, layout, tagsExplicit.data());
+
+    EXPECT_EQ(tagsDefault, tagsExplicit);
+}
+
+
+TEST(DefaultTaggerStrategy, EvecTagsOnEOnly)
+{
+    constexpr std::size_t dim = ib_tagger_dim;
+    auto const layout         = TestGridLayout<IBTaggerGridLayout>::make(20);
+
+    // B identically zero, E_y a ramp -> default (B-only) tags nothing, ["E"] tags everything.
+    UsableVecField<dim> B{"B", layout, HybridQuantity::Vector::B};
+    UsableVecField<dim> E{"E", layout, HybridQuantity::Vector::E};
+    fillZero(B.getComponent(PHARE::core::Component::Y), layout, HybridQuantity::Scalar::By);
+    fillRamp(E.getComponent(PHARE::core::Component::Y), layout, HybridQuantity::Scalar::Ey);
+
+    TagFieldsMockModel model{TagFieldsMockState{B, E}, &B};
+    auto const ncells = layout.nbrCells();
+
+    PHARE::initializer::PHAREDict dictDefault;
+    dictDefault["threshold"] = 0.1;
+    std::vector<int> tagsB(ncells[0] * ncells[1], 0);
+    DefaultTaggerStrategy<TagFieldsMockModel>{dictDefault}.tag(model, layout, tagsB.data());
+
+    PHARE::initializer::PHAREDict dictE;
+    dictE["threshold"]  = 0.1;
+    dictE["nbr_fields"] = std::size_t{1};
+    dictE["field0"]     = std::string{"E"};
+    std::vector<int> tagsE(ncells[0] * ncells[1], 0);
+    DefaultTaggerStrategy<TagFieldsMockModel>{dictE}.tag(model, layout, tagsE.data());
+
+    bool constexpr fortran = false;
+    auto tagsBv            = NdArrayView<dim, int, fortran>(tagsB.data(), ncells);
+    auto tagsEv            = NdArrayView<dim, int, fortran>(tagsE.data(), ncells);
+    for (auto const& p : boxFromNbrCells(ncells))
+    {
+        EXPECT_EQ(tagsBv(p.toArray()), 0) << "B-default should be 0 with zero B";
+        EXPECT_EQ(tagsEv(p.toArray()), 1) << "E ramp should tag";
+    }
+}
+
+
+TEST(DefaultTaggerStrategy, BxCompactNameSelectsSingleComponent)
+{
+    constexpr std::size_t dim = ib_tagger_dim;
+    auto const layout         = TestGridLayout<IBTaggerGridLayout>::make(20);
+
+    UsableVecField<dim> B{"B", layout, HybridQuantity::Vector::B};
+    UsableVecField<dim> E{"E", layout, HybridQuantity::Vector::E};
+    // Bx has a ramp, By/Bz zero -> ["Bx"] tags everywhere, ["By"] tags nothing.
+    fillRamp(B.getComponent(PHARE::core::Component::X), layout, HybridQuantity::Scalar::Bx);
+
+    TagFieldsMockModel model{TagFieldsMockState{B, E}, &B};
+    auto const ncells = layout.nbrCells();
+
+    PHARE::initializer::PHAREDict dictBx;
+    dictBx["threshold"]  = 0.1;
+    dictBx["nbr_fields"] = std::size_t{1};
+    dictBx["field0"]     = std::string{"Bx"};
+    std::vector<int> tagsBx(ncells[0] * ncells[1], 0);
+    DefaultTaggerStrategy<TagFieldsMockModel>{dictBx}.tag(model, layout, tagsBx.data());
+
+    PHARE::initializer::PHAREDict dictBy;
+    dictBy["threshold"]  = 0.1;
+    dictBy["nbr_fields"] = std::size_t{1};
+    dictBy["field0"]     = std::string{"By"};
+    std::vector<int> tagsBy(ncells[0] * ncells[1], 0);
+    DefaultTaggerStrategy<TagFieldsMockModel>{dictBy}.tag(model, layout, tagsBy.data());
+
+    bool constexpr fortran = false;
+    auto tagsBxv           = NdArrayView<dim, int, fortran>(tagsBx.data(), ncells);
+    auto tagsByv           = NdArrayView<dim, int, fortran>(tagsBy.data(), ncells);
+    for (auto const& p : boxFromNbrCells(ncells))
+    {
+        EXPECT_EQ(tagsBxv(p.toArray()), 1);
+        EXPECT_EQ(tagsByv(p.toArray()), 0);
+    }
+}
+
+
+TEST(DefaultTaggerStrategy, UnknownFieldNameThrows)
+{
+    constexpr std::size_t dim = ib_tagger_dim;
+    auto const layout         = TestGridLayout<IBTaggerGridLayout>::make(20);
+
+    UsableVecField<dim> B{"B", layout, HybridQuantity::Vector::B};
+    UsableVecField<dim> E{"E", layout, HybridQuantity::Vector::E};
+    TagFieldsMockModel model{TagFieldsMockState{B, E}, &B};
+
+    PHARE::initializer::PHAREDict dict;
+    dict["threshold"]  = 0.1;
+    dict["nbr_fields"] = std::size_t{1};
+    dict["field0"]     = std::string{"bogus_does_not_exist"};
+
+    DefaultTaggerStrategy<TagFieldsMockModel> strat{dict};
+    auto const ncells = layout.nbrCells();
+    std::vector<int> tags(ncells[0] * ncells[1], 0);
+
+    EXPECT_THROW(strat.tag(model, layout, tags.data()), std::runtime_error);
 }
 
 

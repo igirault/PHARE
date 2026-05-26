@@ -1092,7 +1092,9 @@ def checker(func):
             "refinement_boxes",
             "refinement",
             "tagging_threshold",
-            "inner_boundary_refinement_halo",
+            "tag_fields",
+            "inner_boundary_no_refinement_halo",
+            "physical_boundary_no_refinement_halo",
             "clustering",
             "smallest_patch_size",
             "largest_patch_size",
@@ -1186,7 +1188,9 @@ def checker(func):
 
             kwargs["refinement_boxes"] = None
             kwargs["tagging_threshold"] = kwargs.get("tagging_threshold", 0.1)
-            kwargs["inner_boundary_refinement_halo"] = kwargs.get("inner_boundary_refinement_halo", None)
+            kwargs["tag_fields"] = kwargs.get("tag_fields", None)
+            kwargs["inner_boundary_no_refinement_halo"] = kwargs.get("inner_boundary_no_refinement_halo", None)
+            kwargs["physical_boundary_no_refinement_halo"] = kwargs.get("physical_boundary_no_refinement_halo", None)
 
         kwargs["resistivity"] = check_resistivity(**kwargs)
 

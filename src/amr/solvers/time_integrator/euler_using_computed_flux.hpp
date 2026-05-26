@@ -45,7 +45,12 @@ public:
             },
             statenew);
 
-        // Assign a safe physical state in the inner boundary inactive region
+        // Pin the inner-boundary inactive region to a canonical safe physical state.
+        // We cannot simply copy the previous-step values into `statenew` because some
+        // integrators (e.g. TVDRK3) reuse a single buffer for both `state` and `statenew`;
+        // in that aliased case the copy is a self-assignment and the drift from
+        // `fv_euler_` / `faraday_` persists. Recomputing the safe state every substep is
+        // both alias-safe and matches what `mhd_level_initializer` does at init.
         if (model.hasInnerBoundary())
         {
             inner_boundary_manager_type& ibm = *model.innerBoundaryManager;
@@ -53,40 +58,34 @@ public:
             amr::visitLevel<gridlayout_type>(
                 level, rm,
                 [&](auto& layout, auto&&, auto&&) {
-                    // Restore cell-centered quantities for inactive cells
-                    auto& meshData   = ibm.getMeshData();
-                    auto& cellStatus = meshData.cellStatusField();
-                    layout.evalOnGhostBox(statenew.rho, [&](auto&... args) {
-                        auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
-                        if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
-                        {
-                            statenew.rho(idx)   = state.rho(idx);
-                            statenew.Etot1(idx) = state.Etot1(idx);
-                            statenew.rhoV(core::Component::X)(idx)
-                                = state.rhoV(core::Component::X)(idx);
-                            statenew.rhoV(core::Component::Y)(idx)
-                                = state.rhoV(core::Component::Y)(idx);
-                            statenew.rhoV(core::Component::Z)(idx)
-                                = state.rhoV(core::Component::Z)(idx);
-                        }
-                    });
+                    auto& meshData = ibm.getMeshData();
 
-                    // Restore face-centered B for inactive face elements
-                    auto restoreB = [&](auto component) {
+                    // Zero inactive face-centered B1 first: the cell-centered safe reset
+                    // recomputes Etot1 from the projected B at the cell centre, so any
+                    // stale face value would leak into the energy.
+                    auto resetB = [&](auto component) {
                         auto centering
                             = layout.centering(statenew.B1(component).physicalQuantity());
                         auto& faceStatus = meshData.getStatusFieldFromCentering(centering);
                         layout.evalOnBox(statenew.B1(component), [&](auto&... args) {
                             auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
                             if (faceStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
-                                statenew.B1(component)(idx) = state.B1(component)(idx);
+                                statenew.B1(component)(idx) = 0.0;
                         });
                     };
-                    restoreB(core::Component::X);
-                    restoreB(core::Component::Y);
-                    restoreB(core::Component::Z);
+                    resetB(core::Component::X);
+                    resetB(core::Component::Y);
+                    resetB(core::Component::Z);
+
+                    // Pin inactive cell-centered conservatives to (rho=1, P=1, V=0).
+                    auto& cellStatus = meshData.cellStatusField();
+                    layout.evalOnGhostBox(statenew.rho, [&](auto&... args) {
+                        auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
+                        if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
+                            statenew.safeResetInactiveCell(idx, layout, *model.thermo);
+                    });
                 },
-                ibm, state, statenew);
+                ibm, statenew);
         }
 
         bc.fillMagneticGhosts(statenew.B1, level, newTime);
