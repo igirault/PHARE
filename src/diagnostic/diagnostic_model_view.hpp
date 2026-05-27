@@ -293,10 +293,7 @@ public:
 
     NO_DISCARD const Field& getEtot1() const { return this->model_.state.Etot1; }
 
-    NO_DISCARD const VecField& getE() const
-    {
-        throw std::runtime_error("E not currently available in MHD diagnostics");
-    }
+    NO_DISCARD const VecField& getE() const { return this->model_.state.E; }
 
     // for setBuffer function in visitHierarchy
     NO_DISCARD Field& getRho() { return this->model_.state.rho; }
@@ -307,10 +304,7 @@ public:
 
     NO_DISCARD Field& getEtot() { return this->model_.EtotTotal_; }
 
-    NO_DISCARD VecField& getE()
-    {
-        throw std::runtime_error("E not currently available in MHD diagnostics");
-    }
+    NO_DISCARD VecField& getE() { return this->model_.state.E; }
 
     // diag only
     NO_DISCARD VecField& getV() { return V_diag_; }

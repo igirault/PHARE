@@ -231,7 +231,7 @@ private:
         double const p   = data["pressure"].to<double>();
         double const rho = data["density"].to<double>();
         auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
-        auto const B     = initializer::parseDimXYZType<double, 3>(data, "B");
+        auto const B     = initializer::parseDimXYZType<double, 3>(data, "B1");
 
         thermo->setState_DP(rho, p);
         double const Etot

@@ -5,6 +5,7 @@
 #include "amr/solvers/solver_mhd_model_view.hpp"
 
 #include "core/inner_boundary/inner_bc_context.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -82,7 +83,27 @@ public:
             inner_boundary_manager_type& ibm = *model.innerBoundaryManager;
             core::InnerBCContext<state_type> ctx{state, state, newTime};
             amr::visitLevel<gridlayout_type>(
-                level, rm, [&](auto& layout, auto&&, auto&&) { ibm.applyBC(state.E, layout, ctx); },
+                level, rm,
+                [&](auto& layout, auto&&, auto&&) {
+                    ibm.applyBC(state.E, layout, ctx);
+
+                    // Pin E to 0 in inactive cells (deep inside the body) so the large CT
+                    // values there neither pollute diagnostics nor leak into the cut-cell
+                    // Faraday stencil that consumes E next. Done per component centering.
+                    auto& meshData = ibm.getMeshData();
+                    auto zeroE     = [&](auto component) {
+                        auto centering = layout.centering(state.E(component).physicalQuantity());
+                        auto& status   = meshData.getStatusFieldFromCentering(centering);
+                        layout.evalOnBox(state.E(component), [&](auto&... args) {
+                            auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
+                            if (status(idx) == core::toDouble(core::ElemStatus::Inactive))
+                                state.E(component)(idx) = 0.0;
+                        });
+                    };
+                    zeroE(core::Component::X);
+                    zeroE(core::Component::Y);
+                    zeroE(core::Component::Z);
+                },
                 ibm, state);
         }
     }

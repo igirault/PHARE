@@ -121,10 +121,10 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B"]
-                add_double(f"{bc_path}/data/B/x", bx)
-                add_double(f"{bc_path}/data/B/y", by)
-                add_double(f"{bc_path}/data/B/z", bz)
+                bx, by, bz = data["B1"]
+                add_double(f"{bc_path}/data/B1/x", bx)
+                add_double(f"{bc_path}/data/B1/y", by)
+                add_double(f"{bc_path}/data/B1/z", bz)
             elif bc["type"] == "free-pressure-inflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/density", data["density"])
@@ -132,10 +132,10 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B"]
-                add_double(f"{bc_path}/data/B/x", bx)
-                add_double(f"{bc_path}/data/B/y", by)
-                add_double(f"{bc_path}/data/B/z", bz)
+                bx, by, bz = data["B1"]
+                add_double(f"{bc_path}/data/B1/x", bx)
+                add_double(f"{bc_path}/data/B1/y", by)
+                add_double(f"{bc_path}/data/B1/z", bz)
             elif bc["type"] == "fixed-pressure-outflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/pressure", data["pressure"])
@@ -151,10 +151,10 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B"]
-                add_double(f"{bc_path}/data/B/x", bx)
-                add_double(f"{bc_path}/data/B/y", by)
-                add_double(f"{bc_path}/data/B/z", bz)
+                bx, by, bz = data["B1"]
+                add_double(f"{bc_path}/data/B1/x", bx)
+                add_double(f"{bc_path}/data/B1/y", by)
+                add_double(f"{bc_path}/data/B1/z", bz)
                 add_double(f"{bc_path}/data/relax_velocity_n", data["relax_velocity_n"])
                 add_double(f"{bc_path}/data/relax_velocity_t", data["relax_velocity_t"])
                 add_double(f"{bc_path}/data/relax_density",    data["relax_density"])

@@ -165,6 +165,10 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
         return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
         return file_initializer.initFieldFileLevel(ilvl);
+    for (auto const& name : {"IBStatusE_x", "IBStatusE_y", "IBStatusE_z", "IBStatusB_x",
+                             "IBStatusB_y", "IBStatusB_z"})
+        if (isActiveDiag(diagnostic, tree, name))
+            return file_initializer.initFieldFileLevel(ilvl);
 
 
     return std::nullopt;
@@ -275,6 +279,29 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
         file_writer.writeField(innerBoundaryMeshData.cellStatusField(), layout);
     else if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
         file_writer.writeField(innerBoundaryMeshData.signedDistanceAtNodes, layout);
+    else
+    {
+        // per-component element status for E (CT) and B (Faraday), to verify that
+        // locations adjacent to cut cells are classified Fluid/Cut (not Inactive).
+        auto& E  = modelView.getE();
+        auto& B1 = modelView.getB1();
+        auto statusOf = [&](auto const& component) -> auto& {
+            return innerBoundaryMeshData.getStatusFieldFromCentering(
+                GridLayout::centering(component));
+        };
+        if (isActiveDiag(diagnostic, tree, "IBStatusE_x"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::X)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusE_y"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::Y)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusE_z"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::Z)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_x"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::X)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_y"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::Y)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_z"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::Z)), layout);
+    }
 }
 
 

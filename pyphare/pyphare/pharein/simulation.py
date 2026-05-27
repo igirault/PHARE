@@ -327,7 +327,7 @@ def _normalize_B(location, B):
 def _check_inflow_data(location, bc):
     """Validate and normalise the 'data' sub-dict for a super-magnetofast-inflow BC."""
     data = bc.get("data", {})
-    for key in ("density", "pressure", "velocity", "B"):
+    for key in ("density", "pressure", "velocity", "B1"):
         if key not in data:
             raise KeyError(
                 f"Inflow BC at '{location}' requires '{key}' inside 'data'"
@@ -340,7 +340,7 @@ def _check_inflow_data(location, bc):
                 f"got {val!r}"
             )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"]        = _normalize_B(location, data["B"])
+    data["B1"]        = _normalize_B(location, data["B1"])
     bc["data"] = data
 
 
