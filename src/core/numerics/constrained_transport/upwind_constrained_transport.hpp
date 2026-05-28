@@ -200,7 +200,13 @@ public:
             model.resourcesManager->registerResources(jt_x);
             model.resourcesManager->registerResources(rhot_x);
         }
-        
+        // Register upwind edge-B for Poynting correction (needed in all dimensions).
+        // Total (Bt) and perturbation (B1) variants: B1 feeds the Etot1 Poynting flux, also in 1D.
+        model.resourcesManager->registerResources(Bt_z_at_Ey);
+        model.resourcesManager->registerResources(Bt_y_at_Ez);
+        model.resourcesManager->registerResources(B1_z_at_Ey);
+        model.resourcesManager->registerResources(B1_y_at_Ez);
+
         if constexpr (dimension >= 2)
         {
             model.resourcesManager->registerResources(vt_y);
@@ -213,15 +219,14 @@ public:
                 model.resourcesManager->registerResources(jt_y);
                 model.resourcesManager->registerResources(rhot_y);
             }
-            // Register edge-B (total) at Ez/Ey/Ex - needed for 2D+ Poynting
+            // Register edge-B (total) at Ez/Ex - needed for 2D+ Poynting
+            // (Bt_y_at_Ez / Bt_z_at_Ey are registered above for all dimensions)
             model.resourcesManager->registerResources(Bt_x_at_Ez);
-            model.resourcesManager->registerResources(Bt_y_at_Ez);
-            model.resourcesManager->registerResources(Bt_z_at_Ey);
+            // Register Bz at Ex location - needed for 2D+ Poynting (ExBz term)
             model.resourcesManager->registerResources(Bt_z_at_Ex);
             // Register edge-B1 (perturbation) - used by Poynting for Etot1
+            // (B1_y_at_Ez / B1_z_at_Ey are registered above for all dimensions)
             model.resourcesManager->registerResources(B1_x_at_Ez);
-            model.resourcesManager->registerResources(B1_y_at_Ez);
-            model.resourcesManager->registerResources(B1_z_at_Ey);
             model.resourcesManager->registerResources(B1_z_at_Ex);
 
             if constexpr (dimension == 3)
@@ -257,7 +262,13 @@ public:
             model.resourcesManager->allocate(jt_x, patch, allocateTime);
             model.resourcesManager->allocate(rhot_x, patch, allocateTime);
         }
-        
+        // Allocate upwind edge-B for Poynting correction (needed in all dimensions);
+        // total (Bt) and perturbation (B1) variants - B1 feeds the Etot1 Poynting flux, also in 1D.
+        model.resourcesManager->allocate(Bt_z_at_Ey, patch, allocateTime);
+        model.resourcesManager->allocate(Bt_y_at_Ez, patch, allocateTime);
+        model.resourcesManager->allocate(B1_z_at_Ey, patch, allocateTime);
+        model.resourcesManager->allocate(B1_y_at_Ez, patch, allocateTime);
+
         if constexpr (dimension >= 2)
         {
             model.resourcesManager->allocate(vt_y, patch, allocateTime);
@@ -270,15 +281,14 @@ public:
                 model.resourcesManager->allocate(jt_y, patch, allocateTime);
                 model.resourcesManager->allocate(rhot_y, patch, allocateTime);
             }
-            // Allocate edge-B (total) at Ez/Ey/Ex
+            // Allocate edge-B (total) at Ez/Ex
+            // (Bt_y_at_Ez / Bt_z_at_Ey are allocated above for all dimensions)
             model.resourcesManager->allocate(Bt_x_at_Ez, patch, allocateTime);
-            model.resourcesManager->allocate(Bt_y_at_Ez, patch, allocateTime);
-            model.resourcesManager->allocate(Bt_z_at_Ey, patch, allocateTime);
+            // Allocate Bz at Ex location - needed for 2D+ Poynting (ExBz term)
             model.resourcesManager->allocate(Bt_z_at_Ex, patch, allocateTime);
-            // Allocate edge-B1 (perturbation) at Ez/Ey/Ex
+            // Allocate edge-B1 (perturbation) at Ez/Ex
+            // (B1_y_at_Ez / B1_z_at_Ey are allocated above for all dimensions)
             model.resourcesManager->allocate(B1_x_at_Ez, patch, allocateTime);
-            model.resourcesManager->allocate(B1_y_at_Ez, patch, allocateTime);
-            model.resourcesManager->allocate(B1_z_at_Ey, patch, allocateTime);
             model.resourcesManager->allocate(B1_z_at_Ex, patch, allocateTime);
 
             if constexpr (dimension == 3)
@@ -306,9 +316,11 @@ public:
         if constexpr (dimension == 1)
         {
             if constexpr (Hall)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez, B1_z_at_Ey, B1_y_at_Ez);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez, B1_z_at_Ey, B1_y_at_Ez);
         }
         else if constexpr (dimension == 2)
         {
@@ -360,9 +372,11 @@ public:
         if constexpr (dimension == 1)
         {
             if constexpr (Hall)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez, B1_z_at_Ey, B1_y_at_Ez);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             Bt_z_at_Ey, Bt_y_at_Ez, B1_z_at_Ey, B1_y_at_Ez);
         }
         else if constexpr (dimension == 2)
         {
@@ -610,13 +624,17 @@ private:
     {
         if constexpr (dimension == 1)
         {
-            auto [ByL, ByR] = reconstructTotal_<Direction::X>(B1, B0, Component::Y, idx);
-            auto const Bx   = totalAt_(B1, B0, Component::X, idx);
+            auto [B1yL, B1yR, ByL, ByR]
+                = reconstructBoth_<Direction::X>(B1, B0, Component::Y, idx);
+            auto const Bx = totalAt_(B1, B0, Component::X, idx);
 
             auto FL = ByL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
             auto FR = ByR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
 
             Ez(idx) = -(aL_x(idx) * FL + aR_x(idx) * FR) + (dR_x(idx) * ByR - dL_x(idx) * ByL);
+
+            Bt_y_at_Ez(idx) = aL_x(idx) * ByL + aR_x(idx) * ByR;
+            B1_y_at_Ez(idx) = aL_x(idx) * B1yL + aR_x(idx) * B1yR;
 
             if constexpr (Hall)
             {

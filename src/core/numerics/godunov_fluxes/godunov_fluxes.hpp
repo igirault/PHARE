@@ -301,7 +301,15 @@ private:
 
             F_Etot += ExBy - EyBx;
         }
-        // direction == X && dimension == 1: No Poynting correction (no transverse directions)
+        else if constexpr (direction == Direction::X && dimension == 1)
+        {
+            // In 1D, Ey/Ez (y/z-edges) and B1_*_at_E* (CT-upwinded to x-face) all live
+            // at the x-flux face — no averaging needed, same pattern as the 2D case above.
+            // Etot1 is the perturbation energy, so its Poynting flux uses B1 (not total B).
+            auto const& B1y_at_Ez = ct.getB1y_at_Ez();
+            auto const& B1z_at_Ey = ct.getB1z_at_Ey();
+            F_Etot += Ey(index) * B1z_at_Ey(index) - Ez(index) * B1y_at_Ez(index);
+        }
     }
 
 
