@@ -131,7 +131,8 @@ public:
         }
         else
         {
-            static_assert(false, "Unhandled FieldBoundaryConditionType");
+            // static_assert(false, "Unhandled FieldBoundaryConditionType");
+            throw std::runtime_error("Unhandled FieldBoundaryConditionType");
         };
     }
 };

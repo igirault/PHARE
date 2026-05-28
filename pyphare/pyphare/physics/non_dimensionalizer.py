@@ -22,7 +22,10 @@ import scipy.constants as sct
 from math import sqrt
 from enum import Enum, auto
 from collections.abc import Mapping, Iterator
-from typing import override
+try:
+    from typing import override  # 3.12+
+except ImportError:
+    from typing_extensions import override
 
 
 class Quantity(Enum):
