@@ -163,6 +163,26 @@ public:
             return rhot_z;
     }
 
+    // Edge-centered B fields for Poynting energy correction.
+    // Total B (B0+B1) is used in Ohm's law for E; perturbation B1 is used in the
+    // Poynting flux for Etot1 (B-split formulation) so that static B0 is not transported.
+
+    // Total B at edge locations (kept for diagnostics / future use)
+    auto const& getBx_at_Ez() const { return Bt_x_at_Ez; }
+    auto const& getBy_at_Ez() const { return Bt_y_at_Ez; }
+    auto const& getBz_at_Ey() const { return Bt_z_at_Ey; }
+    auto const& getBx_at_Ey() const { return Bt_x_at_Ey; }
+    auto const& getBz_at_Ex() const { return Bt_z_at_Ex; }
+    auto const& getBy_at_Ex() const { return Bt_y_at_Ex; }
+
+    // Perturbation B1 at edge locations (used by godunov Poynting correction)
+    auto const& getB1x_at_Ez() const { return B1_x_at_Ez; }
+    auto const& getB1y_at_Ez() const { return B1_y_at_Ez; }
+    auto const& getB1z_at_Ey() const { return B1_z_at_Ey; }
+    auto const& getB1x_at_Ey() const { return B1_x_at_Ey; }
+    auto const& getB1z_at_Ex() const { return B1_z_at_Ex; }
+    auto const& getB1y_at_Ex() const { return B1_y_at_Ex; }
+
     void registerResources(MHDModel& model)
     {
         model.resourcesManager->registerResources(vt_x);
@@ -175,6 +195,7 @@ public:
             model.resourcesManager->registerResources(jt_x);
             model.resourcesManager->registerResources(rhot_x);
         }
+        
         if constexpr (dimension >= 2)
         {
             model.resourcesManager->registerResources(vt_y);
@@ -187,6 +208,17 @@ public:
                 model.resourcesManager->registerResources(jt_y);
                 model.resourcesManager->registerResources(rhot_y);
             }
+            // Register edge-B (total) at Ez/Ey/Ex - needed for 2D+ Poynting
+            model.resourcesManager->registerResources(Bt_x_at_Ez);
+            model.resourcesManager->registerResources(Bt_y_at_Ez);
+            model.resourcesManager->registerResources(Bt_z_at_Ey);
+            model.resourcesManager->registerResources(Bt_z_at_Ex);
+            // Register edge-B1 (perturbation) - used by Poynting for Etot1
+            model.resourcesManager->registerResources(B1_x_at_Ez);
+            model.resourcesManager->registerResources(B1_y_at_Ez);
+            model.resourcesManager->registerResources(B1_z_at_Ey);
+            model.resourcesManager->registerResources(B1_z_at_Ex);
+
             if constexpr (dimension == 3)
             {
                 model.resourcesManager->registerResources(vt_z);
@@ -199,6 +231,11 @@ public:
                     model.resourcesManager->registerResources(jt_z);
                     model.resourcesManager->registerResources(rhot_z);
                 }
+                // 3D-only edge fields (in-plane cross terms)
+                model.resourcesManager->registerResources(Bt_x_at_Ey);
+                model.resourcesManager->registerResources(Bt_y_at_Ex);
+                model.resourcesManager->registerResources(B1_x_at_Ey);
+                model.resourcesManager->registerResources(B1_y_at_Ex);
             }
         }
     }
@@ -215,6 +252,7 @@ public:
             model.resourcesManager->allocate(jt_x, patch, allocateTime);
             model.resourcesManager->allocate(rhot_x, patch, allocateTime);
         }
+        
         if constexpr (dimension >= 2)
         {
             model.resourcesManager->allocate(vt_y, patch, allocateTime);
@@ -227,6 +265,17 @@ public:
                 model.resourcesManager->allocate(jt_y, patch, allocateTime);
                 model.resourcesManager->allocate(rhot_y, patch, allocateTime);
             }
+            // Allocate edge-B (total) at Ez/Ey/Ex
+            model.resourcesManager->allocate(Bt_x_at_Ez, patch, allocateTime);
+            model.resourcesManager->allocate(Bt_y_at_Ez, patch, allocateTime);
+            model.resourcesManager->allocate(Bt_z_at_Ey, patch, allocateTime);
+            model.resourcesManager->allocate(Bt_z_at_Ex, patch, allocateTime);
+            // Allocate edge-B1 (perturbation) at Ez/Ey/Ex
+            model.resourcesManager->allocate(B1_x_at_Ez, patch, allocateTime);
+            model.resourcesManager->allocate(B1_y_at_Ez, patch, allocateTime);
+            model.resourcesManager->allocate(B1_z_at_Ey, patch, allocateTime);
+            model.resourcesManager->allocate(B1_z_at_Ex, patch, allocateTime);
+
             if constexpr (dimension == 3)
             {
                 model.resourcesManager->allocate(vt_z, patch, allocateTime);
@@ -239,6 +288,10 @@ public:
                     model.resourcesManager->allocate(jt_z, patch, allocateTime);
                     model.resourcesManager->allocate(rhot_z, patch, allocateTime);
                 }
+                model.resourcesManager->allocate(Bt_x_at_Ey, patch, allocateTime);
+                model.resourcesManager->allocate(Bt_y_at_Ex, patch, allocateTime);
+                model.resourcesManager->allocate(B1_x_at_Ey, patch, allocateTime);
+                model.resourcesManager->allocate(B1_y_at_Ex, patch, allocateTime);
             }
         }
     }
@@ -255,21 +308,42 @@ public:
         else if constexpr (dimension == 2)
         {
             if constexpr (Hall)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_z_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_z_at_Ex);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_z_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_z_at_Ex);
         }
         else if constexpr (dimension == 3)
         {
             if constexpr (Hall)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
-                                             dR_z, jt_z, rhot_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z, jt_z, rhot_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_x_at_Ey,
+                                             Bt_z_at_Ex, Bt_y_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_x_at_Ey,
+                                             B1_z_at_Ex, B1_y_at_Ex);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, vt_z, aL_z, aR_z, dL_z, dR_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_x_at_Ey,
+                                             Bt_z_at_Ex, Bt_y_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_x_at_Ey,
+                                             B1_z_at_Ex, B1_y_at_Ex);
         }
         else
             throw std::runtime_error(
@@ -288,21 +362,42 @@ public:
         else if constexpr (dimension == 2)
         {
             if constexpr (Hall)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_z_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_z_at_Ex);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_z_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_z_at_Ex);
         }
         else if constexpr (dimension == 3)
         {
             if constexpr (Hall)
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x, vt_y, aL_y,
-                                             aR_y, dL_y, dR_y, jt_y, rhot_y, vt_z, aL_z, aR_z, dL_z,
-                                             dR_z, jt_z, rhot_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, jt_x, rhot_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y, jt_y, rhot_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z, jt_z, rhot_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_x_at_Ey,
+                                             Bt_z_at_Ex, Bt_y_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_x_at_Ey,
+                                             B1_z_at_Ex, B1_y_at_Ex);
             else
-                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x, vt_y, aL_y, aR_y, dL_y,
-                                             dR_y, vt_z, aL_z, aR_z, dL_z, dR_z);
+                return std::forward_as_tuple(vt_x, aL_x, aR_x, dL_x, dR_x,
+                                             vt_y, aL_y, aR_y, dL_y, dR_y,
+                                             vt_z, aL_z, aR_z, dL_z, dR_z,
+                                             Bt_x_at_Ez, Bt_y_at_Ez,
+                                             Bt_z_at_Ey, Bt_x_at_Ey,
+                                             Bt_z_at_Ex, Bt_y_at_Ex,
+                                             B1_x_at_Ez, B1_y_at_Ez,
+                                             B1_z_at_Ey, B1_x_at_Ey,
+                                             B1_z_at_Ex, B1_y_at_Ex);
         }
         else
             throw std::runtime_error(
@@ -310,33 +405,50 @@ public:
     }
 
 private:
-    static auto totalAt_(auto const& B, auto const& B0, auto const component, auto const& idx)
+    static auto totalAt_(auto const& B1, auto const& B0, auto const component, auto const& idx)
     {
-        return B(component)(idx) + B0(component)(idx);
+        return B1(component)(idx) + B0(component)(idx);
     }
 
     template<auto direction>
-    static auto reconstructTotal_(auto const& B, auto const& B0, auto const component,
+    static auto reconstructTotal_(auto const& B1, auto const& B0, auto const component,
                                   auto const& idx)
     {
-        auto const [BL1, BR1]
-            = Reconstruction_t::template reconstruct<direction>(B(component), idx);
-        auto const [BL0, BR0]
+        auto const [B1L, B1R]
+            = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
+        auto const [B0L, B0R]
             = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
-        return std::make_pair(BL1 + BL0, BR1 + BR0);
+        return std::make_pair(B1L + B0L, B1R + B0R);
     }
 
-    void ExEq_(auto& Ex, auto const& B, auto const& B0, MeshIndex<dimension> idx) const
+    // Returns (B1L, B1R, BtotalL, BtotalR) — caller needs both for Ohm's law (total)
+    // and for the Poynting Etot1 flux (perturbation B1 only).
+    template<auto direction>
+    static auto reconstructBoth_(auto const& B1, auto const& B0, auto const component,
+                                 auto const& idx)
+    {
+        auto const [B1L, B1R]
+            = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
+        auto const [B0L, B0R]
+            = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
+        return std::make_tuple(B1L, B1R, B1L + B0L, B1R + B0R);
+    }
+
+    void ExEq_(auto& Ex, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 2)
         {
-            auto [BzL, BzR] = reconstructTotal_<Direction::Y>(B, B0, Component::Z, idx);
-            auto const By   = totalAt_(B, B0, Component::Y, idx);
+            auto [B1zL, B1zR, BzL, BzR]
+                = reconstructBoth_<Direction::Y>(B1, B0, Component::Z, idx);
+            auto const By   = totalAt_(B1, B0, Component::Y, idx);
 
             auto FL = BzL * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
             auto FR = BzR * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
 
             Ex(idx) = -(aL_y(idx) * FL + aR_y(idx) * FR) + (dR_y(idx) * BzR - dL_y(idx) * BzL);
+
+            Bt_z_at_Ex(idx) = aL_y(idx) * BzL + aR_y(idx) * BzR;
+            B1_z_at_Ex(idx) = aL_y(idx) * B1zL + aR_y(idx) * B1zR;
 
             if constexpr (Hall)
             {
@@ -370,11 +482,18 @@ private:
             auto [vzB, vzT]
                 = Reconstruction_t::template reconstruct<Direction::Z>(vt_y(Component::Z), idx);
 
-            auto [BzS, BzN] = reconstructTotal_<Direction::Y>(B, B0, Component::Z, idx);
-            auto [ByB, ByT] = reconstructTotal_<Direction::Z>(B, B0, Component::Y, idx);
+            auto [B1zS, B1zN, BzS, BzN]
+                = reconstructBoth_<Direction::Y>(B1, B0, Component::Z, idx);
+            auto [B1yB, B1yT, ByB, ByT]
+                = reconstructBoth_<Direction::Z>(B1, B0, Component::Y, idx);
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
+
+            Bt_y_at_Ex(idx) = aB * ByB + aT * ByT;
+            Bt_z_at_Ex(idx) = aS * BzS + aN * BzN;
+            B1_y_at_Ex(idx) = aB * B1yB + aT * B1yT;
+            B1_z_at_Ex(idx) = aS * B1zS + aN * B1zN;
 
             if constexpr (Hall)
             {
@@ -394,17 +513,21 @@ private:
         }
     }
 
-    void EyEq_(auto& Ey, auto const& B, auto const& B0, MeshIndex<dimension> idx) const
+    void EyEq_(auto& Ey, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension <= 2)
         {
-            auto [BzL, BzR] = reconstructTotal_<Direction::X>(B, B0, Component::Z, idx);
-            auto const Bx   = totalAt_(B, B0, Component::X, idx);
+            auto [B1zL, B1zR, BzL, BzR]
+                = reconstructBoth_<Direction::X>(B1, B0, Component::Z, idx);
+            auto const Bx   = totalAt_(B1, B0, Component::X, idx);
 
             auto FL = BzL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
             auto FR = BzR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
 
             Ey(idx) = (aL_x(idx) * FL + aR_x(idx) * FR) - (dR_x(idx) * BzR - dL_x(idx) * BzL);
+
+            Bt_z_at_Ey(idx) = aL_x(idx) * BzL + aR_x(idx) * BzR;
+            B1_z_at_Ey(idx) = aL_x(idx) * B1zL + aR_x(idx) * B1zR;
 
             if constexpr (Hall)
             {
@@ -435,11 +558,18 @@ private:
                 = Reconstruction_t::template reconstruct<Direction::X>(vt_z(Component::X), idx);
             auto [vzB, vzT]
                 = Reconstruction_t::template reconstruct<Direction::Z>(vt_x(Component::Z), idx);
-            auto [BzW, BzE] = reconstructTotal_<Direction::X>(B, B0, Component::Z, idx);
-            auto [BxB, BxT] = reconstructTotal_<Direction::Z>(B, B0, Component::X, idx);
+            auto [B1zW, B1zE, BzW, BzE]
+                = reconstructBoth_<Direction::X>(B1, B0, Component::Z, idx);
+            auto [B1xB, B1xT, BxB, BxT]
+                = reconstructBoth_<Direction::Z>(B1, B0, Component::X, idx);
 
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
+
+            Bt_x_at_Ey(idx) = aB * BxB + aT * BxT;
+            Bt_z_at_Ey(idx) = aW * BzW + aE * BzE;
+            B1_x_at_Ey(idx) = aB * B1xB + aT * B1xT;
+            B1_z_at_Ey(idx) = aW * B1zW + aE * B1zE;
 
             if constexpr (Hall)
             {
@@ -457,12 +587,12 @@ private:
         }
     }
 
-    void EzEq_(auto& Ez, auto const& B, auto const& B0, MeshIndex<dimension> idx) const
+    void EzEq_(auto& Ez, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 1)
         {
-            auto [ByL, ByR] = reconstructTotal_<Direction::X>(B, B0, Component::Y, idx);
-            auto const Bx   = totalAt_(B, B0, Component::X, idx);
+            auto [ByL, ByR] = reconstructTotal_<Direction::X>(B1, B0, Component::Y, idx);
+            auto const Bx   = totalAt_(B1, B0, Component::X, idx);
 
             auto FL = ByL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
             auto FR = ByR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
@@ -501,11 +631,18 @@ private:
             auto [vxW, vxE]
                 = Reconstruction_t::template reconstruct<Direction::X>(vt_y(Component::X), idx);
 
-            auto [BxS, BxN] = reconstructTotal_<Direction::Y>(B, B0, Component::X, idx);
-            auto [ByW, ByE] = reconstructTotal_<Direction::X>(B, B0, Component::Y, idx);
+            auto [B1xS, B1xN, BxS, BxN]
+                = reconstructBoth_<Direction::Y>(B1, B0, Component::X, idx);
+            auto [B1yW, B1yE, ByW, ByE]
+                = reconstructBoth_<Direction::X>(B1, B0, Component::Y, idx);
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
+
+            Bt_x_at_Ez(idx) = aS * BxS + aN * BxN;
+            Bt_y_at_Ez(idx) = aW * ByW + aE * ByE;
+            B1_x_at_Ez(idx) = aS * B1xS + aN * B1xN;
+            B1_y_at_Ez(idx) = aW * B1yW + aE * B1yE;
 
             if constexpr (Hall)
             {
@@ -532,14 +669,14 @@ private:
     }
 
     template<auto component, typename Field, typename VecField>
-    void hyperresistive_contribution_(Field& E, Field const& J, VecField const& B,
+    void hyperresistive_contribution_(Field& E, Field const& J, VecField const& B1,
                                       VecField const& B0, Field const& rho,
                                       MeshIndex<Field::dimension> index) const
     {
         if (hyper_mode_ == HyperMode::constant)
             return constant_hyperresistive_<component>(E, J, index);
         else if (hyper_mode_ == HyperMode::spatial)
-            return spatial_hyperresistive_<component>(E, J, B, B0, rho, index);
+            return spatial_hyperresistive_<component>(E, J, B1, B0, rho, index);
         else
             throw std::runtime_error("Error - Ohm - unknown hyper_mode");
     }
@@ -551,7 +688,7 @@ private:
     }
 
     template<auto component, typename Field, typename VecField>
-    void spatial_hyperresistive_(Field& E, Field const& J, VecField const& B, VecField const& B0,
+    void spatial_hyperresistive_(Field& E, Field const& J, VecField const& B1, VecField const& B0,
                                  Field const& rho, MeshIndex<Field::dimension> index) const
     {
         auto minMeshSize = [&]() {
@@ -565,11 +702,11 @@ private:
         }();
 
         auto computeHR = [&]<auto BxProj, auto ByProj, auto BzProj, auto rhoProj>() {
-            auto const BxOnE = GridLayout::template project<BxProj>(B(Component::X), index)
+            auto const BxOnE = GridLayout::template project<BxProj>(B1(Component::X), index)
                                + GridLayout::template project<BxProj>(B0(Component::X), index);
-            auto const ByOnE = GridLayout::template project<ByProj>(B(Component::Y), index)
+            auto const ByOnE = GridLayout::template project<ByProj>(B1(Component::Y), index)
                                + GridLayout::template project<ByProj>(B0(Component::Y), index);
-            auto const BzOnE = GridLayout::template project<BzProj>(B(Component::Z), index)
+            auto const BzOnE = GridLayout::template project<BzProj>(B1(Component::Z), index)
                                + GridLayout::template project<BzProj>(B0(Component::Z), index);
             auto const nOnE  = GridLayout::template project<rhoProj>(rho, index);
             auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
@@ -626,6 +763,35 @@ private:
         aR_z{"aR_z", MHDQuantity::Scalar::ScalarFlux_z},
         dL_z{"dL_z", MHDQuantity::Scalar::ScalarFlux_z},
         dR_z{"dR_z", MHDQuantity::Scalar::ScalarFlux_z};
+
+    // Edge-centered B fields for Poynting energy correction
+    // Named following gPluto convention: Bx{component}e{edge_direction}
+    // Stored at E-field edge locations where they are computed during CT
+    
+    // B at z-edge (Ez centering): for X-flux and Y-flux Poynting (2D+)
+    MHDModel::field_type Bt_x_at_Ez{"Bx1ez", MHDQuantity::Scalar::Ez};  // Bx at z-edge
+    MHDModel::field_type Bt_y_at_Ez{"Bx2ez", MHDQuantity::Scalar::Ez};  // By at z-edge
+
+    // Bz at y-edge (Ey centering): for X-flux Poynting (2D+); = x-face in 2D
+    MHDModel::field_type Bt_z_at_Ey{"Bx3ey", MHDQuantity::Scalar::Ey};  // Bz at y-edge
+
+    // Bz at x-edge (Ex centering): for Y-flux Poynting (2D+); = y-face in 2D
+    MHDModel::field_type Bt_z_at_Ex{"Bx3ex", MHDQuantity::Scalar::Ex};  // Bz at x-edge
+
+    // B at y-edge (Ey centering): in-plane cross terms for Z-flux Poynting (3D only)
+    MHDModel::field_type Bt_x_at_Ey{"Bx1ey", MHDQuantity::Scalar::Ey};  // Bx at y-edge
+
+    // B at x-edge (Ex centering): in-plane cross terms for Z-flux Poynting (3D only)
+    MHDModel::field_type Bt_y_at_Ex{"Bx2ex", MHDQuantity::Scalar::Ex};  // By at x-edge
+
+    // Perturbation B1 at edge locations: used by godunov Poynting correction so
+    // that static B0 is not transported in the Etot1 flux.
+    MHDModel::field_type B1_x_at_Ez{"B1x1ez", MHDQuantity::Scalar::Ez};
+    MHDModel::field_type B1_y_at_Ez{"B1x2ez", MHDQuantity::Scalar::Ez};
+    MHDModel::field_type B1_z_at_Ey{"B1x3ey", MHDQuantity::Scalar::Ey};
+    MHDModel::field_type B1_z_at_Ex{"B1x3ex", MHDQuantity::Scalar::Ex};
+    MHDModel::field_type B1_x_at_Ey{"B1x1ey", MHDQuantity::Scalar::Ey};
+    MHDModel::field_type B1_y_at_Ex{"B1x2ex", MHDQuantity::Scalar::Ex};
 };
 } // namespace PHARE::core
 

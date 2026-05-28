@@ -26,14 +26,15 @@ public:
         auto const rho = u.rho;
         auto const V   = u.V;
         auto const B   = u.B;
-        auto const B1  = u.perturbationB();
         auto const P   = u.P;
 
         auto const GeneralisedPressure = P + 0.5 * (B.x * B.x + B.y * B.y + B.z * B.z);
-        auto const HydroEnergy = P / (gamma_ - 1.0) + kineticEnergy(rho, V.x, V.y, V.z);
-        auto const Ex          = V.z * B.y - V.y * B.z;
-        auto const Ey          = V.x * B.z - V.z * B.x;
-        auto const Ez          = V.y * B.x - V.x * B.y;
+
+        // HD-only energy: kinetic + thermal. Magnetic energy transport (E × B1 for
+        // perturbation energy Etot1 in B-split formulation) is provided by the CT
+        // Poynting correction in apply_poynting_correction() using B1 edge fields.
+        auto const Ehd = 0.5 * rho * (V.x * V.x + V.y * V.y + V.z * V.z)
+                         + P / (gamma_ - 1.0);
 
         if constexpr (direction == Direction::X)
         {
@@ -44,7 +45,7 @@ public:
             auto F_Bx    = 0.0;
             auto F_By    = B.y * V.x - V.y * B.x;
             auto F_Bz    = B.z * V.x - V.z * B.x;
-            auto F_Etot  = (HydroEnergy + P) * V.x + Ey * B1.z - Ez * B1.y;
+            auto F_Etot  = (Ehd + P) * V.x;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -57,7 +58,7 @@ public:
             auto F_Bx    = B.x * V.y - V.x * B.y;
             auto F_By    = 0.0;
             auto F_Bz    = B.z * V.y - V.z * B.y;
-            auto F_Etot  = (HydroEnergy + P) * V.y + Ez * B1.x - Ex * B1.z;
+            auto F_Etot  = (Ehd + P) * V.y;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -70,7 +71,7 @@ public:
             auto F_Bx    = B.x * V.z - V.x * B.z;
             auto F_By    = B.y * V.z - V.y * B.z;
             auto F_Bz    = 0.0;
-            auto F_Etot  = (HydroEnergy + P) * V.z + Ex * B1.y - Ey * B1.x;
+            auto F_Etot  = (Ehd + P) * V.z;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -82,7 +83,7 @@ public:
         PerIndex f = compute<direction>(u);
 
         if constexpr (Hall)
-            hall_contribution_<direction>(u.rho, u.B, u.perturbationB(), J, f.B, f.P);
+            hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
         // if constexpr (Resistivity)
         //     resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
 
@@ -137,42 +138,32 @@ private:
     double const nu_;
 
     template<auto direction>
-    static auto flux_component_(auto const& E, auto const& B)
-    {
-        if constexpr (direction == Direction::X)
-            return E.y * B.z - E.z * B.y;
-        else if constexpr (direction == Direction::Y)
-            return E.z * B.x - E.x * B.z;
-        else if constexpr (direction == Direction::Z)
-            return E.x * B.y - E.y * B.x;
-    }
-
-    template<auto direction>
-    void hall_contribution_(auto const& rho, auto const& B, auto const& B1, auto const& J,
-                            auto& F_B, auto& F_Etot) const
+    void hall_contribution_(auto const& rho, auto const& B, auto const& J, auto& F_B,
+                            auto& F_Etot) const
     {
         auto const invRho = 1.0 / rho;
-        auto const Ehall = PerIndexVector<double>{(J.y * B.z - J.z * B.y) * invRho,
-                                                  (J.z * B.x - J.x * B.z) * invRho,
-                                                  (J.x * B.y - J.y * B.x) * invRho};
+
+        auto const JxB_x = J.y * B.z - J.z * B.y;
+        auto const JxB_y = J.z * B.x - J.x * B.z;
+        auto const JxB_z = J.x * B.y - J.y * B.x;
 
         if constexpr (direction == Direction::X)
         {
-            F_B.y += -Ehall.z;
-            F_B.z += Ehall.y;
+            F_B.y += -JxB_z * invRho;
+            F_B.z += JxB_y * invRho;
+            // Hall energy flux already captured by CT Poynting correction via E×B1
+            // where E includes the Hall term (J×B)/rho.
         }
         if constexpr (direction == Direction::Y)
         {
-            F_B.x += Ehall.z;
-            F_B.z += -Ehall.x;
+            F_B.x += JxB_z * invRho;
+            F_B.z += -JxB_x * invRho;
         }
         if constexpr (direction == Direction::Z)
         {
-            F_B.x += -Ehall.y;
-            F_B.y += Ehall.x;
+            F_B.x += -JxB_y * invRho;
+            F_B.y += JxB_x * invRho;
         }
-
-        F_Etot += flux_component_<direction>(Ehall, B1);
     }
 };
 

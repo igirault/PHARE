@@ -106,6 +106,8 @@ public:
                 },
                 ibm, state);
         }
+        fvm_.apply_poynting_correction(level, model, ct_.constrained_transport_, state, fluxes);
+
     }
 
     void registerResources(MHDModel& model)
