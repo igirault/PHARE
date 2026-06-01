@@ -139,6 +139,9 @@ def populateDict(sim):
             elif bc["type"] == "fixed-pressure-outflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/pressure", data["pressure"])
+            elif bc["type"] == "adaptive-outflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/pressure", data["pressure"])
             elif bc["type"] == "non-reflecting-hydro-subsonic-outflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/pressure",     data["pressure"])

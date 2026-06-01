@@ -14,6 +14,7 @@
 #include "core/numerics/boundary_condition/field_none_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_symmetric_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_total_energy_from_pressure_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_adaptive_outflow_pressure_boundary_condition.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -117,6 +118,21 @@ public:
             {
                 throw std::runtime_error(
                     "TotalEnergyFromPressure condition only applies to scalar fields.");
+            }
+        }
+        else if constexpr (type == FieldBoundaryConditionType::AdaptiveOutflowPressure)
+        {
+            if constexpr (IsField<ScalarOrTensorFieldT>)
+            {
+                return std::make_unique<
+                    FieldAdaptiveOutflowPressureBoundaryCondition<ScalarOrTensorFieldT,
+                                                                  GridLayoutT>>(
+                    std::forward<Args>(args)...);
+            }
+            else
+            {
+                throw std::runtime_error(
+                    "AdaptiveOutflowPressure condition only applies to scalar fields.");
             }
         }
         else if constexpr (type == FieldBoundaryConditionType::NonReflectingHydroSubsonicOutflow)

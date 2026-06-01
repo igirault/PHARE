@@ -19,7 +19,7 @@ add_no_mpi_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})
 
 foreach(suffix none neumann dirichlet symmetric antisymmetric
                div_free_transverse_dirichlet div_free_transverse_neumann
-               total_energy_from_pressure)
+               total_energy_from_pressure adaptive_outflow)
   set(target test-field-bc-${suffix})
   add_executable(${target} test_field_boundary_conditions_${suffix}.cpp)
   target_include_directories(${target} PRIVATE ${GTEST_INCLUDE_DIRS} ${PHARE_PROJECT_DIR})

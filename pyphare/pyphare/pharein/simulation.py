@@ -364,6 +364,27 @@ def _check_fixed_pressure_outflow_data(location, bc):
     bc["data"] = data
 
 
+def _check_adaptive_outflow_data(location, bc):
+    """Validate and normalise the 'data' sub-dict for an adaptive-outflow BC.
+
+    Only a target exit pressure is required (used on the sub-fast slices). All flow variables
+    (ρ, ρv, B) use a Neumann (zero-gradient) condition; on super-magnetofast slices the pressure
+    is itself zero-gradient and the target is not used.
+    """
+    data = bc.get("data", {})
+    if "pressure" not in data:
+        raise KeyError(
+            f"Adaptive outflow BC at '{location}' requires 'pressure' inside 'data'"
+        )
+    val = data["pressure"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'pressure' at adaptive outflow boundary '{location}' must be a positive "
+            f"scalar, got {val!r}"
+        )
+    bc["data"] = data
+
+
 def _check_non_reflecting_hydro_subsonic_outflow_data(location, bc, domain_extent):
     """Validate and normalise the 'data' sub-dict for a HD subsonic characteristic outlet.
 
@@ -476,7 +497,7 @@ def _check_free_pressure_inflow_data(location, bc):
 def check_boundary_conditions(ndim, **kwargs):
     valid_bc_types = ("open", "reflective", "none", "super-magnetofast-inflow",
                       "super-magnetofast-outflow", "free-pressure-inflow",
-                      "fixed-pressure-outflow",
+                      "fixed-pressure-outflow", "adaptive-outflow",
                       "non-reflecting-hydro-subsonic-outflow",
                       "non-reflecting-hydro-subsonic-inflow")
     all_directions = ["x", "y", "z"][:ndim]
@@ -537,6 +558,8 @@ def check_boundary_conditions(ndim, **kwargs):
             _check_free_pressure_inflow_data(location, boundary_conditions[location])
         elif bc_type == "fixed-pressure-outflow":
             _check_fixed_pressure_outflow_data(location, boundary_conditions[location])
+        elif bc_type == "adaptive-outflow":
+            _check_adaptive_outflow_data(location, boundary_conditions[location])
         elif bc_type == "non-reflecting-hydro-subsonic-outflow":
             _check_non_reflecting_hydro_subsonic_outflow_data(
                 location, boundary_conditions[location], domain_extents[location[0]]
