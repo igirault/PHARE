@@ -117,7 +117,7 @@ public:
         };
 
         innerBoundaryManager
-            = inner_boundary_manager_type::create(dict, scalarQuantities, vectorQuantities);
+            = inner_boundary_manager_type::create(dict, scalarQuantities, vectorQuantities, thermo);
         if (innerBoundaryManager)
             resourcesManager->registerResources(*innerBoundaryManager);
 

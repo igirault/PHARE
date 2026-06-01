@@ -11,10 +11,16 @@
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
 
+#include "core/numerics/thermo/thermo.hpp"
+
 #include "initializer/data_provider.hpp"
 
+#include <algorithm>
+#include <array>
+#include <functional>
 #include <memory>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace PHARE::core
@@ -69,12 +75,14 @@ public:
     InnerBoundaryManager(std::unique_ptr<geometry_type> geometry,
                          InnerBoundaryConditionType conditionType,
                          std::vector<scalar_qty> const& scalarQuantities,
-                         std::vector<vector_qty> const& vectorQuantities)
+                         std::vector<vector_qty> const& vectorQuantities,
+                         std::shared_ptr<Thermo> thermo)
         : geometry_{std::move(geometry)}
         , meshData_{geometry_->name()}
+        , thermo_{std::move(thermo)}
     {
         factory_type::create(conditionType, scalarQuantities, vectorQuantities, scalarBCs_,
-                             vectorBCs_);
+                             vectorBCs_, thermo_);
     }
 
     /**
@@ -85,7 +93,7 @@ public:
      */
     static std::unique_ptr<InnerBoundaryManager>
     create(initializer::PHAREDict const& dict, std::vector<scalar_qty> const& scalarQuantities,
-           std::vector<vector_qty> const& vectorQuantities)
+           std::vector<vector_qty> const& vectorQuantities, std::shared_ptr<Thermo> thermo)
     {
         if (!dict.contains("inner_boundary"))
             return nullptr;
@@ -99,7 +107,8 @@ public:
         auto const condType = getInnerBoundaryConditionTypeFromString(typeName);
 
         return std::make_unique<InnerBoundaryManager>(std::move(geometry), condType,
-                                                      scalarQuantities, vectorQuantities);
+                                                      scalarQuantities, vectorQuantities,
+                                                      std::move(thermo));
     }
 
     // -------------------------------------------------------------------------
@@ -154,6 +163,34 @@ public:
         it->second->apply(vecfield, layout, meshData_, ctx);
     }
 
+    /**
+     * @brief Apply the inner BCs of the moment / energy quantities in priority order.
+     *
+     * Replaces the previously hardcoded rhoV → rho → Etot1 sequence duplicated at the call sites.
+     * The order is defined in one place: each registered BC reports a priority() (default 0; the
+     * total-energy-from-pressure BC reports a higher value so it runs last, after the ghost rho /
+     * rhoV it depends on are filled). B1 is excluded — its inner BC is a no-op (B is enforced via
+     * E + constrained transport, never written here) — and E is applied separately in ComputeFluxes.
+     *
+     * Fields are taken from the (mutable) ctx.statenew, which is the state being updated.
+     */
+    void applyToMoments(GridLayoutT const& layout, context_type const& ctx)
+    {
+        auto& state = ctx.statenew;
+        std::array<std::pair<int, std::function<void()>>, 3> tasks{{
+            scalarTask_(state.rho, layout, ctx),
+            vectorTask_(state.rhoV, layout, ctx),
+            scalarTask_(state.Etot1, layout, ctx),
+        }};
+
+        std::stable_sort(tasks.begin(), tasks.end(),
+                         [](auto const& a, auto const& b) { return a.first < b.first; });
+
+        for (auto const& [prio, run] : tasks)
+            if (run)
+                run();
+    }
+
     // -------------------------------------------------------------------------
     //  Mesh data accessor
     // -------------------------------------------------------------------------
@@ -180,8 +217,34 @@ public:
     NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(meshData_); }
 
 private:
+    /// Build a (priority, applier) task for a scalar field, or an empty applier if unregistered.
+    std::pair<int, std::function<void()>>
+    scalarTask_(FieldT& field, GridLayoutT const& layout, context_type const& ctx)
+    {
+        auto it = scalarBCs_.find(field.physicalQuantity());
+        if (it == scalarBCs_.end())
+            return {0, {}};
+        auto* bc = it->second.get();
+        return {bc->priority(),
+                [this, bc, &field, &layout, &ctx]() { bc->apply(field, layout, meshData_, ctx); }};
+    }
+
+    /// Build a (priority, applier) task for a vector field, or an empty applier if unregistered.
+    std::pair<int, std::function<void()>>
+    vectorTask_(vecfield_type& vecfield, GridLayoutT const& layout, context_type const& ctx)
+    {
+        auto it = vectorBCs_.find(vecfield.physicalQuantity());
+        if (it == vectorBCs_.end())
+            return {0, {}};
+        auto* bc = it->second.get();
+        return {bc->priority(), [this, bc, &vecfield, &layout, &ctx]() {
+                    bc->apply(vecfield, layout, meshData_, ctx);
+                }};
+    }
+
     std::unique_ptr<geometry_type> geometry_;
     mesh_data_type meshData_;
+    std::shared_ptr<Thermo> thermo_;
     scalar_bc_map_type scalarBCs_;
     vector_bc_map_type vectorBCs_;
 };

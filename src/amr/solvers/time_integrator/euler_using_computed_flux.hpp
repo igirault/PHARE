@@ -100,11 +100,8 @@ public:
             amr::visitLevel<gridlayout_type>(
                 level, rm,
                 [&](auto& layout, auto&&, auto&&) {
-                    // Apply inner boundary conditions
-                    ibm.applyBC(statenew.B1, layout, ctx);
-                    ibm.applyBC(statenew.rhoV, layout, ctx);
-                    ibm.applyBC(statenew.rho, layout, ctx);
-                    ibm.applyBC(statenew.Etot1, layout, ctx);
+                    // Apply inner boundary conditions on the moments (priority-ordered: Etot1 last).
+                    ibm.applyToMoments(layout, ctx);
                 },
                 ibm, state, statenew);
         }

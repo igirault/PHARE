@@ -75,6 +75,15 @@ public:
     virtual FieldInnerBoundaryConditionType getType() const = 0;
 
     /**
+     * @brief Application priority used by InnerBoundaryManager::applyToMoments to order BCs.
+     *
+     * Lower runs first. Most BCs are independent and keep the default (0). A BC that
+     * depends on other quantities' ghost cells already being filled (e.g. total energy
+     * reconstructed from pressure + ghost rho/rhoV) returns a higher value so it runs last.
+     */
+    virtual int priority() const { return 0; }
+
+    /**
      * @brief Apply the boundary condition to @p scalarOrTensorField.
      *
      * Implementations fill ghost-cell values in @p scalarOrTensorField so that the

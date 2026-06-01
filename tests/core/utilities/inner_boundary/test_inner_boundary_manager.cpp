@@ -9,6 +9,7 @@
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee_mhd.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
+#include "core/data/vecfield/vecfield.hpp"
 #include "core/inner_boundary/inner_boundary_manager.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
@@ -30,9 +31,18 @@ using MeshData       = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQua
 using Classifier
     = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
 
-/// Minimal physical-state stub.
+/// Minimal physical-state stub. Holds MHD-like fields (with null buffers) so the
+/// total-energy-from-pressure BC — instantiated by the Reflective factory — type-checks.
+/// These are never dereferenced here: the BC is only exercised against a real state.
 struct DummyState
 {
+    using VecF = PHARE::core::VecField<ScalarField, PHARE::core::MHDQuantity>;
+
+    ScalarField rho{"rho", PHARE::core::MHDQuantity::Scalar::rho};
+    ScalarField P{"P", PHARE::core::MHDQuantity::Scalar::P};
+    ScalarField Etot1{"Etot1", PHARE::core::MHDQuantity::Scalar::Etot1};
+    VecF        rhoV{"rhoV", PHARE::core::MHDQuantity::Vector::rhoV};
+    VecF        B1{"B1", PHARE::core::MHDQuantity::Vector::B1};
 };
 
 using Manager = PHARE::core::InnerBoundaryManager<PHARE::core::MHDQuantity, ScalarField, GridLayout,
@@ -74,7 +84,8 @@ struct ManagerFixture
     Manager manager{std::make_unique<PHARE::core::PlaneInnerBoundary<2>>(
                         BOUNDARY_NAME, PHARE::core::Point<double, 2>{0.0, 0.0},
                         PHARE::core::Point<double, 2>{1.0, 0.0}),
-                    PHARE::core::InnerBoundaryConditionType::Reflective, scalarQtys, vectorQtys};
+                    PHARE::core::InnerBoundaryConditionType::Reflective, scalarQtys, vectorQtys,
+                    nullptr};
 
     ManagerFixture()
     {
@@ -125,7 +136,7 @@ TEST(InnerBoundaryManager, createReturnsNullptrWithoutInnerBoundaryKey)
     PHARE::initializer::PHAREDict dict;
     // dict has no "inner_boundary" key
 
-    auto mgr = Manager::create(dict, {}, {});
+    auto mgr = Manager::create(dict, {}, {}, nullptr);
     EXPECT_EQ(mgr, nullptr);
 }
 

@@ -14,12 +14,18 @@ namespace PHARE::core
  * When there is no distinct previous state (e.g. in ComputeFluxes), the caller
  * simply passes the same reference for both @p statenew and @p state.
  *
+ * @note @p statenew is a NON-const reference: most BCs only read it, but some
+ *       (e.g. FieldTotalEnergyFromPressureInnerBoundaryCondition) need to recompute
+ *       a derived field such as pressure in place before reconstructing their own
+ *       ghost values. Accessing a reference member through a const InnerBCContext
+ *       still yields the non-const referent, so this stays mutable inside apply().
+ *
  * @tparam PhysicalStateT  Physical state type (MHDState, HybridState, …).
  */
 template<typename PhysicalStateT>
 struct InnerBCContext
 {
-    PhysicalStateT const& statenew; ///< Updated state (primary reference for BC interpolation).
+    PhysicalStateT&       statenew; ///< Updated state (primary reference, mutable for derived fields).
     PhysicalStateT const& state;    ///< Previous state, may alias statenew when not applicable.
     double                time{0.}; ///< Current simulation time.
     double                dt{0.};   ///< Time-step size (zero until needed).

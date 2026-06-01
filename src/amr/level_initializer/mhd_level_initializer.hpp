@@ -98,12 +98,7 @@ public:
             core::InnerBCContext<state_type> ctx{mhdModel.state, mhdModel.state, initDataTime, 0.0};
             amr::visitLevel<gridlayout_type>(
                 level, rm,
-                [&](auto& layout, auto&&, auto&&) {
-                    ibm.applyBC(mhdModel.state.B1, layout, ctx);
-                    ibm.applyBC(mhdModel.state.rhoV, layout, ctx);
-                    ibm.applyBC(mhdModel.state.rho, layout, ctx);
-                    ibm.applyBC(mhdModel.state.Etot1, layout, ctx);
-                },
+                [&](auto& layout, auto&&, auto&&) { ibm.applyToMoments(layout, ctx); },
                 ibm, mhdModel.state);
         }
     }

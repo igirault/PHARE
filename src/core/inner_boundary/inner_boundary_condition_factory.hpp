@@ -8,7 +8,9 @@
 #include "core/inner_boundary/field_antisymmetric_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_neumann_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_symmetric_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_total_energy_from_pressure_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_inner_boundary_condition.hpp"
+#include "core/numerics/thermo/thermo.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -82,12 +84,14 @@ public:
     static void create(InnerBoundaryConditionType type,
                        std::vector<scalar_qty> const& scalarQuantities,
                        std::vector<vector_qty> const& vectorQuantities,
-                       scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs)
+                       scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
+                       std::shared_ptr<Thermo> thermo)
     {
         switch (type)
         {
             case InnerBoundaryConditionType::Reflective:
-                register_reflective_(scalarQuantities, vectorQuantities, scalarBCs, vectorBCs);
+                register_reflective_(scalarQuantities, vectorQuantities, scalarBCs, vectorBCs,
+                                     std::move(thermo));
                 break;
             default: throw std::runtime_error("InnerBoundaryConditionFactory: unknown type");
         }
@@ -109,20 +113,35 @@ private:
     using Antisymmetric = FieldAntisymmetricInnerBoundaryCondition<ScalarOrTensorFieldT,
                                                                    GridLayoutT, PhysicalStateT>;
 
+    template<typename ScalarOrTensorFieldT>
+    using TotalEnergyFromPressure
+        = FieldTotalEnergyFromPressureInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT,
+                                                             PhysicalStateT>;
+
     /**
      * @brief Reflective body BC rules:
+     *   Etot1   → TotalEnergyFromPressure (zero-gradient on pressure, energy reconstructed)
      *   scalars → Neumann
-     *   B       → Symmetric      (specular reflection)
+     *   B       → None           (B handled via E + constrained transport, never written here)
      *   rhoV    → Symmetric      (no normal flow, free-slip)
      *   E       → Antisymmetric  (tangential E = 0)
      *   others  → Neumann
      */
     static void register_reflective_(std::vector<scalar_qty> const& scalars,
                                      std::vector<vector_qty> const& vectors,
-                                     scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs)
+                                     scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
+                                     std::shared_ptr<Thermo> thermo)
     {
         for (auto const qty : scalars)
-            scalarBCs[qty] = std::make_unique<Neumann<FieldT>>();
+        {
+            if (qty == PhysicalQuantityT::Scalar::Etot1)
+                // Etot1 ghosts are derived from a Neumann pressure condition rather than mirrored
+                // directly, to avoid spurious heating where strong gradients cross the boundary.
+                scalarBCs[qty] = std::make_unique<TotalEnergyFromPressure<FieldT>>(
+                    std::make_unique<Neumann<FieldT>>(), thermo);
+            else
+                scalarBCs[qty] = std::make_unique<Neumann<FieldT>>();
+        }
 
         for (auto const qty : vectors)
         {
