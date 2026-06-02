@@ -8,6 +8,7 @@
 #include "core/numerics/boundary_condition/field_non_reflecting_hydro_subsonic_outflow_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_non_reflecting_hydro_subsonic_inflow_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_b1_from_btot_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
@@ -105,14 +106,25 @@ public:
                                          "applies to vector fields.");
             }
         }
+        else if constexpr (type == FieldBoundaryConditionType::B1FromBtot)
+        {
+            if constexpr (IsVecField<ScalarOrTensorFieldT>)
+            {
+                return std::make_unique<
+                    FieldB1FromBtotBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+                    std::forward<Args>(args)...);
+            }
+            else
+            {
+                throw std::runtime_error("B1-from-Btot condition only applies to vector fields.");
+            }
+        }
         else if constexpr (type == FieldBoundaryConditionType::TotalEnergyFromPressure)
         {
             if constexpr (IsField<ScalarOrTensorFieldT>)
             {
-                return std::make_unique<
-                    FieldTotalEnergyFromPressureBoundaryCondition<ScalarOrTensorFieldT,
-                                                                  GridLayoutT>>(
-                    std::forward<Args>(args)...);
+                return std::make_unique<FieldTotalEnergyFromPressureBoundaryCondition<
+                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
             }
             else
             {
@@ -124,10 +136,8 @@ public:
         {
             if constexpr (IsField<ScalarOrTensorFieldT>)
             {
-                return std::make_unique<
-                    FieldAdaptiveOutflowPressureBoundaryCondition<ScalarOrTensorFieldT,
-                                                                  GridLayoutT>>(
-                    std::forward<Args>(args)...);
+                return std::make_unique<FieldAdaptiveOutflowPressureBoundaryCondition<
+                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
             }
             else
             {

@@ -625,13 +625,17 @@ namespace amr
                     {core::MHDQuantity::Vector::B1, resolveID(info->ghostB1[i])},
                     {core::MHDQuantity::Vector::rhoV, resolveID(info->ghostMomentum[i])},
                     {core::MHDQuantity::Vector::E, resolveID(info->ghostElectric[i])},
+                    // background field B0 (single model instance), exposed so inflow BCs that
+                    // prescribe the total field can recover B1 = B - B0 at the ghost cells.
+                    {core::MHDQuantity::Vector::B0, resolveID(info->modelB0)},
                 };
             }
 
-            // Shadow id-map for the previous substage state. Only quantities for which the messenger
-            // keeps an `*Old_` buffer are exposed; other quantities will fall through to "not
-            // registered" in the accessor and throw on access. State-aware outer BCs that need only
-            // these primitive moments (NSCBC/LODI HD outlet) read from this map via `ctx.accessor_old`.
+            // Shadow id-map for the previous substage state. Only quantities for which the
+            // messenger keeps an `*Old_` buffer are exposed; other quantities will fall through to
+            // "not registered" in the accessor and throw on access. State-aware outer BCs that need
+            // only these primitive moments (NSCBC/LODI HD outlet) read from this map via
+            // `ctx.accessor_old`.
             oldScalarIdMap_ = {
                 {core::MHDQuantity::Scalar::rho, resolveID(rhoOld_.name())},
                 {core::MHDQuantity::Scalar::P, resolveID(Pold_.name())},

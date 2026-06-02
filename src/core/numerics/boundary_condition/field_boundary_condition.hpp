@@ -24,6 +24,7 @@ enum class FieldBoundaryConditionType : int {
     Neumann,
     DivergenceFreeTransverseNeumann,
     DivergenceFreeTransverseDirichlet,
+    B1FromBtot,
     TotalEnergyFromPressure,
     AdaptiveOutflowPressure,
     NonReflectingHydroSubsonicOutflow,
@@ -50,14 +51,15 @@ public:
     static constexpr size_t dimension = GridLayoutT::dimension;
     static constexpr size_t N = NumberOfComponentsSelector<ScalarOrTensorFieldT, is_scalar>::value;
 
-    using This = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
+    using This                   = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
     using physical_quantity_type = typename GridLayoutT::Quantity;
     using tensor_quantity_type
         = PhysicalQuantityTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
     using field_type = FieldTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
     using patch_field_accessor_type
         = IPatchFieldAccessor<field_type, typename GridLayoutT::Quantity>;
-    using boundary_condition_context_type = BoundaryConditionContext<field_type, typename GridLayoutT::Quantity>;
+    using boundary_condition_context_type
+        = BoundaryConditionContext<field_type, typename GridLayoutT::Quantity>;
 
 
     /** @brief Return the type of the boundary condition. */
@@ -81,10 +83,10 @@ public:
      *            accessor `ctx.accessor_old` and write into ghost cells reachable via
      *            `ctx.accessor_new`; simple BCs only need `ctx.accessor_new` and `ctx.time`.
      */
-    virtual void
-    apply(ScalarOrTensorFieldT& scalarOrTensorField, BoundaryLocation const boundaryLocation,
-          Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-          boundary_condition_context_type const& ctx)
+    virtual void apply(ScalarOrTensorFieldT& scalarOrTensorField,
+                       BoundaryLocation const boundaryLocation,
+                       Box<std::uint32_t, dimension> const& localGhostBox,
+                       GridLayoutT const& gridLayout, boundary_condition_context_type const& ctx)
         = 0;
 };
 

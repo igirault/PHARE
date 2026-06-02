@@ -81,6 +81,20 @@ def add_vector_int(path, val):
 add_string = pp.add_string
 
 
+def _add_inflow_magnetic_field(bc_path, data):
+    """Serialise the inflow magnetic field under 'data/B1' (perturbation) or 'data/B' (total).
+
+    Exactly one of the two keys is present (enforced by simulation.py validation). The C++
+    BoundaryFactory branches on which key exists: 'B' selects FieldB1FromBtot (B1 = B - B0),
+    'B1' selects the divergence-free transverse Dirichlet on B1.
+    """
+    key = "B" if "B" in data else "B1"
+    bx, by, bz = data[key]
+    add_double(f"{bc_path}/data/{key}/x", bx)
+    add_double(f"{bc_path}/data/{key}/y", by)
+    add_double(f"{bc_path}/data/{key}/z", bz)
+
+
 def populateDict(sim):
     add_string("simulation/name", "simulation_test")
     add_int("simulation/dimension", sim.ndim)
@@ -121,10 +135,7 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B1"]
-                add_double(f"{bc_path}/data/B1/x", bx)
-                add_double(f"{bc_path}/data/B1/y", by)
-                add_double(f"{bc_path}/data/B1/z", bz)
+                _add_inflow_magnetic_field(bc_path, data)
             elif bc["type"] == "free-pressure-inflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/density", data["density"])
@@ -132,10 +143,7 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B1"]
-                add_double(f"{bc_path}/data/B1/x", bx)
-                add_double(f"{bc_path}/data/B1/y", by)
-                add_double(f"{bc_path}/data/B1/z", bz)
+                _add_inflow_magnetic_field(bc_path, data)
             elif bc["type"] == "fixed-pressure-outflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/pressure", data["pressure"])
@@ -154,10 +162,7 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B1"]
-                add_double(f"{bc_path}/data/B1/x", bx)
-                add_double(f"{bc_path}/data/B1/y", by)
-                add_double(f"{bc_path}/data/B1/z", bz)
+                _add_inflow_magnetic_field(bc_path, data)
                 add_double(f"{bc_path}/data/relax_velocity_n", data["relax_velocity_n"])
                 add_double(f"{bc_path}/data/relax_velocity_t", data["relax_velocity_t"])
                 add_double(f"{bc_path}/data/relax_density",    data["relax_density"])

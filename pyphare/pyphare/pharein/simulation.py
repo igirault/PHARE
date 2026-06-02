@@ -324,10 +324,29 @@ def _normalize_B(location, B):
     return b
 
 
+def _normalize_inflow_magnetic_field(location, data):
+    """Validate and normalise the magnetic field of an inflow 'data' sub-dict.
+
+    The field is prescribed either as the perturbation ('B1') or as the total field ('B', i.e.
+    B0 + B1). Exactly one of the two keys must be present; it is normalised in place via
+    _normalize_B and left under the same key. 'B' selects the FieldB1FromBtot condition on the
+    C++ side (B1 = B - B0); 'B1' selects the divergence-free transverse Dirichlet on B1.
+    """
+    has_B1 = "B1" in data
+    has_B  = "B" in data
+    if has_B1 == has_B:
+        raise KeyError(
+            f"Inflow BC at '{location}' requires exactly one of 'B1' (perturbation) or 'B' "
+            f"(total field) inside 'data'"
+        )
+    key = "B1" if has_B1 else "B"
+    data[key] = _normalize_B(location, data[key])
+
+
 def _check_inflow_data(location, bc):
     """Validate and normalise the 'data' sub-dict for a super-magnetofast-inflow BC."""
     data = bc.get("data", {})
-    for key in ("density", "pressure", "velocity", "B1"):
+    for key in ("density", "pressure", "velocity"):
         if key not in data:
             raise KeyError(
                 f"Inflow BC at '{location}' requires '{key}' inside 'data'"
@@ -340,7 +359,7 @@ def _check_inflow_data(location, bc):
                 f"got {val!r}"
             )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B1"]        = _normalize_B(location, data["B1"])
+    _normalize_inflow_magnetic_field(location, data)
     bc["data"] = data
 
 
@@ -443,7 +462,7 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
 
     """
     data = bc.get("data", {})
-    for key in ("density", "velocity", "B", "relax_velocity_n", "relax_velocity_t",
+    for key in ("density", "velocity", "relax_velocity_n", "relax_velocity_t",
                 "relax_density"):
         if key not in data:
             raise KeyError(
@@ -457,7 +476,7 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
             f"positive scalar, got {val!r}"
         )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"]        = _normalize_B(location, data["B"])
+    _normalize_inflow_magnetic_field(location, data)
 
     for key in ("relax_velocity_n", "relax_velocity_t", "relax_density"):
         v = data[key]
@@ -478,7 +497,7 @@ def _check_free_pressure_inflow_data(location, bc):
     pressure is obtained from a Neumann extrapolation at runtime.
     """
     data = bc.get("data", {})
-    for key in ("density", "velocity", "B"):
+    for key in ("density", "velocity"):
         if key not in data:
             raise KeyError(
                 f"Free-pressure inflow BC at '{location}' requires '{key}' inside 'data'"
@@ -490,7 +509,7 @@ def _check_free_pressure_inflow_data(location, bc):
             f"got {val!r}"
         )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"]        = _normalize_B(location, data["B"])
+    _normalize_inflow_magnetic_field(location, data)
     bc["data"] = data
 
 

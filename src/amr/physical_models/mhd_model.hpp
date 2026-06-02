@@ -170,8 +170,8 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& le
 }
 
 template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t>
-void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::updateExternalFields(
-    level_t& level, double time)
+void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::updateExternalFields(level_t& level,
+                                                                               double time)
 {
     for (auto& patch : level)
     {
@@ -187,19 +187,20 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
 {
     auto& MHDInfo = dynamic_cast<amr::MHDMessengerInfo&>(*info);
 
-    MHDInfo.modelDensity     = state.rho.name();
-    MHDInfo.modelVelocity    = state.V.name();
-    MHDInfo.modelB1          = state.B1.name();
-    MHDInfo.modelPressure    = state.P.name();
-    MHDInfo.modelMomentum    = state.rhoV.name();
-    MHDInfo.modelEtot1       = state.Etot1.name();
-    MHDInfo.modelElectric    = state.E.name();
-    MHDInfo.modelCurrent     = state.J.name();
+    MHDInfo.modelDensity  = state.rho.name();
+    MHDInfo.modelVelocity = state.V.name();
+    MHDInfo.modelB1       = state.B1.name();
+    MHDInfo.modelB0       = state.B0.name();
+    MHDInfo.modelPressure = state.P.name();
+    MHDInfo.modelMomentum = state.rhoV.name();
+    MHDInfo.modelEtot1    = state.Etot1.name();
+    MHDInfo.modelElectric = state.E.name();
+    MHDInfo.modelCurrent  = state.J.name();
 
     MHDInfo.initDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.initMomentum.push_back(MHDInfo.modelMomentum);
     MHDInfo.initMagnetic.push_back(MHDInfo.modelB1);
-    MHDInfo.initMagnetic.push_back(state.B0.name());
+    MHDInfo.initMagnetic.push_back(MHDInfo.modelB0);
     MHDInfo.initTotalEnergy.push_back(MHDInfo.modelEtot1);
 
     MHDInfo.ghostDensity.push_back(MHDInfo.modelDensity);
