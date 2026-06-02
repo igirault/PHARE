@@ -101,7 +101,15 @@ public:
                         "model.");
                 break;
             case BoundaryType::SuperMagnetofastOutflow:
-            case BoundaryType::Open: register_open_conditions_(boundary, data, quantities); break;
+            case BoundaryType::Open:
+                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                    register_open_conditions_(boundary, data, quantities, thermo);
+                else
+                    throw std::runtime_error(
+                        "FreePressureInflow boundary type is not supported for this physical "
+                        "model.");
+                break;
+                break;
             case BoundaryType::FreePressureInflow:
                 if constexpr (HasInflowQuantities<PhysicalQuantityT>)
                     register_free_pressure_inflow_conditions_(boundary, data, quantities, thermo);
@@ -196,12 +204,41 @@ private:
     /** @brief Register boundary conditions to make an open boundary */
     static void register_open_conditions_(boundary_ptr_type& boundary,
                                           initializer::PHAREDict const& data,
-                                          _model_menu_type const& quantities)
+                                          _model_menu_type const& quantities,
+                                          std::shared_ptr<Thermo> thermo)
     {
+        using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
+        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
+        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+
+        auto rho_bc = std::shared_ptr<ScalarBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
+                                                  GridLayoutT>()};
+        auto P_bc = std::shared_ptr<ScalarBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
+                                                  GridLayoutT>()};
+        auto rhoV_bc = std::shared_ptr<VectorBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
+                                                  GridLayoutT>()};
+        auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT>()};
         for (auto const quantity : quantities.scalars)
         {
-            boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                quantity);
+            switch (quantity)
+            {
+                case (PhysicalQuantityT::Scalar::rho):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                        quantity);
+                    break;
+                case (PhysicalQuantityT::Scalar::Etot1):
+                    boundary->template registerFieldCondition<
+                        FieldBoundaryConditionType::TotalEnergyFromPressure>(
+                        quantity, rho_bc, rhoV_bc, B_bc, P_bc, thermo);
+                    break;
+                default:
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+            }
         }
         for (auto const quantity : quantities.vectors)
         {
@@ -457,10 +494,11 @@ private:
      * @brief Register boundary conditions for an adaptive outflow boundary.
      *
      * ρ, ρv, and B use Neumann (zero-gradient) conditions, exactly like a fixed-pressure
-     * outflow. The pressure uses @c FieldAdaptiveOutflowPressureBoundaryCondition, which decides
-     * per tangential ghost-column between zero-gradient (super-magnetofast) and Dirichlet at the
-     * target pressure (sub-fast); the total energy ghost values are then derived from that ghost
-     * pressure via @c FieldTotalEnergyFromPressureBoundaryCondition.
+     * outflow. The pressure uses @c FieldAdaptiveOutflowPressureBoundaryCondition, which
+     * decides per tangential ghost-column between zero-gradient (super-magnetofast) and
+     * Dirichlet at the target pressure (sub-fast); the total energy ghost values are then
+     * derived from that ghost pressure via @c
+     * FieldTotalEnergyFromPressureBoundaryCondition.
      *
      * Only available for physical quantity types carrying conserved MHD variables.
      */
@@ -484,9 +522,9 @@ private:
         auto rho_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
                                                   GridLayoutT>()};
-        auto P_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::AdaptiveOutflowPressure,
-                                                  FieldT, GridLayoutT>(pressure, thermo)};
+        auto P_bc    = std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
+               FieldBoundaryConditionType::AdaptiveOutflowPressure, FieldT, GridLayoutT>(pressure,
+                                                                                         thermo)};
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
                                                   GridLayoutT>()};
@@ -534,8 +572,8 @@ private:
     }
 
 
-    /** @brief Register boundary conditions for a HD characteristic subsonic outflow with target
-     *  exit pressure (LODI / Poinsot-Lele).
+    /** @brief Register boundary conditions for a HD characteristic subsonic outflow with
+     * target exit pressure (LODI / Poinsot-Lele).
      *
      *  A single BC type @c NonReflectingHydroSubsonicOutflow is registered for ρ, ρv, and
      *  Etot1; each invocation writes the ghost values of the field it was called for using
