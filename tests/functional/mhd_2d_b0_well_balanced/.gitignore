@@ -1,0 +1,4 @@
+phare_outputs*/
+.log/
+__pycache__/
+*.pyc
