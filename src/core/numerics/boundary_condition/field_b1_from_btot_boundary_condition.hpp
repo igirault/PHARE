@@ -14,8 +14,8 @@ namespace PHARE::core
  * @brief Boundary condition for the magnetic perturbation B1 that imposes a prescribed value
  * on the *total* field B = B0 + B1.
  *
- * Identical in structure to @c FieldDivergenceFreeTransverseDirichletBoundaryCondition, but the
- * Dirichlet target applies to the total field: on the transverse components the ghost values of
+ * A divergence-free transverse Dirichlet on the *total* field: on the transverse components the
+ * ghost values of
  * B1 are written so that B = B0 + B1 linearly extrapolates to the constant @c Btot_, with the
  * spatially-varying background B0 read from the current-state accessor. The normal component is
  * set so that the numerical divergence of B1 is zero; since the background B0 is itself
@@ -100,20 +100,21 @@ public:
                 {
                     _index const mirrorIndex
                         = gridLayout.boundaryMirrored(direction, side, centering, index);
-                    size_t const iDir = static_cast<size_t>(direction);
                     // total field Dirichlet to Btoti, solved for the B1 ghost value:
                     //   B(index) = (mirror==index) ? Btoti : 2*Btoti - B(mirror)
                     //   B1(index) = B(index) - B0(index)
+                    // the mirror only flips the normal component, so mirrorIndex == index is
+                    // equivalent to comparing that component (and avoids a dynamic [] index that
+                    // trips a -Warray-bounds false positive in 1D).
                     B1c(index)
-                        = (mirrorIndex[iDir] == index[iDir])
+                        = (mirrorIndex == index)
                               ? Btoti - B0c(index)
                               : 2.0 * Btoti - B0c(mirrorIndex) - B1c(mirrorIndex) - B0c(index);
                 }
             }
         });
 
-        // normal component: set so that the numerical divergence of B1 is zero. Identical to
-        // FieldDivergenceFreeTransverseDirichletBoundaryCondition (operates on B1 only).
+        // normal component: set so that the numerical divergence of B1 is zero (operates on B1).
         field_type& nField = [&]() -> field_type& {
             switch (iNormal)
             {

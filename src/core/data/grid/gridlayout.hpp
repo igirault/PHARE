@@ -848,7 +848,10 @@ namespace core
         {
             std::size_t const iDir = static_cast<std::size_t>(direction);
             auto mirroredPoint     = point;
-            mirroredPoint[iDir]    = boundaryMirrored(direction, side, centering, point[iDir]);
+            // iDir < dim always holds for a valid call; the guard lets the compiler drop the
+            // impossible out-of-bounds branch (avoids a GCC -Warray-bounds false positive in 1D).
+            if (iDir < dim)
+                mirroredPoint[iDir] = boundaryMirrored(direction, side, centering, point[iDir]);
             return mirroredPoint;
         }
 

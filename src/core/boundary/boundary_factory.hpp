@@ -166,36 +166,26 @@ private:
         vector_quantity_list_type const& vectors;
     };
 
-    /** @brief Register the B1 vector condition for an inflow boundary, choosing between a
-     *  prescribed perturbation (divergence-free transverse Dirichlet on B1) and a prescribed
-     *  total field (@c FieldB1FromBtotBoundaryCondition: B1 = B - B0). */
-    static void register_inflow_B1_condition_(boundary_ptr_type& boundary,
-                                              typename PhysicalQuantityT::Vector quantity,
-                                              bool useTotalB, std::array<double, 3> const& B)
+    /** @brief Ideal motional electric field E = -v x B prescribed at an inflow boundary.
+     *  With v and the total field B both uniform, E is uniform too, so its tangential
+     *  part has zero edge-EMF variation and the constrained transport keeps the boundary
+     *  normal magnetic field frozen (field lines stay tangent to the inlet). */
+    static std::array<double, 3> inflow_motional_E_(std::array<double, 3> const& v,
+                                                    std::array<double, 3> const& B)
     {
-        if (useTotalB)
-            boundary->template registerFieldCondition<FieldBoundaryConditionType::B1FromBtot>(
-                quantity, B);
-        else
-            boundary->template registerFieldCondition<
-                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity, B);
+        return {-(v[1] * B[2] - v[2] * B[1]), -(v[2] * B[0] - v[0] * B[2]),
+                -(v[0] * B[1] - v[1] * B[0])};
     }
 
     /** @brief Build the shared B1 sub-BC used by compound conditions (e.g.
-     * TotalEnergyFromPressure), choosing between perturbation (divergence-free transverse
-     * Dirichlet) and total field
-     *  (@c FieldB1FromBtotBoundaryCondition). */
+     * TotalEnergyFromPressure) to fill B1 = B - B0 from the prescribed total field
+     * (@c FieldB1FromBtotBoundaryCondition). */
     template<typename VecFieldT, typename VectorBcType>
-    static std::shared_ptr<VectorBcType> make_inflow_B_bc_(bool useTotalB,
-                                                           std::array<double, 3> const& B)
+    static std::shared_ptr<VectorBcType> make_inflow_B_bc_(std::array<double, 3> const& B)
     {
-        if (useTotalB)
-            return std::shared_ptr<VectorBcType>{
-                FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::B1FromBtot,
-                                                      VecFieldT, GridLayoutT>(B)};
-        return std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
-            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT, GridLayoutT>(
-            B)};
+        return std::shared_ptr<VectorBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::B1FromBtot,
+                                                  VecFieldT, GridLayoutT>(B)};
     }
 
     /** @brief Register boundary conditions to make a reflective boundary */
@@ -294,14 +284,16 @@ private:
 
     /** @brief Register boundary conditions to make a super-magnetofast inflow boundary.
      *
-     *  The magnetic field is prescribed either as the perturbation (@c data["B1"], the ghost
-     *  values of B1 are set by a divergence-free transverse Dirichlet) or as the total field
-     *  (@c data["B"], the ghost values of B1 are set so that B = B0 + B1 matches the prescribed
-     *  total via @c FieldB1FromBtotBoundaryCondition). When the total field is prescribed the
-     *  perturbation B1 varies with the background B0, so the total energy cannot be a single
-     *  constant: it is then derived from the prescribed pressure through @c
-     *  FieldTotalEnergyFromPressureBoundaryCondition (which reads the actual B1 ghosts), exactly
-     *  like the free-pressure inflow but with a Dirichlet pressure instead of a Neumann one.
+     *  The total magnetic field is prescribed via @c data["B"]. The boundary field is driven
+     *  through the constrained transport from the motional electric field E = -v x B, imposed
+     *  as a full Dirichlet on E; B1 is left free (None) in the ghosts. With v and B uniform, E
+     *  is uniform, so its tangential part has zero edge-EMF variation and the boundary normal
+     *  field stays frozen (field lines tangent to the inlet). Etot1 is derived from the
+     *  prescribed pressure through @c FieldTotalEnergyFromPressureBoundaryCondition, which
+     *  fills B1 = B - B0 internally for its magnetic term.
+     *
+     *  Prescribing the perturbation @c data["B1"] is not supported yet (it needs an
+     *  E = -v x (B0 + B1) condition); passing it throws.
      *
      *  Only available for physical quantity types carrying conserved MHD variables. */
     static void register_super_magnetofast_inflow_conditions_(boundary_ptr_type& boundary,
@@ -320,61 +312,18 @@ private:
         auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
         auto const rhoV  = vToRhoV(rho, v);
 
-        bool const useTotalB = data.contains("B");
-        auto const B         = useTotalB ? initializer::parseDimXYZType<double, 3>(data, "B")
-                                         : initializer::parseDimXYZType<double, 3>(data, "B1");
+        if (!data.contains("B"))
+            throw std::runtime_error(
+                "BoundaryFactory: SuperMagnetofastInflow requires the total magnetic field 'B'; "
+                "the 'B1' perturbation inflow is not supported yet (it needs an E = -v x (B0 + "
+                "B1) electric-field condition that is not implemented).");
+        auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
+        auto const E = inflow_motional_E_(v, B);
 
-        if (!useTotalB)
-        {
-            // perturbation B1 prescribed: B1 is constant, so the total energy is a constant too.
-            thermo->setState_DP(rho, p);
-            double const Etot
-                = totalEnergyFromInternalEnergy(thermo->internalEnergy() * rho, rho, v, B);
-
-            for (auto const quantity : quantities.scalars)
-            {
-                switch (quantity)
-                {
-                    case (PhysicalQuantityT::Scalar::rho):
-                        boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::Dirichlet>(quantity, rho);
-                        break;
-                    case (PhysicalQuantityT::Scalar::Etot1):
-                        boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::Dirichlet>(quantity, Etot);
-                        break;
-                    default:
-                        boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
-                            quantity);
-                        break;
-                }
-            }
-
-            for (auto const quantity : quantities.vectors)
-            {
-                switch (quantity)
-                {
-                    case (PhysicalQuantityT::Vector::rhoV):
-                        boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoV);
-                        break;
-                    case (PhysicalQuantityT::Vector::B1):
-                        boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity,
-                                                                                           B);
-                        break;
-                    default:
-                        boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
-                            quantity);
-                        break;
-                }
-            }
-            return;
-        }
-
-        // total field B prescribed: B1 = B - B0 varies with the background, so the magnetic part
-        // of the total energy varies too. Derive Etot1 from the prescribed pressure via the
-        // compound energy BC, which reads the actual B1 ghosts.
+        // The boundary magnetic field is driven through the constrained transport from the
+        // prescribed motional electric field E = -v x B (full Dirichlet on E), not by pinning
+        // B1 in the ghosts (B1 = None). Etot1 is derived from the prescribed pressure via the
+        // compound energy BC, which fills B1 = B - B0 internally for its magnetic term.
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
@@ -385,9 +334,7 @@ private:
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
                                                   GridLayoutT>(rhoV)};
-        auto B_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::B1FromBtot, VecFieldT,
-                                                  GridLayoutT>(B)};
+        auto B_bc = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
         auto P_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
                                                   GridLayoutT>(p)};
@@ -422,10 +369,14 @@ private:
                         ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
                             quantity, rhoV);
                     break;
-                case (PhysicalQuantityT::Vector::B1):
+                case (PhysicalQuantityT::Vector::E):
                     boundary
-                        ->template registerFieldCondition<FieldBoundaryConditionType::B1FromBtot>(
-                            quantity, B);
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, E);
+                    break;
+                case (PhysicalQuantityT::Vector::B1):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
@@ -438,10 +389,10 @@ private:
     /**
      * @brief Register boundary conditions for a free-pressure inflow boundary.
      *
-     * Like @c SuperMagnetofastInflow for ρ, ρv, and B (Dirichlet / divergence-free
-     * Dirichlet), but with a Neumann condition on pressure instead of a prescribed
-     * value. The energy ghost values are derived from the Neumann pressure via the
-     * EOS by @c FieldTotalEnergyFromPressureBoundaryCondition.
+     * Like @c SuperMagnetofastInflow for ρ, ρv, and B (Dirichlet ρ/ρv, total field 'B'
+     * driven through E = -v x B), but with a Neumann condition on pressure instead of a
+     * prescribed value. The energy ghost values are derived from the Neumann pressure via
+     * the EOS by @c FieldTotalEnergyFromPressureBoundaryCondition.
      *
      * Only available for physical quantity types carrying conserved MHD variables.
      */
@@ -460,9 +411,13 @@ private:
         auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
         auto const rhoV  = vToRhoV(rho, v);
 
-        bool const useTotalB = data.contains("B");
-        auto const B         = useTotalB ? initializer::parseDimXYZType<double, 3>(data, "B")
-                                         : initializer::parseDimXYZType<double, 3>(data, "B1");
+        if (!data.contains("B"))
+            throw std::runtime_error(
+                "BoundaryFactory: FreePressureInflow requires the total magnetic field 'B'; the "
+                "'B1' perturbation inflow is not supported yet (it needs an E = -v x (B0 + B1) "
+                "electric-field condition that is not implemented).");
+        auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
+        auto const E = inflow_motional_E_(v, B);
 
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
@@ -475,7 +430,7 @@ private:
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
                                                   GridLayoutT>(rhoV)};
-        auto B_bc = make_inflow_B_bc_<VecFieldT, VectorBcType>(useTotalB, B);
+        auto B_bc = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
         auto P_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
                                                   GridLayoutT>()};
@@ -510,8 +465,14 @@ private:
                         ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
                             quantity, rhoV);
                     break;
+                case (PhysicalQuantityT::Vector::E):
+                    boundary
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, E);
+                    break;
                 case (PhysicalQuantityT::Vector::B1):
-                    register_inflow_B1_condition_(boundary, quantity, useTotalB, B);
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
@@ -749,10 +710,10 @@ private:
      *
      *  A single BC type @c NonReflectingHydroSubsonicInflow is registered for ρ, ρv, and
      *  Etot1; each invocation writes the ghost values of the field it was called for using
-     *  the same LODI relations. B is prescribed via @c DivergenceFreeTransverseDirichlet
-     *  (target B from the user dict, same recipe as @c FreePressureInflow). Pressure is
-     *  left free — its evolution is set entirely by the outgoing acoustic wave coming from
-     *  the interior.
+     *  the same LODI relations. This BC is hydro-only: it carries no magnetic eigenmodes and
+     *  no magnetic field — B1 and E are left free (None) and it must not be used with a
+     *  non-zero magnetic field. Pressure is left free — its evolution is set entirely by the
+     *  outgoing acoustic wave coming from the interior.
      */
     static void register_non_reflecting_hydro_subsonic_inflow_conditions_(
         boundary_ptr_type& boundary, initializer::PHAREDict const& data,
@@ -766,9 +727,6 @@ private:
 
         double const rho_target = data["density"].to<double>();
         auto const v_target     = initializer::parseDimXYZType<double, 3>(data, "velocity");
-        bool const useTotalB    = data.contains("B");
-        auto const B_target     = useTotalB ? initializer::parseDimXYZType<double, 3>(data, "B")
-                                            : initializer::parseDimXYZType<double, 3>(data, "B1");
         double const relax_velocity_n = data["relax_velocity_n"].to<double>();
         double const relax_velocity_t = data["relax_velocity_t"].to<double>();
         double const relax_density    = data["relax_density"].to<double>();
@@ -802,7 +760,11 @@ private:
                         relax_density, thermo);
                     break;
                 case (PhysicalQuantityT::Vector::B1):
-                    register_inflow_B1_condition_(boundary, quantity, useTotalB, B_target);
+                    // Hydro-only LODI: no magnetic eigenmodes and no magnetic field carried.
+                    // B1 is left free (None); E is unconstrained too. This BC must not be used
+                    // with a non-zero magnetic field.
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(

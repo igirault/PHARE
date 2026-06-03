@@ -9,7 +9,6 @@
 #include "core/numerics/boundary_condition/field_non_reflecting_hydro_subsonic_inflow_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_b1_from_btot_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_divergence_free_transverse_dirichlet_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_none_boundary_condition.hpp"
@@ -90,19 +89,6 @@ public:
             else
             {
                 throw std::runtime_error("Divergence-free transverse Neumann condition only "
-                                         "applies to vector fields.");
-            }
-        }
-        else if constexpr (type == FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet)
-        {
-            if constexpr (IsVecField<ScalarOrTensorFieldT>)
-            {
-                return std::make_unique<FieldDivergenceFreeTransverseDirichletBoundaryCondition<
-                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
-            }
-            else
-            {
-                throw std::runtime_error("Divergence-free transverse Dirichlet condition only "
                                          "applies to vector fields.");
             }
         }

@@ -43,9 +43,9 @@ namespace PHARE::core
  *     L_4 = relax_velocity_t · (u_t2 − u_t2*)
  *     L_5 = relax_velocity_n · (u_n  − u_n*)
  *
- * Hydrodynamic only — the LODI relations carry no magnetic eigenmodes. B at the inlet is
- * handled separately via a DivergenceFreeTransverseDirichlet BC (target B supplied via
- * the user dict, same recipe as the existing free-pressure-inflow).
+ * Hydrodynamic only — the LODI relations carry no magnetic eigenmodes, and this BC carries
+ * no magnetic field: B1 and E are left free (None). It must not be used with a non-zero
+ * magnetic field.
  *
  * @tparam ScalarOrTensorFieldT Scalar field (ρ, Etot1) or vector field (ρv).
  * @tparam GridLayoutT          Grid layout type.

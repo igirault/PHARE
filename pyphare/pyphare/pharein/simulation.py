@@ -327,20 +327,25 @@ def _normalize_B(location, B):
 def _normalize_inflow_magnetic_field(location, data):
     """Validate and normalise the magnetic field of an inflow 'data' sub-dict.
 
-    The field is prescribed either as the perturbation ('B1') or as the total field ('B', i.e.
-    B0 + B1). Exactly one of the two keys must be present; it is normalised in place via
-    _normalize_B and left under the same key. 'B' selects the FieldB1FromBtot condition on the
-    C++ side (B1 = B - B0); 'B1' selects the divergence-free transverse Dirichlet on B1.
+    The total field is prescribed via 'B' (= B0 + B1); it is normalised in place via
+    _normalize_B. The boundary magnetic field is driven through the constrained transport from
+    the motional electric field E = -v x B (full Dirichlet on E) on the C++ side, with B1 left
+    free in the ghosts.
+
+    Prescribing the perturbation 'B1' is not supported yet: it needs an E = -v x (B0 + B1)
+    electric-field condition that is not implemented.
     """
-    has_B1 = "B1" in data
-    has_B  = "B" in data
-    if has_B1 == has_B:
-        raise KeyError(
-            f"Inflow BC at '{location}' requires exactly one of 'B1' (perturbation) or 'B' "
-            f"(total field) inside 'data'"
+    if "B1" in data:
+        raise NotImplementedError(
+            f"Inflow BC at '{location}': prescribing the magnetic perturbation 'B1' is not "
+            f"supported yet (it needs an E = -v x (B0 + B1) condition). Prescribe the total "
+            f"field 'B' instead."
         )
-    key = "B1" if has_B1 else "B"
-    data[key] = _normalize_B(location, data[key])
+    if "B" not in data:
+        raise KeyError(
+            f"Inflow BC at '{location}' requires the total magnetic field 'B' inside 'data'"
+        )
+    data["B"] = _normalize_B(location, data["B"])
 
 
 def _check_inflow_data(location, bc):
@@ -452,10 +457,12 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
     """Validate and normalise the 'data' sub-dict for a HD non-reflecting subsonic
     inflow (LODI / Poinsot-Lele soft inflow).
 
+    This BC is hydro-only and carries no magnetic field (B1 and E are left free on the C++
+    side); it must not be used with a non-zero magnetic field, so no 'B'/'B1' key is accepted.
+
     Required:
         density           — target inflow density (positive scalar).
         velocity          — target inflow velocity (normalised via _normalize_inflow_velocity).
-        B                 — target inflow magnetic field (normalised via _normalize_B).
         relax_velocity_n  — relaxation coefficient on the normal velocity (≥ 0).
         relax_velocity_t  — relaxation coefficient on the tangential velocity components (≥ 0).
         relax_density     — relaxation coefficient on the density (≥ 0).
@@ -469,6 +476,11 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
                 f"non-reflecting-hydro-subsonic-inflow BC at '{location}' requires '{key}' "
                 f"inside 'data'"
             )
+    if "B" in data or "B1" in data:
+        raise ValueError(
+            f"non-reflecting-hydro-subsonic-inflow BC at '{location}' is hydro-only and must "
+            f"not be given a magnetic field ('B'/'B1')"
+        )
     val = data["density"]
     if not isinstance(val, (int, float)) or val <= 0:
         raise ValueError(
@@ -476,7 +488,6 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
             f"positive scalar, got {val!r}"
         )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    _normalize_inflow_magnetic_field(location, data)
 
     for key in ("relax_velocity_n", "relax_velocity_t", "relax_density"):
         v = data[key]

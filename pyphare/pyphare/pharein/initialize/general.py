@@ -82,17 +82,16 @@ add_string = pp.add_string
 
 
 def _add_inflow_magnetic_field(bc_path, data):
-    """Serialise the inflow magnetic field under 'data/B1' (perturbation) or 'data/B' (total).
+    """Serialise the inflow total magnetic field under 'data/B'.
 
-    Exactly one of the two keys is present (enforced by simulation.py validation). The C++
-    BoundaryFactory branches on which key exists: 'B' selects FieldB1FromBtot (B1 = B - B0),
-    'B1' selects the divergence-free transverse Dirichlet on B1.
+    Only the total field 'B' is accepted (enforced by simulation.py validation). The C++
+    BoundaryFactory drives the boundary field through the motional electric field E = -v x B
+    (full Dirichlet on E) and leaves B1 free in the ghosts.
     """
-    key = "B" if "B" in data else "B1"
-    bx, by, bz = data[key]
-    add_double(f"{bc_path}/data/{key}/x", bx)
-    add_double(f"{bc_path}/data/{key}/y", by)
-    add_double(f"{bc_path}/data/{key}/z", bz)
+    bx, by, bz = data["B"]
+    add_double(f"{bc_path}/data/B/x", bx)
+    add_double(f"{bc_path}/data/B/y", by)
+    add_double(f"{bc_path}/data/B/z", bz)
 
 
 def populateDict(sim):
@@ -162,7 +161,6 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                _add_inflow_magnetic_field(bc_path, data)
                 add_double(f"{bc_path}/data/relax_velocity_n", data["relax_velocity_n"])
                 add_double(f"{bc_path}/data/relax_velocity_t", data["relax_velocity_t"])
                 add_double(f"{bc_path}/data/relax_density",    data["relax_density"])
