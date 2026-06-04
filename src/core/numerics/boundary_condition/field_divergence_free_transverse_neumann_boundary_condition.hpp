@@ -10,18 +10,20 @@
 namespace PHARE::core
 {
 /**
- * @brief Boundary condition for the magnetic perturbation B1 that enforces zero normal derivative
- * on the *total* field B = B0 + B1 (transverse components) and sets the normal component so that
- * the numerical divergence of B1 is zero.
+ * @brief Outflow boundary condition for the magnetic perturbation B1: zero normal derivative on the
+ * transverse B1 components, with the normal component set so that the numerical divergence of B1 is
+ * zero.
  *
- * On the transverse components the ghost B1 value is written so that the total field mirrors the
- * first interior value (zero normal gradient of B = B0 + B1):
- *   B(index) = B(mirror)  =>  B1(index) = B1(mirror) + B0(mirror) - B0(index)
- * with the spatially-varying background B0 read from the current-state accessor. The normal
- * component is set so that div B1 = 0; since B0 is itself divergence-free, div B = 0 is preserved.
+ * The evolved/transported magnetic quantity is the perturbation B1; the background B0 (e.g. a
+ * dipole or IMF) is analytic and is filled into the ghost cells at its exact value there
+ * (independently of this BC). Enforcing zero normal gradient on B1 — rather than on the total
+ * B = B0 + B1 — is what makes the scheme well-balanced w.r.t. a non-uniform static B0: at rest
+ * B1 = 0 everywhere, so B1(ghost) = B1(mirror) = 0 and no spurious B1 (hence no spurious EMF /
+ * Lorentz force) is injected at the boundary. Mirroring the *total* field instead would write
+ * B0(mirror) - B0(index) into the B1 ghost, i.e. the discrete dipole gradient, seeding a spurious
+ * perturbation from rest. Since B0 is divergence-free, div B1 = 0 implies div B = 0.
  *
- * @warning Only valid for vector fields with the same centering as the magnetic field (B0 is read
- * at the same indices as B1).
+ * @warning Only valid for vector fields with the same centering as the magnetic field.
  *
  * @tparam VecFieldT Type of the vector field.
  * @tparam GridLayoutT Grid layout configuration.
@@ -66,7 +68,7 @@ public:
 
     void apply(VecFieldT& vecField, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-               Super::boundary_condition_context_type const& ctx) override
+               Super::boundary_condition_context_type const& /*ctx*/) override
     {
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
@@ -76,17 +78,14 @@ public:
 
         assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B1));
 
-        // background field B0, read at the same indices as B1 (co-located, same centering)
-        auto B0vec    = ctx.accessor_new.getVecField(tensor_quantity_type::B0);
-        auto B0fields = B0vec.components();
-
-        // transverse components: zero normal gradient on the *total* field B = B0 + B1, written
-        // into the B1 ghost:  B(index) = B(mirror)  =>  B1(index) = B1(mirror) + B0(mirror) - B0(index)
+        // transverse components: zero normal gradient on the perturbation B1 (B0 is filled
+        // analytically into the ghosts elsewhere). Mirroring B1 keeps the rest state B1 = 0
+        // exactly, which is what makes the boundary well-balanced w.r.t. a non-uniform B0.
+        //   B1(index) = B1(mirror)
         for_N<N>([&](auto iTransverse) {
             if (static_cast<size_t>(iTransverse) != iNormal)
             {
-                field_type& B1c       = std::get<iTransverse>(fields);
-                field_type const& B0c = std::get<iTransverse>(B0fields);
+                field_type& B1c = std::get<iTransverse>(fields);
 
                 QtyCentering const centering = GridLayoutT::centering(
                     B1c.physicalQuantity())[static_cast<size_t>(direction)];
@@ -96,7 +95,7 @@ public:
                 {
                     _index const mirrorIndex
                         = gridLayout.boundaryMirrored(direction, side, centering, index);
-                    B1c(index) = B1c(mirrorIndex) + B0c(mirrorIndex) - B0c(index);
+                    B1c(index) = B1c(mirrorIndex);
                 }
             }
         });

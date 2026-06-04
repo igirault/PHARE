@@ -410,17 +410,6 @@ private:
         return B1(component)(idx) + B0(component)(idx);
     }
 
-    template<auto direction>
-    static auto reconstructTotal_(auto const& B1, auto const& B0, auto const component,
-                                  auto const& idx)
-    {
-        auto const [B1L, B1R]
-            = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
-        auto const [B0L, B0R]
-            = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
-        return std::make_pair(B1L + B0L, B1R + B0R);
-    }
-
     // Returns (B1L, B1R, BtotalL, BtotalR) — caller needs both for Ohm's law (total)
     // and for the Poynting Etot1 flux (perturbation B1 only).
     template<auto direction>
@@ -445,7 +434,10 @@ private:
             auto FL = BzL * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
             auto FR = BzR * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
 
-            Ex(idx) = -(aL_y(idx) * FL + aR_y(idx) * FR) + (dR_y(idx) * BzR - dL_y(idx) * BzL);
+            // Numerical dissipation acts on the evolved field B1 only (well-balanced
+            // w.r.t. B0): B0 is analytic/continuous so its reconstructed L/R jump is a
+            // spurious artifact that must not generate a dissipative EMF at rest.
+            Ex(idx) = -(aL_y(idx) * FL + aR_y(idx) * FR) + (dR_y(idx) * B1zR - dL_y(idx) * B1zL);
 
             Bt_z_at_Ex(idx) = aL_y(idx) * BzL + aR_y(idx) * BzR;
             B1_z_at_Ex(idx) = aL_y(idx) * B1zL + aR_y(idx) * B1zR;
@@ -487,8 +479,9 @@ private:
             auto [B1yB, B1yT, ByB, ByT]
                 = reconstructBoth_<Direction::Z>(B1, B0, Component::Y, idx);
 
+            // Dissipation on B1 only (well-balanced w.r.t. analytic B0)
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
-                      - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
+                      - (dT * B1yT - dB * B1yB) + (dN * B1zN - dS * B1zS);
 
             Bt_y_at_Ex(idx) = aB * ByB + aT * ByT;
             Bt_z_at_Ex(idx) = aS * BzS + aN * BzN;
@@ -524,7 +517,8 @@ private:
             auto FL = BzL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
             auto FR = BzR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
 
-            Ey(idx) = (aL_x(idx) * FL + aR_x(idx) * FR) - (dR_x(idx) * BzR - dL_x(idx) * BzL);
+            // Dissipation on B1 only (well-balanced w.r.t. analytic B0)
+            Ey(idx) = (aL_x(idx) * FL + aR_x(idx) * FR) - (dR_x(idx) * B1zR - dL_x(idx) * B1zL);
 
             Bt_z_at_Ey(idx) = aL_x(idx) * BzL + aR_x(idx) * BzR;
             B1_z_at_Ey(idx) = aL_x(idx) * B1zL + aR_x(idx) * B1zR;
@@ -563,8 +557,9 @@ private:
             auto [B1xB, B1xT, BxB, BxT]
                 = reconstructBoth_<Direction::Z>(B1, B0, Component::X, idx);
 
+            // Dissipation on B1 only (well-balanced w.r.t. analytic B0)
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
-                      - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
+                      - (dE * B1zE - dW * B1zW) + (dT * B1xT - dB * B1xB);
 
             Bt_x_at_Ey(idx) = aB * BxB + aT * BxT;
             Bt_z_at_Ey(idx) = aW * BzW + aE * BzE;
@@ -591,13 +586,15 @@ private:
     {
         if constexpr (dimension == 1)
         {
-            auto [ByL, ByR] = reconstructTotal_<Direction::X>(B1, B0, Component::Y, idx);
-            auto const Bx   = totalAt_(B1, B0, Component::X, idx);
+            auto [B1yL, B1yR, ByL, ByR]
+                = reconstructBoth_<Direction::X>(B1, B0, Component::Y, idx);
+            auto const Bx = totalAt_(B1, B0, Component::X, idx);
 
             auto FL = ByL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
             auto FR = ByR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
 
-            Ez(idx) = -(aL_x(idx) * FL + aR_x(idx) * FR) + (dR_x(idx) * ByR - dL_x(idx) * ByL);
+            // Dissipation on B1 only (well-balanced w.r.t. analytic B0)
+            Ez(idx) = -(aL_x(idx) * FL + aR_x(idx) * FR) + (dR_x(idx) * B1yR - dL_x(idx) * B1yL);
 
             if constexpr (Hall)
             {
@@ -636,8 +633,9 @@ private:
             auto [B1yW, B1yE, ByW, ByE]
                 = reconstructBoth_<Direction::X>(B1, B0, Component::Y, idx);
 
+            // Dissipation on B1 only (well-balanced w.r.t. analytic B0)
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
-                      + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);
+                      + (dE * B1yE - dW * B1yW) - (dN * B1xN - dS * B1xS);
 
             Bt_x_at_Ez(idx) = aS * BxS + aN * BxN;
             Bt_y_at_Ez(idx) = aW * ByW + aE * ByE;
