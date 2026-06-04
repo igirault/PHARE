@@ -119,9 +119,10 @@ public:
             auto _sl    = core::SetLayout(&layout, ampere_);
 
             setTime(
-                *patch, [&]() -> auto&& { return state.B1; }, [&]() -> auto&& { return state.J; });
+                *patch, [&]() -> auto&& { return state.B1; },
+                [&]() -> auto&& { return state.B0; }, [&]() -> auto&& { return state.J; });
 
-            ampere_(state.B1, state.J);
+            ampere_(state.B1, state.B0, state.J);
         }
     }
 
