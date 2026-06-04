@@ -64,7 +64,7 @@ public:
                     statenew.Etot1(idx) += dt * (Exc * j0xc + Eyc * j0yc + Ezc * j0zc);
                 });
             },
-            state, statenew);
+            state, statenew, E);
 
         faraday_(level, model, state, E, statenew, dt);
 
