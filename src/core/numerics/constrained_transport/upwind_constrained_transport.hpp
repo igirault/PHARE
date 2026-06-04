@@ -94,16 +94,17 @@ public:
                                      "cannot proceed to calculate E");
 
         auto& E        = state.E;
+        auto const& B  = state.B;
         auto const& B1 = state.B1;
-        auto const& B0 = state.B0;
+        auto const& B0 = state.B0; // still needed by the hyper-resistive contribution
 
         auto& Ex = E(Component::X);
         auto& Ey = E(Component::Y);
         auto& Ez = E(Component::Z);
 
-        layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B1, B0, {args...}); });
-        layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B1, B0, {args...}); });
-        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B1, B0, {args...}); });
+        layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B, B1, {args...}); });
+        layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B, B1, {args...}); });
+        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B, B1, {args...}); });
 
         if (resistivity_ || hyper_resistivity_)
         {
@@ -405,42 +406,41 @@ public:
     }
 
 private:
-    static auto totalAt_(auto const& B1, auto const& B0, auto const component, auto const& idx)
+    static auto totalAt_(auto const& B, auto const component, auto const& idx)
     {
-        return B1(component)(idx) + B0(component)(idx);
+        return B(component)(idx);
     }
 
     template<auto direction>
-    static auto reconstructTotal_(auto const& B1, auto const& B0, auto const component,
-                                  auto const& idx)
+    static auto reconstructTotal_(auto const& B, auto const component, auto const& idx)
     {
-        auto const [B1L, B1R]
-            = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
-        auto const [B0L, B0R]
-            = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
-        return std::make_pair(B1L + B0L, B1R + B0R);
+        // Reconstruct the total field directly (B is materialized as B1 + B0) so the
+        // nonlinear limiter acts on the real total field.
+        return Reconstruction_t::template reconstruct<direction>(B(component), idx);
     }
 
     // Returns (B1L, B1R, BtotalL, BtotalR) — caller needs both for Ohm's law (total)
-    // and for the Poynting Etot1 flux (perturbation B1 only).
+    // and for the Poynting Etot1 flux (perturbation B1 only). The total is reconstructed
+    // directly from B; B1 is reconstructed separately because the Etot1 Poynting flux
+    // genuinely needs the perturbation field at the edge.
     template<auto direction>
-    static auto reconstructBoth_(auto const& B1, auto const& B0, auto const component,
+    static auto reconstructBoth_(auto const& B, auto const& B1, auto const component,
                                  auto const& idx)
     {
         auto const [B1L, B1R]
             = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
-        auto const [B0L, B0R]
-            = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
-        return std::make_tuple(B1L, B1R, B1L + B0L, B1R + B0R);
+        auto const [BL, BR]
+            = Reconstruction_t::template reconstruct<direction>(B(component), idx);
+        return std::make_tuple(B1L, B1R, BL, BR);
     }
 
-    void ExEq_(auto& Ex, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
+    void ExEq_(auto& Ex, auto const& B, auto const& B1, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 2)
         {
             auto [B1zL, B1zR, BzL, BzR]
-                = reconstructBoth_<Direction::Y>(B1, B0, Component::Z, idx);
-            auto const By   = totalAt_(B1, B0, Component::Y, idx);
+                = reconstructBoth_<Direction::Y>(B, B1, Component::Z, idx);
+            auto const By   = totalAt_(B, Component::Y, idx);
 
             auto FL = BzL * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
             auto FR = BzR * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
@@ -483,9 +483,9 @@ private:
                 = Reconstruction_t::template reconstruct<Direction::Z>(vt_y(Component::Z), idx);
 
             auto [B1zS, B1zN, BzS, BzN]
-                = reconstructBoth_<Direction::Y>(B1, B0, Component::Z, idx);
+                = reconstructBoth_<Direction::Y>(B, B1, Component::Z, idx);
             auto [B1yB, B1yT, ByB, ByT]
-                = reconstructBoth_<Direction::Z>(B1, B0, Component::Y, idx);
+                = reconstructBoth_<Direction::Z>(B, B1, Component::Y, idx);
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
@@ -513,13 +513,13 @@ private:
         }
     }
 
-    void EyEq_(auto& Ey, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
+    void EyEq_(auto& Ey, auto const& B, auto const& B1, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension <= 2)
         {
             auto [B1zL, B1zR, BzL, BzR]
-                = reconstructBoth_<Direction::X>(B1, B0, Component::Z, idx);
-            auto const Bx   = totalAt_(B1, B0, Component::X, idx);
+                = reconstructBoth_<Direction::X>(B, B1, Component::Z, idx);
+            auto const Bx   = totalAt_(B, Component::X, idx);
 
             auto FL = BzL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
             auto FR = BzR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
@@ -559,9 +559,9 @@ private:
             auto [vzB, vzT]
                 = Reconstruction_t::template reconstruct<Direction::Z>(vt_x(Component::Z), idx);
             auto [B1zW, B1zE, BzW, BzE]
-                = reconstructBoth_<Direction::X>(B1, B0, Component::Z, idx);
+                = reconstructBoth_<Direction::X>(B, B1, Component::Z, idx);
             auto [B1xB, B1xT, BxB, BxT]
-                = reconstructBoth_<Direction::Z>(B1, B0, Component::X, idx);
+                = reconstructBoth_<Direction::Z>(B, B1, Component::X, idx);
 
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
@@ -587,12 +587,12 @@ private:
         }
     }
 
-    void EzEq_(auto& Ez, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
+    void EzEq_(auto& Ez, auto const& B, auto const& B1, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 1)
         {
-            auto [ByL, ByR] = reconstructTotal_<Direction::X>(B1, B0, Component::Y, idx);
-            auto const Bx   = totalAt_(B1, B0, Component::X, idx);
+            auto [ByL, ByR] = reconstructTotal_<Direction::X>(B, Component::Y, idx);
+            auto const Bx   = totalAt_(B, Component::X, idx);
 
             auto FL = ByL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
             auto FR = ByR * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
@@ -632,9 +632,9 @@ private:
                 = Reconstruction_t::template reconstruct<Direction::X>(vt_y(Component::X), idx);
 
             auto [B1xS, B1xN, BxS, BxN]
-                = reconstructBoth_<Direction::Y>(B1, B0, Component::X, idx);
+                = reconstructBoth_<Direction::Y>(B, B1, Component::X, idx);
             auto [B1yW, B1yE, ByW, ByE]
-                = reconstructBoth_<Direction::X>(B1, B0, Component::Y, idx);
+                = reconstructBoth_<Direction::X>(B, B1, Component::Y, idx);
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);

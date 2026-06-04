@@ -94,6 +94,18 @@ public:
 
             to_primitive_(state.rho, state.rhoV, state.B1, state.B0, state.Etot1, state.V,
                           state.P);
+
+            // Refresh the total field B = B1 + B0 so the flux reconstruction limits the
+            // real total field (reconstructing B1 and B0 separately and summing would
+            // apply the nonlinear limiter to each piece independently).
+            for (auto const component : {core::Component::X, core::Component::Y, core::Component::Z})
+            {
+                auto& Bc        = state.B(component);
+                auto const& B1c = state.B1(component);
+                auto const& B0c = state.B0(component);
+                layout.evalOnGhostBox(
+                    Bc, [&](auto&... args) mutable { Bc(args...) = B1c(args...) + B0c(args...); });
+            }
         }
     }
 

@@ -34,25 +34,25 @@ namespace core
         NO_DISCARD bool isUsable() const
         {
             return rho.isUsable() and V.isUsable() and B1.isUsable() and B0.isUsable()
-                   and P.isUsable() and rhoV.isUsable() and Etot1.isUsable() and J.isUsable()
-                   and E.isUsable();
+                   and B.isUsable() and P.isUsable() and rhoV.isUsable() and Etot1.isUsable()
+                   and J.isUsable() and E.isUsable();
         }
 
         NO_DISCARD bool isSettable() const
         {
             return rho.isSettable() and V.isSettable() and B1.isSettable() and B0.isSettable()
-                   and P.isSettable() and rhoV.isSettable() and Etot1.isSettable()
-                   and J.isSettable() and E.isSettable();
+                   and B.isSettable() and P.isSettable() and rhoV.isSettable()
+                   and Etot1.isSettable() and J.isSettable() and E.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, E);
+            return std::forward_as_tuple(rho, V, B1, B0, B, P, rhoV, Etot1, J, E);
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, E);
+            return std::forward_as_tuple(rho, V, B1, B0, B, P, rhoV, Etot1, J, E);
         }
 
         //-------------------------------------------------------------------------
@@ -64,6 +64,7 @@ namespace core
             , V{dict["name"].template to<std::string>() + "_" + "V", MHDQuantity::Vector::V}
             , B1{dict["name"].template to<std::string>() + "_" + "B1", MHDQuantity::Vector::B1}
             , B0{dict["name"].template to<std::string>() + "_" + "B0", MHDQuantity::Vector::B0}
+            , B{dict["name"].template to<std::string>() + "_" + "B", MHDQuantity::Vector::B}
             , P{dict["name"].template to<std::string>() + "_" + "P", MHDQuantity::Scalar::P}
 
 
@@ -93,6 +94,7 @@ namespace core
             , V{name + "_" + "V", MHDQuantity::Vector::V}
             , B1{name + "_" + "B1", MHDQuantity::Vector::B1}
             , B0{name + "_" + "B0", MHDQuantity::Vector::B0}
+            , B{name + "_" + "B", MHDQuantity::Vector::B}
             , P{name + "_" + "P", MHDQuantity::Scalar::P}
 
 
@@ -180,6 +182,7 @@ namespace core
         VecFieldT V;
         VecFieldT B1;
         VecFieldT B0;
+        VecFieldT B; // total B = B1 + B0, refreshed each substep before reconstruction
         field_type P;
 
         VecFieldT rhoV;

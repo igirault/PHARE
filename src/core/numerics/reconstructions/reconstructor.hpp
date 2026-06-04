@@ -28,24 +28,23 @@ public:
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
-        auto [B1L, B1R] = transverse_reconstruct<direction>(S.B1, index);
+        // Reconstruct the total field B = B1 + B0 directly (B is materialized as B1 + B0
+        // before the flux step) so the nonlinear limiter acts on the real total field.
+        // B0 is still reconstructed because the reduced energy variable needs it at the
+        // face (B1 = B - B0 in as_reduced_conservative_tuple).
+        auto [BL, BR]   = transverse_reconstruct<direction>(S.B, index);
         auto [B0L, B0R] = transverse_reconstruct<direction>(S.B0, index);
-
-        auto const [BxL, ByL, BzL]
-            = totalMagneticComponents(B1L.x, B1L.y, B1L.z, B0L.x, B0L.y, B0L.z);
-        auto const [BxR, ByR, BzR]
-            = totalMagneticComponents(B1R.x, B1R.y, B1R.z, B0R.x, B0R.y, B0R.z);
 
         using Float = std::decay_t<decltype(rhoL)>;
 
         PerIndex<Float> uL{rhoL,
                            PerIndexVector<Float>{VxL, VyL, VzL},
-                           PerIndexVector<Float>{BxL, ByL, BzL},
+                           PerIndexVector<Float>{BL.x, BL.y, BL.z},
                            PL,
                            B0L};
         PerIndex<Float> uR{rhoR,
                            PerIndexVector<Float>{VxR, VyR, VzR},
-                           PerIndexVector<Float>{BxR, ByR, BzR},
+                           PerIndexVector<Float>{BR.x, BR.y, BR.z},
                            PR,
                            B0R};
 
