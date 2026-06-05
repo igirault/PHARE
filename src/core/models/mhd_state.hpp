@@ -36,24 +36,25 @@ namespace core
         {
             return rho.isUsable() and V.isUsable() and B1.isUsable() and B0.isUsable()
                    and P.isUsable() and rhoV.isUsable() and Etot1.isUsable() and J.isUsable()
-                   and J0.isUsable() and E.isUsable();
+                   and J0.isUsable() and E.isUsable() and B0x_Ez.isUsable() and B0y_Ez.isUsable();
         }
 
         NO_DISCARD bool isSettable() const
         {
             return rho.isSettable() and V.isSettable() and B1.isSettable() and B0.isSettable()
                    and P.isSettable() and rhoV.isSettable() and Etot1.isSettable()
-                   and J.isSettable() and J0.isSettable() and E.isSettable();
+                   and J.isSettable() and J0.isSettable() and E.isSettable() and B0x_Ez.isSettable()
+                   and B0y_Ez.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E);
+            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E, B0x_Ez, B0y_Ez);
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E);
+            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E, B0x_Ez, B0y_Ez);
         }
 
         //-------------------------------------------------------------------------
@@ -78,12 +79,23 @@ namespace core
             , J{dict["name"].template to<std::string>() + "_" + "J", MHDQuantity::Vector::J}
             , J0{dict["name"].template to<std::string>() + "_" + "J0", MHDQuantity::Vector::J}
 
+            // B0 sampled analytically at the Ez edge (ppd corner): used by the constrained
+            // transport so the motional EMF is well-balanced w.r.t. grad B0 (no 2-pt averaging).
+            , B0x_Ez{dict["name"].template to<std::string>() + "_" + "B0x_Ez",
+                     MHDQuantity::Scalar::Ez}
+            , B0y_Ez{dict["name"].template to<std::string>() + "_" + "B0y_Ez",
+                     MHDQuantity::Scalar::Ez}
+
 
             , rhoinit_{dict["density"]["initializer"]
                            .template to<initializer::InitFunction<dimension>>()}
             , Vinit_{dict["velocity"]["initializer"]}
             , totalBInit_{dict["magnetic"]["initializer"]}
             , B0init_{dict["external_magnetic"]["initializer"]}
+            , b0xinit_{dict["external_magnetic"]["initializer"]["x_component"]
+                           .template to<initializer::InitFunction<dimension>>()}
+            , b0yinit_{dict["external_magnetic"]["initializer"]["y_component"]
+                           .template to<initializer::InitFunction<dimension>>()}
             , Pinit_{dict["pressure"]["initializer"]
                          .template to<initializer::InitFunction<dimension>>()}
             , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
@@ -106,6 +118,15 @@ namespace core
             , J{name + "_" + "J", MHDQuantity::Vector::J}
             , J0{name + "_" + "J0", MHDQuantity::Vector::J}
 
+            , B0x_Ez{name + "_" + "B0x_Ez", MHDQuantity::Scalar::Ez}
+            , B0y_Ez{name + "_" + "B0y_Ez", MHDQuantity::Scalar::Ez}
+
+            // mirror B0init_ (VecFieldInitializer) which zero-defaults here: keep the edge-B0
+            // init functions callable so updateExternalMagneticField never throws on states
+            // built without a dict (e.g. RK intermediate / temporary states).
+            , b0xinit_{zeroInit_()}
+            , b0yinit_{zeroInit_()}
+
             , gamma_{}
         {
         }
@@ -115,6 +136,9 @@ namespace core
         {
             B0init_.initialize(B0, layout);
             Ampere_ref<GridLayout>{layout}(B0, J0); // background current j0 = curl(B0)
+            // resample B0x, B0y directly at the Ez edge (ppd) for the well-balanced CT EMF
+            FieldUserFunctionInitializer::initialize(B0x_Ez, layout, b0xinit_);
+            FieldUserFunctionInitializer::initialize(B0y_Ez, layout, b0yinit_);
         }
 
         /**
@@ -166,6 +190,9 @@ namespace core
             totalBInit_.initialize(B1, layout);
             B0init_.initialize(B0, layout);
             Ampere_ref<GridLayout>{layout}(B0, J0); // background current j0 = curl(B0)
+            // B0x, B0y sampled at the Ez edge (ppd) for the well-balanced CT EMF
+            FieldUserFunctionInitializer::initialize(B0x_Ez, layout, b0xinit_);
+            FieldUserFunctionInitializer::initialize(B0y_Ez, layout, b0yinit_);
             FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
 
             for (auto const& component : {Component::X, Component::Y, Component::Z})
@@ -194,11 +221,33 @@ namespace core
         VecFieldT J;
         VecFieldT J0; // background current = curl(B0), recomputed whenever B0 is set
 
+        // B0 components sampled analytically at the Ez edge (ppd), for well-balanced CT EMF
+        field_type B0x_Ez;
+        field_type B0y_Ez;
+
     private:
+        static initializer::InitFunction<dimension> zeroInit_()
+        {
+            if constexpr (dimension == 1)
+                return [](auto const& x) -> std::shared_ptr<Span<double>> {
+                    return std::make_shared<VectorSpan<double>>(x.size(), 0.0);
+                };
+            else if constexpr (dimension == 2)
+                return [](auto const& x, auto const&) -> std::shared_ptr<Span<double>> {
+                    return std::make_shared<VectorSpan<double>>(x.size(), 0.0);
+                };
+            else
+                return [](auto const& x, auto const&, auto const&) -> std::shared_ptr<Span<double>> {
+                    return std::make_shared<VectorSpan<double>>(x.size(), 0.0);
+                };
+        }
+
         initializer::InitFunction<dimension> rhoinit_;
         VecFieldInitializer<dimension> Vinit_;
         VecFieldInitializer<dimension> totalBInit_;
         VecFieldInitializer<dimension> B0init_;
+        initializer::InitFunction<dimension> b0xinit_;
+        initializer::InitFunction<dimension> b0yinit_;
         initializer::InitFunction<dimension> Pinit_;
 
         double const gamma_;

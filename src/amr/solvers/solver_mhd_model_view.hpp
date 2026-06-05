@@ -226,9 +226,14 @@ public:
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, constrained_transport_, state);
-            auto _sl    = core::SetLayout(&layout, constrained_transport_);
-            constrained_transport_(state);
+            // B0 is static: always use the model state's edge-sampled B0 (B0x_Ez/B0y_Ez),
+            // which is exact at the Ez edge. The processed `state` may be an RK intermediate
+            // whose edge-B0 is not propagated; its face B0 is, but only the exact edge values
+            // make the motional EMF well-balanced w.r.t. grad B0.
+            auto _sp = model.resourcesManager->setOnPatch(*patch, constrained_transport_, state,
+                                                          model.state.B0x_Ez, model.state.B0y_Ez);
+            auto _sl = core::SetLayout(&layout, constrained_transport_);
+            constrained_transport_(state, model.state.B0x_Ez, model.state.B0y_Ez);
         }
     }
 

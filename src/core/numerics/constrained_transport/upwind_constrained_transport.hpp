@@ -87,7 +87,10 @@ public:
             assign_fields(vt_z, jt_z, rhot_z, aL_z, aR_z, dL_z, dR_z);
     }
 
-    void operator()(auto& state) const
+    // B0x_Ez/B0y_Ez are the model state's B0 sampled exactly at the Ez edge (ppd). They are
+    // passed in (not read from `state`) because `state` may be an RK intermediate whose edge-B0
+    // is not propagated, whereas the static background B0 is identical on every state.
+    void operator()(auto& state, auto const& B0x_Ez, auto const& B0y_Ez) const
     {
         if (!this->hasLayout())
             throw std::runtime_error("Error - UpwindConstrainedTransport - GridLayout not set, "
@@ -103,7 +106,9 @@ public:
 
         layout_->evalOnBox(Ex, [&](auto&... args) mutable { ExEq_(Ex, B1, B0, {args...}); });
         layout_->evalOnBox(Ey, [&](auto&... args) mutable { EyEq_(Ey, B1, B0, {args...}); });
-        layout_->evalOnBox(Ez, [&](auto&... args) mutable { EzEq_(Ez, B1, B0, {args...}); });
+        layout_->evalOnBox(Ez, [&](auto&... args) mutable {
+            EzEq_(Ez, B1, B0, B0x_Ez, B0y_Ez, {args...});
+        });
 
         if (resistivity_ || hyper_resistivity_)
         {
@@ -600,7 +605,8 @@ private:
         }
     }
 
-    void EzEq_(auto& Ez, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
+    void EzEq_(auto& Ez, auto const& B1, auto const& B0, [[maybe_unused]] auto const& B0x_Ez,
+               [[maybe_unused]] auto const& B0y_Ez, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 1)
         {
@@ -644,10 +650,18 @@ private:
             auto [vxW, vxE]
                 = Reconstruction_t::template reconstruct<Direction::X>(vt_y(Component::X), idx);
 
-            auto [B1xS, B1xN, BxS, BxN]
-                = reconstructBoth_<Direction::Y>(B1, B0, Component::X, idx);
-            auto [B1yW, B1yE, ByW, ByE]
-                = reconstructBoth_<Direction::X>(B1, B0, Component::Y, idx);
+            // Reconstruct only the perturbation B1 (upwinded), then add the EXACT B0 sampled at
+            // the Ez edge (single value, same on L/R). The dissipation (dE*ByE - dW*ByW etc.)
+            // still cancels B0, and for uniform V the motional EMF reproduces -Vx(B0+B1)
+            // exactly regardless of grad B0 -> well-balanced, no spurious bending.
+            auto [B1xS, B1xN]
+                = Reconstruction_t::template reconstruct<Direction::Y>(B1(Component::X), idx);
+            auto [B1yW, B1yE]
+                = Reconstruction_t::template reconstruct<Direction::X>(B1(Component::Y), idx);
+            auto const b0x_e = B0x_Ez(idx);
+            auto const b0y_e = B0y_Ez(idx);
+            auto const BxS = B1xS + b0x_e, BxN = B1xN + b0x_e;
+            auto const ByW = B1yW + b0y_e, ByE = B1yE + b0y_e;
 
             Ez(idx) = -(aW * vxW * ByW + aE * vxE * ByE) + (aS * vyS * BxS + aN * vyN * BxN)
                       + (dE * ByE - dW * ByW) - (dN * BxN - dS * BxS);

@@ -47,7 +47,7 @@ template<std::size_t dim, typename GridLayoutT, typename PhysicalQuantityT>
 class InnerBoundaryMeshClassifier
 {
 public:
-    using point_type              = typename InnerBoundaryGeometry<dim>::point_type;
+    using point_type              = InnerBoundaryGeometry<dim>::point_type;
     using local_index_type        = Point<std::uint32_t, dim>;
     using signed_local_index_type = Point<int, dim>;
     using mesh_data_type          = InnerBoundaryMeshData<dim, PhysicalQuantityT>;
@@ -534,8 +534,8 @@ private:
                 auto const pos    = layout.fieldNodeCoordinates(status_field, amr);
                 auto const mirror = boundary_.symmetric(pos);
                 ghost_list.push_back(
-                {local, mirror, boundary_.normal(pos),
-                 FieldAtPoint<dim, 1>::pointIsInterpolable(layout, mirror, centerings)});
+                    {local, mirror, boundary_.normal(pos),
+                     FieldAtPoint<dim, 1>::pointIsInterpolable(layout, mirror, centerings)});
             });
         }
     }
