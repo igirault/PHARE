@@ -30,28 +30,17 @@ public:
 
         auto [B1L, B1R] = transverse_reconstruct<direction>(S.B1, index);
 
-        // B0 is not reconstructed: it is read once at the Riemann face (single value), then
-        // added identically to the left/right reconstructed B1. This keeps B0 out of the
-        // Riemann jump (BR - BL = B1R - B1L) and makes a static equilibrium well-balanced.
+        // B0 is not reconstructed: it is read once at the Riemann face (single value). It is
+        // stored alongside the reconstructed perturbation B1 (which PerIndex carries as its
+        // magnetic variable); the total field is formed by addition only, where needed. This
+        // keeps B0 out of the Riemann jump (B1R - B1L) and makes a static equilibrium
+        // well-balanced.
         auto const B0f = B0_at_face<direction>(S.B0, index);
-
-        auto const [BxL, ByL, BzL]
-            = totalMagneticComponents(B1L.x, B1L.y, B1L.z, B0f.x, B0f.y, B0f.z);
-        auto const [BxR, ByR, BzR]
-            = totalMagneticComponents(B1R.x, B1R.y, B1R.z, B0f.x, B0f.y, B0f.z);
 
         using Float = std::decay_t<decltype(rhoL)>;
 
-        PerIndex<Float> uL{rhoL,
-                           PerIndexVector<Float>{VxL, VyL, VzL},
-                           PerIndexVector<Float>{BxL, ByL, BzL},
-                           PL,
-                           B0f};
-        PerIndex<Float> uR{rhoR,
-                           PerIndexVector<Float>{VxR, VyR, VzR},
-                           PerIndexVector<Float>{BxR, ByR, BzR},
-                           PR,
-                           B0f};
+        PerIndex<Float> uL{rhoL, PerIndexVector<Float>{VxL, VyL, VzL}, B1L, PL, B0f};
+        PerIndex<Float> uR{rhoR, PerIndexVector<Float>{VxR, VyR, VzR}, B1R, PR, B0f};
 
         return std::make_pair(uL, uR);
     }

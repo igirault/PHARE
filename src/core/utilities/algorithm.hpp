@@ -108,7 +108,15 @@ auto convert_to_primal(        //
                   || std::is_same_v<PhysicalQuantity, MHDQuantity::Vector>
                   || std::is_same_v<PhysicalQuantity, MHDQuantity::Tensor>)
     {
-        // if we are not the magnetic field, then all scalars and vectors are cell-centered in MHD
+        // the electric field is edge-centered (dual in one direction), not cell-centered
+        if (qty == PQ::Ex)
+            return GridLayout::template project<GridLayout::ExToMoments>(src, lix);
+        else if (qty == PQ::Ey)
+            return GridLayout::template project<GridLayout::EyToMoments>(src, lix);
+        else if (qty == PQ::Ez)
+            return GridLayout::template project<GridLayout::EzToMoments>(src, lix);
+
+        // if we are not the magnetic or electric field, all scalars and vectors are cell-centered
         return GridLayout::template project<GridLayout::cellCenterToFullPrimal>(src, lix);
     }
 

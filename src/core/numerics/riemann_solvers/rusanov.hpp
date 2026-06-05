@@ -96,8 +96,10 @@ private:
     template<auto direction>
     auto rusanov_speeds_(auto const& uL, auto const& uR)
     {
-        auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
-        auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
+        auto const BtL    = uL.totalB();
+        auto const BtR    = uR.totalB();
+        auto const BdotBL = BtL.x * BtL.x + BtL.y * BtL.y + BtL.z * BtL.z;
+        auto const BdotBR = BtR.x * BtR.x + BtR.y * BtR.y + BtR.z * BtR.z;
 
         auto compute_speeds = [&](auto rhoL, auto rhoR, auto PL, auto PR, auto BdotBL, auto BdotBR,
                                   auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
@@ -112,20 +114,22 @@ private:
 
         if constexpr (direction == Direction::X)
             return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.x, uR.V.x,
-                                  uL.B.x, uR.B.x);
+                                  BtL.x, BtR.x);
         else if constexpr (direction == Direction::Y)
             return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.y, uR.V.y,
-                                  uL.B.y, uR.B.y);
+                                  BtL.y, BtR.y);
         else if constexpr (direction == Direction::Z)
             return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.z, uR.V.z,
-                                  uL.B.z, uR.B.z);
+                                  BtL.z, BtR.z);
     }
 
     template<auto direction>
     auto rusanov_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
     {
-        auto const BdotBL = uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z;
-        auto const BdotBR = uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z;
+        auto const BtL    = uL.totalB();
+        auto const BtR    = uR.totalB();
+        auto const BdotBL = BtL.x * BtL.x + BtL.y * BtL.y + BtL.z * BtL.z;
+        auto const BdotBR = BtR.x * BtR.x + BtR.y * BtR.y + BtR.z * BtR.z;
 
         auto compute_speeds = [&](auto rhoL, auto rhoR, auto PL, auto PR, auto BdotBL, auto BdotBR,
                                   auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
@@ -148,13 +152,13 @@ private:
 
         if constexpr (direction == Direction::X)
             return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.x, uR.V.x,
-                                  uL.B.x, uR.B.x);
+                                  BtL.x, BtR.x);
         else if constexpr (direction == Direction::Y)
             return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.y, uR.V.y,
-                                  uL.B.y, uR.B.y);
+                                  BtL.y, BtR.y);
         else if constexpr (direction == Direction::Z)
             return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.z, uR.V.z,
-                                  uL.B.z, uR.B.z);
+                                  BtL.z, BtR.z);
     }
 
     auto rusanov_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,

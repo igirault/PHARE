@@ -37,6 +37,10 @@ B1_MODE = os.environ.get("PHARE_B1_MODE", "zero")  # "zero" or "uniform"
 NCELLS = int(os.environ.get("PHARE_NCELLS", "128"))
 RECON = os.environ.get("PHARE_RECON", "WENOZ")
 LIMITER = os.environ.get("PHARE_LIMITER", "None")
+# Uniform bulk velocity (Vx) to probe the EMF in flow. Ohm: E = -V x B. With B1=0 and
+# uniform B0 the whole state is an exact steady state and E must stay exactly -V0 x B0
+# (a uniform constant) -> a machine-precision check on the CT motional term.
+V0 = float(os.environ.get("PHARE_V0", "0.0"))
 
 gamma = 5.0 / 3.0
 
@@ -103,6 +107,10 @@ def vzero(x, y):
     return 0.0 * x
 
 
+def vx0(x, y):
+    return V0 + 0.0 * x
+
+
 # --- mesh & timing -----------------------------------------------------------
 cells = np.array([NCELLS, NCELLS])
 domain_size = np.array([L, L])
@@ -162,7 +170,7 @@ def config():
 
     model_kwargs = dict(
         density=density,
-        vx=vzero,
+        vx=vx0,
         vy=vzero,
         vz=vzero,
         b0x=b0x,
@@ -185,6 +193,7 @@ def config():
     ph.MHDDiagnostics(quantity="V", write_timestamps=timestamps)
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
     ph.ElectromagDiagnostics(quantity="B1", write_timestamps=timestamps)
+    ph.ElectromagDiagnostics(quantity="E", write_timestamps=timestamps)
 
     return sim
 

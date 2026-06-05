@@ -1231,6 +1231,31 @@ namespace core
                                              directionalInterp<dirY, InterpDir::DualToPrimal, 2>());
         }
 
+        // Electric field is edge-centered (Ex=Dpp, Ey=pDp, Ez=ppD), dual in exactly one
+        // direction. Projecting to the primal output nodes (Ppp) is a single DualToPrimal shift
+        // in that direction. (cellCenterToFullPrimal, used for cell-centered MHD quantities, would
+        // wrongly shift in all directions.)
+        NO_DISCARD auto static consteval ExToMoments()
+        {
+            // Ex is Dpp, moments are Ppp -> DualToPrimal in X only
+            using PHARE::core::dirX;
+            return directionalInterp<dirX, InterpDir::DualToPrimal, 2>();
+        }
+
+        NO_DISCARD auto static consteval EyToMoments()
+        {
+            // Ey is pDp, moments are Ppp -> DualToPrimal in Y only
+            using PHARE::core::dirY;
+            return directionalInterp<dirY, InterpDir::DualToPrimal, 2>();
+        }
+
+        NO_DISCARD auto static consteval EzToMoments()
+        {
+            // Ez is ppD, moments are Ppp -> DualToPrimal in Z only (identity in 1D/2D)
+            using PHARE::core::dirZ;
+            return directionalInterp<dirZ, InterpDir::DualToPrimal, 2>();
+        }
+
         // We might not want too high order of a stencil for all of the data we have. Also these
         // interpolations assume point data, so we possibly need a different dump strategy for high
         // order mhd. I think defaulting to second order projections here for now is probably a good

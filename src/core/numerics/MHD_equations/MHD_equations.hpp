@@ -25,20 +25,13 @@ public:
     {
         auto const rho = u.rho;
         auto const V   = u.V;
-        auto const B   = u.B;
-        auto const B0  = u.B0;
+        auto const B   = u.totalB(); // total field, formed by addition
         auto const P   = u.P;
 
-        // Well-balancing: subtract the static background (B0) Maxwell stress from the
-        // momentum flux. The flux is built from the total field B = B0 + B1, but at rest
-        // (B1 = 0, V = 0) the discrete divergence of the B0-only stress is non-zero because
-        // B0 is reconstructed independently to left/right faces (spurious transverse jump).
-        // For a curl-free B0 the physical force (∇×B0)×B0 is zero, so this whole static
-        // contribution is discretization error; removing it makes a B1 = 0 / V = 0 state a
-        // machine-precision steady state. The magnetic pressure and the B_iB_j stress
-        // products therefore use (B - B0) splitting: B·B → B·B − B0·B0, B_iB_j → B_iB_j − B0_iB0_j.
-        auto const MagPressure = 0.5 * (B.x * B.x + B.y * B.y + B.z * B.z)
-                                 - 0.5 * (B0.x * B0.x + B0.y * B0.y + B0.z * B0.z);
+        // Standard total-field MHD Maxwell stress: ½|B|² Id − BB. No B0 split here — the
+        // background field is kept well-balanced upstream by reconstructing only B1 and using
+        // a single (non-reconstructed) B0 per face/edge.
+        auto const MagPressure         = 0.5 * (B.x * B.x + B.y * B.y + B.z * B.z);
         auto const GeneralisedPressure = P + MagPressure;
 
         // HD-only energy: kinetic + thermal. Magnetic energy transport (E × B1 for
@@ -50,9 +43,9 @@ public:
         if constexpr (direction == Direction::X)
         {
             auto F_rho   = rho * V.x;
-            auto F_rhoVx = rho * V.x * V.x + GeneralisedPressure - (B.x * B.x - B0.x * B0.x);
-            auto F_rhoVy = rho * V.x * V.y - (B.x * B.y - B0.x * B0.y);
-            auto F_rhoVz = rho * V.x * V.z - (B.x * B.z - B0.x * B0.z);
+            auto F_rhoVx = rho * V.x * V.x + GeneralisedPressure - B.x * B.x;
+            auto F_rhoVy = rho * V.x * V.y - B.x * B.y;
+            auto F_rhoVz = rho * V.x * V.z - B.x * B.z;
             auto F_Bx    = 0.0;
             auto F_By    = B.y * V.x - V.y * B.x;
             auto F_Bz    = B.z * V.x - V.z * B.x;
@@ -63,9 +56,9 @@ public:
         if constexpr (direction == Direction::Y)
         {
             auto F_rho   = rho * V.y;
-            auto F_rhoVx = rho * V.y * V.x - (B.y * B.x - B0.y * B0.x);
-            auto F_rhoVy = rho * V.y * V.y + GeneralisedPressure - (B.y * B.y - B0.y * B0.y);
-            auto F_rhoVz = rho * V.y * V.z - (B.y * B.z - B0.y * B0.z);
+            auto F_rhoVx = rho * V.y * V.x - B.y * B.x;
+            auto F_rhoVy = rho * V.y * V.y + GeneralisedPressure - B.y * B.y;
+            auto F_rhoVz = rho * V.y * V.z - B.y * B.z;
             auto F_Bx    = B.x * V.y - V.x * B.y;
             auto F_By    = 0.0;
             auto F_Bz    = B.z * V.y - V.z * B.y;
@@ -76,9 +69,9 @@ public:
         if constexpr (direction == Direction::Z)
         {
             auto F_rho   = rho * V.z;
-            auto F_rhoVx = rho * V.z * V.x - (B.z * B.x - B0.z * B0.x);
-            auto F_rhoVy = rho * V.z * V.y - (B.z * B.y - B0.z * B0.y);
-            auto F_rhoVz = rho * V.z * V.z + GeneralisedPressure - (B.z * B.z - B0.z * B0.z);
+            auto F_rhoVx = rho * V.z * V.x - B.z * B.x;
+            auto F_rhoVy = rho * V.z * V.y - B.z * B.y;
+            auto F_rhoVz = rho * V.z * V.z + GeneralisedPressure - B.z * B.z;
             auto F_Bx    = B.x * V.z - V.x * B.z;
             auto F_By    = B.y * V.z - V.y * B.z;
             auto F_Bz    = 0.0;
@@ -94,9 +87,9 @@ public:
         PerIndex f = compute<direction>(u);
 
         if constexpr (Hall)
-            hall_contribution_<direction>(u.rho, u.B, J, f.B, f.P);
+            hall_contribution_<direction>(u.rho, u.totalB(), J, f.B1, f.P);
         // if constexpr (Resistivity)
-        //     resistive_contributions_<direction>(eta_, u.B, J, f.B, f.P);
+        //     resistive_contributions_<direction>(eta_, u.totalB(), J, f.B1, f.P);
 
         return f;
     }

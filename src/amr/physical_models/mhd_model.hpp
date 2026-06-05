@@ -176,7 +176,7 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::updateExternalFields(l
     for (auto& patch : level)
     {
         auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-        auto _      = this->resourcesManager->setOnPatch(*patch, state.B0);
+        auto _      = this->resourcesManager->setOnPatch(*patch, state.B0, state.J0);
         state.updateExternalMagneticField(layout, time);
     }
 }

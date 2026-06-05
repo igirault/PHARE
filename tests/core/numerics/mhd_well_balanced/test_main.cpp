@@ -22,10 +22,11 @@ constexpr double gamma = 5.0 / 3.0;
 constexpr double rho0  = 1.5;
 constexpr double P0    = 2.0;
 
-// A rest PerIndex: total B equals B0 (perturbation B1 = 0), V = 0.
+// A rest PerIndex: perturbation B1 = 0 (PerIndex stores B1), background B0, V = 0.
 auto restState(PerIndexVector<double> const& B0)
 {
-    return PerIndex<double>{rho0, PerIndexVector<double>{0.0, 0.0, 0.0}, B0, P0, B0};
+    return PerIndex<double>{rho0, PerIndexVector<double>{0.0, 0.0, 0.0},
+                            PerIndexVector<double>{0.0, 0.0, 0.0}, P0, B0};
 }
 
 template<auto direction>

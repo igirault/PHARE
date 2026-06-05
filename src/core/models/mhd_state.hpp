@@ -7,6 +7,7 @@
 #include "core/def.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/models/physical_state.hpp"
+#include "core/numerics/ampere/ampere.hpp"
 #include "core/numerics/primite_conservative_converter/conversion_utils.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/utilities/index/index.hpp"
@@ -35,24 +36,24 @@ namespace core
         {
             return rho.isUsable() and V.isUsable() and B1.isUsable() and B0.isUsable()
                    and P.isUsable() and rhoV.isUsable() and Etot1.isUsable() and J.isUsable()
-                   and E.isUsable();
+                   and J0.isUsable() and E.isUsable();
         }
 
         NO_DISCARD bool isSettable() const
         {
             return rho.isSettable() and V.isSettable() and B1.isSettable() and B0.isSettable()
                    and P.isSettable() and rhoV.isSettable() and Etot1.isSettable()
-                   and J.isSettable() and E.isSettable();
+                   and J.isSettable() and J0.isSettable() and E.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, E);
+            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E);
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, E);
+            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E);
         }
 
         //-------------------------------------------------------------------------
@@ -75,6 +76,7 @@ namespace core
 
             , E{dict["name"].template to<std::string>() + "_" + "E", MHDQuantity::Vector::E}
             , J{dict["name"].template to<std::string>() + "_" + "J", MHDQuantity::Vector::J}
+            , J0{dict["name"].template to<std::string>() + "_" + "J0", MHDQuantity::Vector::J}
 
 
             , rhoinit_{dict["density"]["initializer"]
@@ -102,6 +104,7 @@ namespace core
 
             , E{name + "_" + "E", MHDQuantity::Vector::E}
             , J{name + "_" + "J", MHDQuantity::Vector::J}
+            , J0{name + "_" + "J0", MHDQuantity::Vector::J}
 
             , gamma_{}
         {
@@ -111,6 +114,7 @@ namespace core
         void updateExternalMagneticField(GridLayout const& layout, double /*time*/ = 0.)
         {
             B0init_.initialize(B0, layout);
+            Ampere_ref<GridLayout>{layout}(B0, J0); // background current j0 = curl(B0)
         }
 
         /**
@@ -161,6 +165,7 @@ namespace core
             Vinit_.initialize(V, layout);
             totalBInit_.initialize(B1, layout);
             B0init_.initialize(B0, layout);
+            Ampere_ref<GridLayout>{layout}(B0, J0); // background current j0 = curl(B0)
             FieldUserFunctionInitializer::initialize(P, layout, Pinit_);
 
             for (auto const& component : {Component::X, Component::Y, Component::Z})
@@ -187,6 +192,7 @@ namespace core
 
         VecFieldT E;
         VecFieldT J;
+        VecFieldT J0; // background current = curl(B0), recomputed whenever B0 is set
 
     private:
         initializer::InitFunction<dimension> rhoinit_;
