@@ -1173,6 +1173,19 @@ namespace core
             return GridLayoutImpl::faceZToCellCenter();
         }
 
+        // B0-to-Riemann-face projections (transverse B0 components linear-averaged to a face)
+        NO_DISCARD auto static constexpr B0yToFaceX() { return GridLayoutImpl::B0yToFaceX(); }
+        NO_DISCARD auto static constexpr B0zToFaceX() { return GridLayoutImpl::B0zToFaceX(); }
+        NO_DISCARD auto static constexpr B0xToFaceY() { return GridLayoutImpl::B0xToFaceY(); }
+        NO_DISCARD auto static constexpr B0zToFaceY() { return GridLayoutImpl::B0zToFaceY(); }
+        NO_DISCARD auto static constexpr B0xToFaceZ() { return GridLayoutImpl::B0xToFaceZ(); }
+        NO_DISCARD auto static constexpr B0yToFaceZ() { return GridLayoutImpl::B0yToFaceZ(); }
+
+        // B0 averaged to a CT EMF edge (single value, no left/right reconstruction)
+        NO_DISCARD auto static constexpr B0ToEdgeX() { return GridLayoutImpl::B0ToEdgeX(); }
+        NO_DISCARD auto static constexpr B0ToEdgeY() { return GridLayoutImpl::B0ToEdgeY(); }
+        NO_DISCARD auto static constexpr B0ToEdgeZ() { return GridLayoutImpl::B0ToEdgeZ(); }
+
         NO_DISCARD auto static constexpr edgeXToCellCenter()
         {
             return GridLayoutImpl::edgeXToCellCenter();

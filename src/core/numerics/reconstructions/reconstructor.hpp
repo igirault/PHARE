@@ -29,12 +29,16 @@ public:
         //                                               GridLayout::faceZToCellCenter(), index);
 
         auto [B1L, B1R] = transverse_reconstruct<direction>(S.B1, index);
-        auto [B0L, B0R] = transverse_reconstruct<direction>(S.B0, index);
+
+        // B0 is not reconstructed: it is read once at the Riemann face (single value), then
+        // added identically to the left/right reconstructed B1. This keeps B0 out of the
+        // Riemann jump (BR - BL = B1R - B1L) and makes a static equilibrium well-balanced.
+        auto const B0f = B0_at_face<direction>(S.B0, index);
 
         auto const [BxL, ByL, BzL]
-            = totalMagneticComponents(B1L.x, B1L.y, B1L.z, B0L.x, B0L.y, B0L.z);
+            = totalMagneticComponents(B1L.x, B1L.y, B1L.z, B0f.x, B0f.y, B0f.z);
         auto const [BxR, ByR, BzR]
-            = totalMagneticComponents(B1R.x, B1R.y, B1R.z, B0R.x, B0R.y, B0R.z);
+            = totalMagneticComponents(B1R.x, B1R.y, B1R.z, B0f.x, B0f.y, B0f.z);
 
         using Float = std::decay_t<decltype(rhoL)>;
 
@@ -42,12 +46,12 @@ public:
                            PerIndexVector<Float>{VxL, VyL, VzL},
                            PerIndexVector<Float>{BxL, ByL, BzL},
                            PL,
-                           B0L};
+                           B0f};
         PerIndex<Float> uR{rhoR,
                            PerIndexVector<Float>{VxR, VyR, VzR},
                            PerIndexVector<Float>{BxR, ByR, BzR},
                            PR,
-                           B0R};
+                           B0f};
 
         return std::make_pair(uL, uR);
     }
@@ -112,6 +116,38 @@ public:
         BR(transverse[1]) = Bt1R;
 
         return std::make_pair(BL, BR);
+    }
+
+    // B0 is not reconstructed: read it once at the Riemann face. The normal component is
+    // naturally face-centered (read directly); the transverse components are linear-averaged
+    // from their native Yee location to the face location.
+    template<auto direction, typename VecField>
+    static auto B0_at_face(VecField const& B0, MeshIndex<VecField::dimension> index)
+    {
+        PerIndexVector<typename VecField::value_type> B0f;
+        B0f(direction) = B0(static_cast<Component>(direction))(index);
+        if constexpr (direction == Direction::X)
+        {
+            B0f(Component::Y)
+                = GridLayout::template project<GridLayout::B0yToFaceX>(B0(Component::Y), index);
+            B0f(Component::Z)
+                = GridLayout::template project<GridLayout::B0zToFaceX>(B0(Component::Z), index);
+        }
+        else if constexpr (direction == Direction::Y)
+        {
+            B0f(Component::X)
+                = GridLayout::template project<GridLayout::B0xToFaceY>(B0(Component::X), index);
+            B0f(Component::Z)
+                = GridLayout::template project<GridLayout::B0zToFaceY>(B0(Component::Z), index);
+        }
+        else // Direction::Z
+        {
+            B0f(Component::X)
+                = GridLayout::template project<GridLayout::B0xToFaceZ>(B0(Component::X), index);
+            B0f(Component::Y)
+                = GridLayout::template project<GridLayout::B0yToFaceZ>(B0(Component::Y), index);
+        }
+        return B0f;
     }
 
     template<auto direction, typename VecField>

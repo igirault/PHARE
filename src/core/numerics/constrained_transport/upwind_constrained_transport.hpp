@@ -410,15 +410,29 @@ private:
         return B1(component)(idx) + B0(component)(idx);
     }
 
+    // B0 is not reconstructed: it is read once at the EMF edge (single value, linear average
+    // to the idx-1/2 interface) and added identically to the left/right reconstructed B1. This
+    // keeps B0 out of the EMF jump, so a static curl-free B0 produces no spurious electric
+    // field (the dissipation term dR*BR - dL*BL vanishes at rest where BL == BR == B0_edge).
+    template<auto direction>
+    static auto B0AtEdge_(auto const& B0, auto const component, auto const& idx)
+    {
+        if constexpr (direction == Direction::X)
+            return GridLayout::template project<GridLayout::B0ToEdgeX>(B0(component), idx);
+        else if constexpr (direction == Direction::Y)
+            return GridLayout::template project<GridLayout::B0ToEdgeY>(B0(component), idx);
+        else
+            return GridLayout::template project<GridLayout::B0ToEdgeZ>(B0(component), idx);
+    }
+
     template<auto direction>
     static auto reconstructTotal_(auto const& B1, auto const& B0, auto const component,
                                   auto const& idx)
     {
         auto const [B1L, B1R]
             = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
-        auto const [B0L, B0R]
-            = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
-        return std::make_pair(B1L + B0L, B1R + B0R);
+        auto const B0e = B0AtEdge_<direction>(B0, component, idx);
+        return std::make_pair(B1L + B0e, B1R + B0e);
     }
 
     // Returns (B1L, B1R, BtotalL, BtotalR) — caller needs both for Ohm's law (total)
@@ -429,9 +443,8 @@ private:
     {
         auto const [B1L, B1R]
             = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
-        auto const [B0L, B0R]
-            = Reconstruction_t::template reconstruct<direction>(B0(component), idx);
-        return std::make_tuple(B1L, B1R, B1L + B0L, B1R + B0R);
+        auto const B0e = B0AtEdge_<direction>(B0, component, idx);
+        return std::make_tuple(B1L, B1R, B1L + B0e, B1R + B0e);
     }
 
     void ExEq_(auto& Ex, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
