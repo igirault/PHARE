@@ -462,7 +462,12 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
         PHARE_LOG_ERROR(ex());
     }
 
-    if (core::mpi::any(core::Errors::instance().any()))
+    // NOTE: must use core::mpi::any_errors() (defined in mpi_utils.cpp / phare_core), not
+    // core::mpi::any(core::Errors::instance().any()). Errors::instance() is a header Meyers
+    // singleton that is duplicated per shared library: PHARE_LOG_ERROR registers into the
+    // phare_core instance, so reading Errors::instance() from this (pybind module) TU sees a
+    // different, empty instance and the throw below would never fire -> no emergency dump.
+    if (core::mpi::any_errors())
         throw core::DictionaryException{}("ID", "SolverMHD::advanceLevel");
 }
 

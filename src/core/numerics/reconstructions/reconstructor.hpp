@@ -4,6 +4,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/reconstructions/constant.hpp"
 #include <type_traits>
 #include <utility>
 
@@ -23,6 +24,29 @@ public:
         auto [VyL, VyR] = Reconstruction::template reconstruct<direction>(S.V(Component::Y), index);
         auto [VzL, VzR] = Reconstruction::template reconstruct<direction>(S.V(Component::Z), index);
         auto [PL, PR]   = Reconstruction::template reconstruct<direction>(S.P, index);
+
+        // Positivity-preserving fallback: a high-order reconstruction (e.g. WENOZ) can
+        // overshoot density or pressure to <= 0 across steep gradients — e.g. the sharp
+        // density front at the inner-boundary stagnation point. A non-positive reconstructed
+        // rho or P makes the fast-magnetosonic speed sqrt(gamma P / rho) NaN, which then
+        // poisons the CT electric field and hence B1/Etot1. Where either reconstructed side
+        // is non-positive, revert that scalar to first-order (cell averages, always > 0 as
+        // long as the cell-centered state is positive). Only rho and P need this — they are
+        // the quantities that enter the square roots.
+        if (!(rhoL > 0.0) || !(rhoR > 0.0))
+        {
+            auto const fo
+                = ConstantReconstruction<GridLayout>::template reconstruct<direction>(S.rho, index);
+            rhoL = fo.first;
+            rhoR = fo.second;
+        }
+        if (!(PL > 0.0) || !(PR > 0.0))
+        {
+            auto const fo
+                = ConstantReconstruction<GridLayout>::template reconstruct<direction>(S.P, index);
+            PL = fo.first;
+            PR = fo.second;
+        }
 
         // auto [BL, BR] = center_reconstruct<direction>(S.B, GridLayout::faceXToCellCenter(),
         //                                               GridLayout::faceYToCellCenter(),

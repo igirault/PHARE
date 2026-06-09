@@ -7,7 +7,6 @@
 #include "core/def.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/models/physical_state.hpp"
-#include "core/numerics/ampere/ampere.hpp"
 #include "core/numerics/primite_conservative_converter/conversion_utils.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 #include "core/utilities/index/index.hpp"
@@ -36,25 +35,25 @@ namespace core
         {
             return rho.isUsable() and V.isUsable() and B1.isUsable() and B0.isUsable()
                    and P.isUsable() and rhoV.isUsable() and Etot1.isUsable() and J.isUsable()
-                   and J0.isUsable() and E.isUsable() and B0x_Ez.isUsable() and B0y_Ez.isUsable();
+                   and E.isUsable() and B0x_Ez.isUsable() and B0y_Ez.isUsable();
         }
 
         NO_DISCARD bool isSettable() const
         {
             return rho.isSettable() and V.isSettable() and B1.isSettable() and B0.isSettable()
                    and P.isSettable() and rhoV.isSettable() and Etot1.isSettable()
-                   and J.isSettable() and J0.isSettable() and E.isSettable() and B0x_Ez.isSettable()
+                   and J.isSettable() and E.isSettable() and B0x_Ez.isSettable()
                    and B0y_Ez.isSettable();
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList() const
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E, B0x_Ez, B0y_Ez);
+            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, E, B0x_Ez, B0y_Ez);
         }
 
         NO_DISCARD auto getCompileTimeResourcesViewList()
         {
-            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, J0, E, B0x_Ez, B0y_Ez);
+            return std::forward_as_tuple(rho, V, B1, B0, P, rhoV, Etot1, J, E, B0x_Ez, B0y_Ez);
         }
 
         //-------------------------------------------------------------------------
@@ -77,7 +76,6 @@ namespace core
 
             , E{dict["name"].template to<std::string>() + "_" + "E", MHDQuantity::Vector::E}
             , J{dict["name"].template to<std::string>() + "_" + "J", MHDQuantity::Vector::J}
-            , J0{dict["name"].template to<std::string>() + "_" + "J0", MHDQuantity::Vector::J}
 
             // B0 sampled analytically at the Ez edge (ppd corner): used by the constrained
             // transport so the motional EMF is well-balanced w.r.t. grad B0 (no 2-pt averaging).
@@ -116,7 +114,6 @@ namespace core
 
             , E{name + "_" + "E", MHDQuantity::Vector::E}
             , J{name + "_" + "J", MHDQuantity::Vector::J}
-            , J0{name + "_" + "J0", MHDQuantity::Vector::J}
 
             , B0x_Ez{name + "_" + "B0x_Ez", MHDQuantity::Scalar::Ez}
             , B0y_Ez{name + "_" + "B0y_Ez", MHDQuantity::Scalar::Ez}
@@ -135,7 +132,6 @@ namespace core
         void updateExternalMagneticField(GridLayout const& layout, double /*time*/ = 0.)
         {
             B0init_.initialize(B0, layout);
-            Ampere_ref<GridLayout>{layout}(B0, J0); // background current j0 = curl(B0)
             // resample B0x, B0y directly at the Ez edge (ppd) for the well-balanced CT EMF
             FieldUserFunctionInitializer::initialize(B0x_Ez, layout, b0xinit_);
             FieldUserFunctionInitializer::initialize(B0y_Ez, layout, b0yinit_);
@@ -189,7 +185,6 @@ namespace core
             Vinit_.initialize(V, layout);
             totalBInit_.initialize(B1, layout);
             B0init_.initialize(B0, layout);
-            Ampere_ref<GridLayout>{layout}(B0, J0); // background current j0 = curl(B0)
             // B0x, B0y sampled at the Ez edge (ppd) for the well-balanced CT EMF
             FieldUserFunctionInitializer::initialize(B0x_Ez, layout, b0xinit_);
             FieldUserFunctionInitializer::initialize(B0y_Ez, layout, b0yinit_);
@@ -219,7 +214,6 @@ namespace core
 
         VecFieldT E;
         VecFieldT J;
-        VecFieldT J0; // background current = curl(B0), recomputed whenever B0 is set
 
         // B0 components sampled analytically at the Ez edge (ppd), for well-balanced CT EMF
         field_type B0x_Ez;
