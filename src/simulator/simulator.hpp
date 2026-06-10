@@ -28,6 +28,7 @@
 #include <stdexcept>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 
 
@@ -108,6 +109,8 @@ public:
 
     void initialize() override;
     double advance(double dt) override;
+    double advance(core::ConstantTimeStamper const& ts);
+    double advance(core::KahanTimeStamper const& ts);
 
     std::vector<int> const& domainBox() const override { return hierarchy_->domainBox(); }
     std::vector<double> const& cellWidth() const override { return hierarchy_->cellWidth(); }
@@ -183,6 +186,9 @@ private:
     int maxLevelNumber_;
     int maxMHDLevel_;
     double dt_;
+    std::string timeStepType_  = "constant";
+    double cfl_                = 0; // advective CFL coefficient (adaptive)
+    double fourier_            = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
     int timeStepNbr_           = 0;
     double startTime_          = 0;
     double finalTime_          = 0;
@@ -424,8 +430,11 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , messengerFactory_{descriptors_}
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
-    , dt_{dict["simulation"]["time_step"].template to<double>()}
-    , timeStepNbr_{dict["simulation"]["time_step_nbr"].template to<int>()}
+    , dt_{cppdict::get_value(dict, "simulation/time_step/value", 0.)}
+    , timeStepType_{cppdict::get_value(dict, "simulation/time_step/mode", std::string{"constant"})}
+    , cfl_{cppdict::get_value(dict, "simulation/time_step/cfl", 0.)}
+    , fourier_{cppdict::get_value(dict, "simulation/time_step/fourier", 0.)}
+    , timeStepNbr_{cppdict::get_value(dict, "simulation/time_step_nbr", 0)}
     , finalTime_{dict["simulation"]["final_time"].template to<double>()}
     , functors_{functors_setup(dict)}
     , multiphysInteg_{std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_)}
@@ -499,6 +508,18 @@ void Simulator<opts>::initialize()
             throw std::runtime_error("Error - Simulator has no integrator");
 
         integrator_->initialize();
+
+        // Prime dt_ for the *initial* dump, which fires before the first advance(): timeStep() is
+        // a pure read of dt_, and under adaptive dt dt_ is constructed to 0. A 0-width window makes
+        // the diagnostics/restarts catch-up drop anything scheduled at startTime_ (0 < 0 is false),
+        // so seed the first CFL-stable dt now that the hierarchy is populated. advance(KahanTime-
+        // Stamper) overwrites it every step thereafter.
+        if (timeStepType_ == "adaptive")
+        {
+            double const dt = multiphysInteg_->computeStableDt(
+                *hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
+            dt_ = std::min(dt, finalTime_ - currentTime_);
+        }
     }
     catch (core::DictionaryException const& ex)
     {
@@ -530,8 +551,6 @@ void Simulator<opts>::initialize()
     if (hierarchy_->isFromRestart())
         hierarchy_->closeRestartFile();
 }
-
-
 
 
 template<auto opts>
@@ -574,9 +593,29 @@ double Simulator<opts>::advance(double dt)
         throw std::runtime_error("forcing error");
     }
 
-
-
     return dt;
+}
+
+// Per-timestepper: figure out the dt for the current step (recomputing only if this stamper
+// type actually needs to), then delegate to advance(double) - the primitive that does the
+// physics step + time accumulation, unchanged. `ts` is only used as an overload-selector tag
+// (a copy of whichever concrete stamper Python is holding): the persistent state that matters
+// (currentTime_, timeStamper) is only ever touched by advance(double) itself.
+template<auto opts>
+double Simulator<opts>::advance(core::ConstantTimeStamper const& ts)
+{
+    return advance(ts.dt()); // fixed by config - nothing to (re)compute
+}
+
+template<auto opts>
+double Simulator<opts>::advance(core::KahanTimeStamper const& ts)
+{
+    // adaptive: always recompute a fresh CFL-stable dt from the current state, and keep dt_ up
+    // to date so timeStep() (which must stay a pure read) can just return it.
+    double const dt
+        = multiphysInteg_->computeStableDt(*hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
+    dt_ = std::min(dt, finalTime_ - currentTime_);
+    return advance(dt_);
 }
 
 template<auto opts>
