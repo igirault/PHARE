@@ -116,7 +116,7 @@ def validate(sim):
             raise RuntimeError(
                 "Error: restart_options timestamps not in ascending order)"
             )
-        if not np.all(
+        if sim.time_step is not None and not np.all(
             np.abs(
                 timestamps / sim.time_step - np.rint(timestamps / sim.time_step) < 1e-9
             )

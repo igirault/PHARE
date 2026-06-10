@@ -17,6 +17,8 @@
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
 #include "core/mhd/mhd_quantities.hpp"
+#include "core/numerics/riemann_solvers/mhd_speeds.hpp"
+#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -37,14 +39,14 @@ class SolverMHD : public ISolver<AMR_Types>
 private:
     static constexpr auto dimension = MHDModel::dimension;
 
-    using patch_t     = typename AMR_Types::patch_t;
-    using level_t     = typename AMR_Types::level_t;
-    using hierarchy_t = typename AMR_Types::hierarchy_t;
+    using patch_t     = AMR_Types::patch_t;
+    using level_t     = AMR_Types::level_t;
+    using hierarchy_t = AMR_Types::hierarchy_t;
 
-    using FieldT      = typename MHDModel::field_type;
-    using VecFieldT   = typename MHDModel::vecfield_type;
-    using MHDStateT   = typename MHDModel::state_type;
-    using GridLayout  = typename MHDModel::gridlayout_type;
+    using FieldT      = MHDModel::field_type;
+    using VecFieldT   = MHDModel::vecfield_type;
+    using MHDStateT   = MHDModel::state_type;
+    using GridLayout  = MHDModel::gridlayout_type;
     using MHDQuantity = core::MHDQuantity;
 
     using IPhysicalModel_t = IPhysicalModel<AMR_Types>;
@@ -62,6 +64,11 @@ private:
     EulerUsingComputedFlux<MHDModel> reflux_euler_;
 
     std::unordered_map<std::size_t, double> oldTime_;
+
+    // adaptive-timestep coefficients (read from the algo dict, mirror ComputeFluxes/CT keys)
+    double const gamma_; // adiabatic index (advective fast speed)
+    double const eta_;   // resistivity (parabolic / Fourier bucket)
+    bool const hall_;    // Hall active -> add whistler speed to the advective bucket
 
 public:
     SolverMHD(PHARE::initializer::PHAREDict const& dict)
@@ -95,6 +102,9 @@ public:
                    {"sumRhoV_fz", MHDQuantity::Vector::VecFlux_z},
                    {"sumB_fz", MHDQuantity::Vector::VecFlux_z},
                    {"sumEtot_fz", MHDQuantity::Scalar::ScalarFlux_z}}
+        , gamma_{dict["to_primitive"]["heat_capacity_ratio"].template to<double>()}
+        , eta_{dict["constrained_transport"]["resistivity"].template to<double>()}
+        , hall_{cppdict::get_value(dict, "fv_method/hall", false)}
     {
     }
 
@@ -124,6 +134,9 @@ public:
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& view,
                       IMessenger& fromCoarserMessenger, double const currentTime,
                       double const newTime) override;
+
+    double computeStableDt(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
+                           double const cfl, double const fourier) override;
 
     void onRegrid() override {}
 
@@ -469,6 +482,107 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     // different, empty instance and the throw below would never fire -> no emergency dump.
     if (core::mpi::any_errors())
         throw core::DictionaryException{}("ID", "SolverMHD::advanceLevel");
+}
+
+template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
+         typename ModelViews_t>
+double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::computeStableDt(
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const cfl,
+    double const fourier)
+{
+    PHARE_LOG_SCOPE(1, "SolverMHD::computeStableDt");
+
+    auto& mhdModel = dynamic_cast<MHDModel&>(model);
+    auto& rho      = mhdModel.state.rho;
+    auto& rhoV     = mhdModel.state.rhoV;
+    auto& B1       = mhdModel.state.B1; // perturbation field carried by the conserved energy Etot1
+    auto& B0       = mhdModel.state.B0; // background (well-balanced) field
+    auto& Etot     = mhdModel.state.Etot1;
+
+    // Two stability buckets, combined by min. Both coefficients are normalized so that the value
+    // 1 sits exactly on the (forward-Euler / SSP-RK) stability limit, independent of dimension, so
+    // cfl, fourier are meant to be chosen in (0, 1]:
+    //   - advective: dt = cfl / sum_d (|v_d| + c_fast_d [+ c_whistler_d if Hall]) / dx_d
+    //   - resistive: dt = fourier / (2 * eta * sum_d 1/dx_d^2)   (eta uniform)
+    // The level's patches are distributed across ranks, so the local min below is reduced across
+    // ranks before returning. The inter-level projection is applied by the caller.
+    double dt = std::numeric_limits<double>::max();
+
+    amr::visitLevel<GridLayout>(
+        level, *mhdModel.resourcesManager,
+        [&](auto& layout, std::string const&, std::size_t const) {
+            auto const meshSize = layout.meshSize();
+
+            // resistive (Fourier) bucket: eta uniform -> one value per patch, no cell loop needed
+            if (eta_ > 0)
+            {
+                double invdx2 = 0;
+                for (std::size_t d = 0; d < dimension; ++d)
+                    invdx2 += 1.0 / (meshSize[d] * meshSize[d]);
+                dt = std::min(dt, fourier / (2.0 * eta_ * invdx2));
+            }
+
+            auto const& rhoVx = rhoV(core::Component::X);
+            auto const& rhoVy = rhoV(core::Component::Y);
+            auto const& rhoVz = rhoV(core::Component::Z);
+            auto const& B1x   = B1(core::Component::X);
+            auto const& B1y   = B1(core::Component::Y);
+            auto const& B1z   = B1(core::Component::Z);
+            auto const& B0x   = B0(core::Component::X);
+            auto const& B0y   = B0(core::Component::Y);
+            auto const& B0z   = B0(core::Component::Z);
+
+            // advective (+ Hall whistler) bucket: per cell, sum-of-speeds form
+            layout.evalOnBox(rho, [&](auto&... args) mutable {
+                core::MeshIndex<dimension> const index{args...};
+
+                auto const r  = rho(index);
+                auto const vx = rhoVx(index) / r;
+                auto const vy = rhoVy(index) / r;
+                auto const vz = rhoVz(index) / r;
+                // cell-center the face-centered (Yee) fields, same idiom as ToPrimitiveConverter
+                auto const b1x
+                    = GridLayout::template project<GridLayout::faceXToCellCenter>(B1x, index);
+                auto const b1y
+                    = GridLayout::template project<GridLayout::faceYToCellCenter>(B1y, index);
+                auto const b1z
+                    = GridLayout::template project<GridLayout::faceZToCellCenter>(B1z, index);
+                auto const b0x
+                    = GridLayout::template project<GridLayout::faceXToCellCenter>(B0x, index);
+                auto const b0y
+                    = GridLayout::template project<GridLayout::faceYToCellCenter>(B0y, index);
+                auto const b0z
+                    = GridLayout::template project<GridLayout::faceZToCellCenter>(B0z, index);
+
+                // Etot1 carries only the perturbation field B1, so recover P from B1 (matches
+                // ToPrimitiveConverter::eosEtot1ToP_); wave speeds below use the total field B1+B0.
+                auto const P
+                    = core::eosEtot1ToP(gamma_, r, vx, vy, vz, b1x, b1y, b1z, Etot(index));
+
+                auto const bx    = b1x + b0x;
+                auto const by    = b1y + b0y;
+                auto const bz    = b1z + b0z;
+                auto const BdotB = bx * bx + by * by + bz * bz;
+
+                std::array<double, 3> const v{vx, vy, vz};
+                std::array<double, 3> const b{bx, by, bz};
+
+                // sum_d (|v_d| + c_fast_d + c_whistler_d) / dx_d over simulated directions
+                double invDtAdv = 0;
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    auto const cfast = core::compute_fast_magnetosonic_(gamma_, r, b[d], BdotB, P);
+                    // Hall whistler
+                    auto const cw
+                        = hall_ ? core::compute_whistler_(1.0 / meshSize[d], r, BdotB) : 0.0;
+                    invDtAdv += (std::abs(v[d]) + cfast + cw) / meshSize[d];
+                }
+                dt = std::min(dt, cfl / invDtAdv);
+            });
+        },
+        rho, rhoV, B1, B0, Etot);
+
+    return core::mpi::min(dt); // reduce across the ranks the level is distributed over
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,

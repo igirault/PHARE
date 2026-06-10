@@ -1,6 +1,6 @@
 import pybindlibs.dictator as pp
 
-from .general import add_double, add_int, add_string, fn_wrapper
+from .general import add_bool, add_double, add_int, add_string, fn_wrapper
 
 
 def populateDict(sim):
@@ -16,6 +16,8 @@ def populateDict(sim):
     add_double("simulation/algo/fv_method/heat_capacity_ratio", sim.gamma)
     add_string("simulation/algo/fv_method/hyper_mode", sim.hyper_mode)
     add_string("simulation/algo/time_integrator_type", sim.mhd_timestepper)
+    # runtime flag for the adaptive-dt whistler term (consistent with the compile-time Hall perm)
+    add_bool("simulation/algo/fv_method/hall", sim.hall)
     add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/constrained_transport/resistivity", sim.eta)

@@ -27,6 +27,15 @@ int rank()
 }
 
 
+double min(double const local)
+{
+    double global;
+    MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    return global;
+}
+
+
+
 bool any(bool b)
 {
     int global_sum, local_sum = static_cast<int>(b);
