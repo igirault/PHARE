@@ -140,11 +140,41 @@ def check_domain(**kwargs):
 # ------------------------------------------------------------------------------
 
 
+def check_adaptive_time(**kwargs):
+    """
+    adaptive time_step_type: dt is recomputed each step from a CFL constraint.
+    The user supplies 'final_time' and 'time_step_cfl'; 'time_step'/'time_step_nbr' are not
+    allowed (imposing a step count with a variable dt is out of scope for now).
+    Returns (time_step_nbr, time_step, final_time) with the first two set to None.
+    """
+    if "final_time" not in kwargs or "time_step_cfl" not in kwargs:
+        raise ValueError(
+            "Error: adaptive time_step_type requires 'final_time' and 'time_step_cfl'"
+        )
+    if "time_step" in kwargs or "time_step_nbr" in kwargs:
+        raise ValueError(
+            "Error: adaptive time_step_type is incompatible with 'time_step'/'time_step_nbr'"
+        )
+    if kwargs["time_step_cfl"] <= 0:
+        raise ValueError("Error: 'time_step_cfl' must be > 0")
+
+    return None, None, kwargs["final_time"]
+
+
 def check_time(**kwargs):
     """
     check parameters relative to simulation duration and time resolution and raise exception if invalids
      return time_step_nbr and time_step
     """
+    time_step_type = kwargs.get("time_step_type", "constant")
+    if time_step_type not in ("constant", "adaptive"):
+        raise ValueError(
+            f"Error: unknown time_step_type '{time_step_type}', "
+            "expected 'constant' or 'adaptive'"
+        )
+    if time_step_type == "adaptive":
+        return check_adaptive_time(**kwargs)
+
     final_and_dt = (
         "final_time" in kwargs
         and "time_step" in kwargs
@@ -737,6 +767,9 @@ def checker(func):
             "final_time",
             "time_step",
             "time_step_nbr",
+            "time_step_type",
+            "time_step_cfl",
+            "time_step_fourier",
             "layout",
             "interp_order",
             "boundary_types",
@@ -795,6 +828,12 @@ def checker(func):
 
         kwargs["restart_options"] = check_restart_options(**kwargs)
 
+        kwargs["time_step_type"] = kwargs.get("time_step_type", "constant")
+        # diffusion (Fourier) coefficient for adaptive resistive dt; default to the advective CFL
+        # (BATSRUS-style: one knob unless the user splits them)
+        kwargs["time_step_fourier"] = kwargs.get(
+            "time_step_fourier", kwargs.get("time_step_cfl")
+        )
         time_step_nbr, time_step, final_time = check_time(**kwargs)
         kwargs["time_step_nbr"] = time_step_nbr
         kwargs["time_step"] = time_step
@@ -932,6 +971,11 @@ class Simulation(object):
         * **final_time** (``float``), final simulation time. Use with time_step OR time_step_nbr
         * **time_step** (``float``), simulation time step. Use with time_step_nbr OR final_time
         * **time_step_nbr** (``int``), number of time step to perform. Use with final_time OR time_step
+        * **time_step_type** (``str``), ``"constant"`` (default) or ``"adaptive"``. When ``"adaptive"``,
+          the time step is recomputed each step from a CFL constraint (MHD only); supply
+          ``final_time`` and ``time_step_cfl`` (not ``time_step``/``time_step_nbr``).
+        * **time_step_cfl** (``float``), advective CFL coefficient for adaptive time stepping. Normalized so 1 is the stability limit (sum-of-speeds form, dimension-independent); choose in (0, 1], typically ~0.3-0.5.
+        * **time_step_fourier** (``float``), resistive Fourier coefficient for adaptive time stepping. Normalized so 1 is the diffusion stability limit; choose in (0, 1]. Defaults to time_step_cfl. Only relevant when resistivity is non-zero.
 
 
         .. code-block:: python
@@ -1104,13 +1148,18 @@ class Simulation(object):
         self.stepDiff = 1 / self.nSubcycles
 
         levelNumbers = list(range(self.max_nbr_levels))
-        self.level_time_steps = [
-            self.time_step * (self.stepDiff ** (ilvl)) for ilvl in levelNumbers
-        ]
-        self.level_step_nbr = [
-            self.nSubcycles ** levelNumbers[ilvl] * self.time_step_nbr
-            for ilvl in levelNumbers
-        ]
+        # with adaptive dt, time_step/time_step_nbr are unknown ahead of the run
+        if self.time_step is None:
+            self.level_time_steps = None
+            self.level_step_nbr = None
+        else:
+            self.level_time_steps = [
+                self.time_step * (self.stepDiff ** (ilvl)) for ilvl in levelNumbers
+            ]
+            self.level_step_nbr = [
+                self.nSubcycles ** levelNumbers[ilvl] * self.time_step_nbr
+                for ilvl in levelNumbers
+            ]
         validate_restart_options(self)
 
     def simulation_domain(self):
