@@ -6,7 +6,6 @@
 #include <string>
 #include <type_traits>
 #include <vector>
-#include <cstdint>
 #include <unordered_map>
 
 
@@ -16,25 +15,25 @@
 #include <SAMRAI/mesh/StandardTagAndInitStrategy.h>
 
 #include "SAMRAI/tbox/RestartManager.h"
-#include "SAMRAI/hier/PatchDataRestartManager.h"
 
 
 #include "amr/messengers/messenger.hpp"
 #include "amr/tagging/tagger.hpp"
-#include "amr/physical_models/hybrid_model.hpp"
-#include "amr/physical_models/mhd_model.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/messenger_registration.hpp"
 #include "amr/level_initializer/level_initializer.hpp"
-#include "amr/solvers/solver_mhd.hpp"
-#include "amr/solvers/solver_ppc.hpp"
 
 #include "core/logger.hpp"
 #include "core/utilities/algorithm.hpp"
 
+#include <limits>
+#include <algorithm>
+
+#include <limits>
+#include <algorithm>
+
 #include "load_balancing/load_balancer_manager.hpp"
-#include "load_balancing/load_balancer_estimator.hpp"
 #include "phare_core.hpp"
 
 
@@ -450,6 +449,37 @@ namespace solver
         }
 
 
+        /**
+         * @brief computeStableDt returns the adaptive coarse-level (L0) time step satisfying the
+         * CFL constraints on every existing level.
+         */
+        double computeStableDt(SAMRAI::hier::PatchHierarchy& hierarchy, CFLNumbers const& stability)
+        {
+            double dt0 = std::numeric_limits<double>::max();
+
+            // factor converting a level-i dt into its equivalent on L0:
+            // l0ProjectionFactor = prod_{j<=i} ratio_j^2
+            double l0ProjectionFactor = 1.0;
+
+            for (int iLevel = 0; iLevel < hierarchy.getNumberOfLevels(); ++iLevel)
+            {
+                auto level = hierarchy.getPatchLevel(iLevel);
+
+                if (iLevel > 0)
+                {
+                    auto const r = static_cast<double>(level->getRatioToCoarserLevel().max());
+                    l0ProjectionFactor *= r * r;
+                }
+
+                // stable dt for the level, local to the mpi rank
+                auto const levelDt
+                    = getSolver_(iLevel).computeStableDt(getModel_(iLevel), *level, stability);
+
+                dt0 = std::min(dt0, levelDt * l0ProjectionFactor);
+            }
+
+            return mpi::min(dt0);
+        }
 
 
         void dump_(int iLevel)
