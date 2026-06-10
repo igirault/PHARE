@@ -1,6 +1,6 @@
 import pybindlibs.dictator as pp
 
-from .general import add_double, add_int, add_string, fn_wrapper
+from .general import add_bool, add_double, add_int, add_string, fn_wrapper
 
 
 def populateDict(sim):
@@ -15,6 +15,7 @@ def populateDict(sim):
     add_double("simulation/algo/fv_method/hyper_resistivity", sim.nu)
     add_double("simulation/algo/fv_method/heat_capacity_ratio", sim.gamma)
     add_string("simulation/algo/fv_method/hyper_mode", sim.hyper_mode)
+    add_bool("simulation/algo/fv_method/hall", sim.hall)  # used by adaptive time-stepper
     add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/constrained_transport/resistivity", sim.eta)
