@@ -140,23 +140,70 @@ def check_domain(**kwargs):
 # ------------------------------------------------------------------------------
 
 
+def normalize_time_step(**kwargs):
+    """
+    Resolve the public 'time_step' option into the internal time_step_type / time_step_cfl /
+    time_step_fourier attributes. 'time_step' may be:
+      - a scalar (or absent)                          -> constant step
+      - {'mode': 'constant', 'value': <dt>}           -> constant step (dict form, 'value' optional)
+      - {'mode': 'adaptive', 'cfl': <c>, 'fourier': <f>}  -> adaptive step ('fourier' defaults to 'cfl')
+    Mutates and returns kwargs so downstream check_time() sees the resolved internal keys.
+    """
+    ts = kwargs.get("time_step", None)
+
+    if not isinstance(ts, dict):  # scalar value or absent
+        kwargs["time_step_type"] = "constant"
+        return kwargs
+
+    valid_modes = ("constant", "adaptive")
+    mode = ts.get("mode")
+    if mode not in valid_modes:
+        raise ValueError(
+            f"Error: time_step dict requires 'mode' in {valid_modes}, got {mode!r}"
+        )
+
+    def _check_keys(allowed):
+        extra = set(ts) - allowed
+        if extra:
+            raise ValueError(
+                f"Error: invalid time_step keys for mode '{mode}': {sorted(extra)}, "
+                f"allowed {sorted(allowed)}"
+            )
+
+    if mode == "constant":
+        _check_keys({"mode", "value"})
+        kwargs["time_step_type"] = "constant"
+        if "value" in ts:
+            kwargs["time_step"] = ts["value"]
+        else:
+            del kwargs["time_step"]  # let final_time + time_step_nbr combo apply
+    else:  # adaptive
+        _check_keys({"mode", "cfl", "fourier"})
+        if "cfl" not in ts:
+            raise ValueError("Error: adaptive time_step requires 'cfl'")
+        kwargs["time_step_type"] = "adaptive"
+        kwargs["time_step_cfl"] = ts["cfl"]
+        kwargs["time_step_fourier"] = ts.get("fourier", ts["cfl"])
+        del kwargs["time_step"]
+
+    return kwargs
+
+
 def check_adaptive_time(**kwargs):
     """
-    adaptive time_step_type: dt is recomputed each step from a CFL constraint.
-    The user supplies 'final_time' and 'time_step_cfl'; 'time_step'/'time_step_nbr' are not
+    adaptive time stepping: dt is recomputed each step from a CFL constraint.
+    The user supplies 'final_time' and a 'cfl' (via the time_step dict); 'time_step_nbr' is not
     allowed (imposing a step count with a variable dt is out of scope for now).
     Returns (time_step_nbr, time_step, final_time) with the first two set to None.
     """
-    if "final_time" not in kwargs or "time_step_cfl" not in kwargs:
-        raise ValueError(
-            "Error: adaptive time_step_type requires 'final_time' and 'time_step_cfl'"
-        )
+    if "final_time" not in kwargs:
+        raise ValueError("Error: adaptive time_step requires 'final_time'")
     if "time_step" in kwargs or "time_step_nbr" in kwargs:
         raise ValueError(
-            "Error: adaptive time_step_type is incompatible with 'time_step'/'time_step_nbr'"
+            "Error: adaptive time_step is incompatible with a constant 'time_step' / 'time_step_nbr'"
         )
     if kwargs["time_step_cfl"] <= 0:
-        raise ValueError("Error: 'time_step_cfl' must be > 0")
+        raise ValueError("Error: adaptive time_step 'cfl' must be > 0")
 
     return None, None, kwargs["final_time"]
 
@@ -167,11 +214,7 @@ def check_time(**kwargs):
      return time_step_nbr and time_step
     """
     time_step_type = kwargs.get("time_step_type", "constant")
-    if time_step_type not in ("constant", "adaptive"):
-        raise ValueError(
-            f"Error: unknown time_step_type '{time_step_type}', "
-            "expected 'constant' or 'adaptive'"
-        )
+    assert time_step_type in ("constant", "adaptive")  # set by normalize_time_step
     if time_step_type == "adaptive":
         return check_adaptive_time(**kwargs)
 
@@ -767,9 +810,6 @@ def checker(func):
             "final_time",
             "time_step",
             "time_step_nbr",
-            "time_step_type",
-            "time_step_cfl",
-            "time_step_fourier",
             "layout",
             "interp_order",
             "boundary_types",
@@ -828,12 +868,10 @@ def checker(func):
 
         kwargs["restart_options"] = check_restart_options(**kwargs)
 
-        kwargs["time_step_type"] = kwargs.get("time_step_type", "constant")
-        # diffusion (Fourier) coefficient for adaptive resistive dt; default to the advective CFL
-        # (BATSRUS-style: one knob unless the user splits them)
-        kwargs["time_step_fourier"] = kwargs.get(
-            "time_step_fourier", kwargs.get("time_step_cfl")
-        )
+        # resolve the public 'time_step' (scalar or dict) into internal
+        # time_step_type / time_step_cfl / time_step_fourier keys.
+        # (adaptive Fourier coefficient defaults to the advective CFL, BATSRUS-style.)
+        kwargs = normalize_time_step(**kwargs)
         time_step_nbr, time_step, final_time = check_time(**kwargs)
         kwargs["time_step_nbr"] = time_step_nbr
         kwargs["time_step"] = time_step
