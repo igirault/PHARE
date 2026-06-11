@@ -1,5 +1,5 @@
 #
-# Config-level validation tests for the time_step_type option (constant vs adaptive).
+# Config-level validation tests for the time_step option (constant scalar vs adaptive dict).
 # These only construct ph.Simulation (pharein) and never run the simulator, so they are cheap
 # and need no cpp module / MPI / HighFive.
 #
@@ -24,7 +24,7 @@ class TimeStepValidation(unittest.TestCase):
     def tearDown(self):
         ph.global_vars.sim = None
 
-    # ---- constant (default, backward compatible) -------------------------------------------
+    # ---- constant (scalar time_step, default) ----------------------------------------------
 
     def test_constant_is_the_default(self):
         sim = ph.Simulation(time_step=0.001, time_step_nbr=10, **baseArgs)
@@ -32,19 +32,39 @@ class TimeStepValidation(unittest.TestCase):
         self.assertEqual(sim.time_step, 0.001)
         self.assertEqual(sim.time_step_nbr, 10)
 
-    def test_constant_explicit(self):
-        sim = ph.Simulation(
-            time_step_type="constant", time_step=0.001, final_time=1.0, **baseArgs
-        )
+    def test_constant_final_time_and_step(self):
+        sim = ph.Simulation(time_step=0.001, final_time=1.0, **baseArgs)
         self.assertEqual(sim.time_step_type, "constant")
         self.assertEqual(sim.time_step, 0.001)
 
-    # ---- adaptive --------------------------------------------------------------------------
+    def test_constant_final_time_and_nbr_has_no_time_step_kwarg(self):
+        sim = ph.Simulation(time_step_nbr=10, final_time=1.0, **baseArgs)
+        self.assertEqual(sim.time_step_type, "constant")
+        self.assertEqual(sim.time_step_nbr, 10)
+
+    def test_constant_dict_with_value(self):
+        sim = ph.Simulation(
+            time_step={"mode": "constant", "value": 0.001},
+            time_step_nbr=10,
+            **baseArgs,
+        )
+        self.assertEqual(sim.time_step_type, "constant")
+        self.assertEqual(sim.time_step, 0.001)
+        self.assertEqual(sim.time_step_nbr, 10)
+
+    def test_constant_dict_rejects_unknown_key(self):
+        with self.assertRaises(ValueError):
+            ph.Simulation(
+                time_step={"mode": "constant", "dt": 0.001},  # key is "value"
+                final_time=1.0,
+                **baseArgs,
+            )
+
+    # ---- adaptive (dict time_step) ---------------------------------------------------------
 
     def test_adaptive_accepts_final_time_and_cfl(self):
         sim = ph.Simulation(
-            time_step_type="adaptive",
-            time_step_cfl=0.4,
+            time_step={"mode": "adaptive", "cfl": 0.4},
             final_time=1.0,
             **baseArgs,
         )
@@ -57,15 +77,13 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_fourier_defaults_to_cfl(self):
         sim = ph.Simulation(
-            time_step_type="adaptive", time_step_cfl=0.4, final_time=1.0, **baseArgs
+            time_step={"mode": "adaptive", "cfl": 0.4}, final_time=1.0, **baseArgs
         )
         self.assertEqual(sim.time_step_fourier, 0.4)
 
     def test_adaptive_fourier_explicit(self):
         sim = ph.Simulation(
-            time_step_type="adaptive",
-            time_step_cfl=0.4,
-            time_step_fourier=0.2,
+            time_step={"mode": "adaptive", "cfl": 0.4, "fourier": 0.2},
             final_time=1.0,
             **baseArgs,
         )
@@ -73,27 +91,18 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_requires_cfl(self):
         with self.assertRaises(ValueError):
-            ph.Simulation(time_step_type="adaptive", final_time=1.0, **baseArgs)
+            ph.Simulation(
+                time_step={"mode": "adaptive"}, final_time=1.0, **baseArgs
+            )
 
     def test_adaptive_requires_final_time(self):
         with self.assertRaises(ValueError):
-            ph.Simulation(time_step_type="adaptive", time_step_cfl=0.4, **baseArgs)
-
-    def test_adaptive_rejects_time_step(self):
-        with self.assertRaises(ValueError):
-            ph.Simulation(
-                time_step_type="adaptive",
-                time_step_cfl=0.4,
-                final_time=1.0,
-                time_step=0.001,
-                **baseArgs,
-            )
+            ph.Simulation(time_step={"mode": "adaptive", "cfl": 0.4}, **baseArgs)
 
     def test_adaptive_rejects_time_step_nbr(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step_type="adaptive",
-                time_step_cfl=0.4,
+                time_step={"mode": "adaptive", "cfl": 0.4},
                 final_time=1.0,
                 time_step_nbr=10,
                 **baseArgs,
@@ -102,19 +111,25 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_rejects_non_positive_cfl(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step_type="adaptive",
-                time_step_cfl=0.0,
+                time_step={"mode": "adaptive", "cfl": 0.0},
                 final_time=1.0,
                 **baseArgs,
             )
 
-    # ---- unknown keyword -------------------------------------------------------------------
-
-    def test_unknown_time_step_type_raises(self):
+    def test_adaptive_rejects_unknown_dict_key(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step_type="variable",  # common mistake: the option is "adaptive"
-                time_step_cfl=0.4,
+                time_step={"mode": "adaptive", "cfl": 0.4, "courant": 0.2},
+                final_time=1.0,
+                **baseArgs,
+            )
+
+    # ---- unknown mode ----------------------------------------------------------------------
+
+    def test_unknown_mode_raises(self):
+        with self.assertRaises(ValueError):
+            ph.Simulation(
+                time_step={"mode": "variable", "cfl": 0.4},  # only "adaptive" is valid
                 final_time=1.0,
                 **baseArgs,
             )
