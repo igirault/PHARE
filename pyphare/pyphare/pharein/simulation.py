@@ -697,7 +697,7 @@ def check_inner_boundary(ndim, **kwargs):
             f"Error: inner_boundary shape '{shape}' is invalid, valid shapes are {valid_shapes}"
         )
 
-    valid_condition_types = {"reflective"}
+    valid_condition_types = {"reflective", "ionospheric-convection"}
     condition_type = inner_boundary.get("condition_type", "reflective")
     if condition_type not in valid_condition_types:
         raise ValueError(
@@ -705,7 +705,12 @@ def check_inner_boundary(ndim, **kwargs):
             f"valid types are {valid_condition_types}"
         )
 
-    common_keys = {"shape", "name", "condition_type"}
+    # per-type extra keys (prescribed reservoir values the user must provide)
+    condition_keys = {
+        "ionospheric-convection": {"density", "pressure"},
+    }.get(condition_type, set())
+
+    common_keys = {"shape", "name", "condition_type", "inactive_safe_state"} | condition_keys
     shape_keys = {"sphere": {"center", "radius"}, "plane": {"point", "normal"}}
     unknown = set(inner_boundary.keys()) - (common_keys | shape_keys[shape])
     if unknown:
@@ -714,6 +719,49 @@ def check_inner_boundary(ndim, **kwargs):
         )
 
     result = {"shape": shape, "name": inner_boundary["name"], "condition_type": condition_type}
+
+    # safe state pinned into inactive (inside-body) cells. Optional; defaults reproduce the
+    # historical hardcoded reset. velocity is a 3-list; B0/B1 accept a scalar (broadcast) or 3-list.
+    safe_in = inner_boundary.get("inactive_safe_state", {})
+    if not isinstance(safe_in, dict):
+        raise ValueError("Error: inner_boundary 'inactive_safe_state' must be a dictionary")
+    safe_unknown = set(safe_in.keys()) - {"density", "pressure", "velocity", "B0", "B1"}
+    if safe_unknown:
+        raise ValueError(
+            f"Error: invalid inactive_safe_state keys: {sorted(safe_unknown)}"
+        )
+
+    def _vec3(v):
+        vv = phare_utilities.listify(v)
+        if len(vv) == 1:  # scalar broadcast
+            vv = [vv[0]] * 3
+        if len(vv) != 3:
+            raise ValueError("Error: inactive_safe_state vector must have length 1 or 3")
+        return [float(x) for x in vv]
+
+    safe_density = float(safe_in.get("density", 1.0))
+    safe_pressure = float(safe_in.get("pressure", 1.0))
+    if safe_density <= 0 or safe_pressure <= 0:
+        raise ValueError("Error: inactive_safe_state density and pressure must be > 0")
+    result["inactive_safe_state"] = {
+        "density": safe_density,
+        "pressure": safe_pressure,
+        "velocity": _vec3(safe_in.get("velocity", [0.0, 0.0, 0.0])),
+        "B0": _vec3(safe_in.get("B0", 0.0)),
+        "B1": _vec3(safe_in.get("B1", 0.0)),
+    }
+
+    if condition_type == "ionospheric-convection":
+        for key in ("density", "pressure"):
+            if key not in inner_boundary:
+                raise ValueError(
+                    "Error: inner_boundary condition_type 'ionospheric-convection' "
+                    f"requires '{key}'"
+                )
+            value = float(inner_boundary[key])
+            if value <= 0:
+                raise ValueError(f"Error: inner_boundary '{key}' must be > 0")
+            result[key] = value
 
     if shape == "sphere":
         if "center" not in inner_boundary or "radius" not in inner_boundary:

@@ -8,8 +8,11 @@
 #include "core/inner_boundary/field_antisymmetric_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_neumann_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_symmetric_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_dirichlet_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_adaptive_dirichlet_or_neumann_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_total_energy_from_pressure_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_inner_boundary_condition.hpp"
+#include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/thermo/thermo.hpp"
 
 #include <memory>
@@ -30,13 +33,19 @@ namespace PHARE::core
  * - **Reflective** — specular reflection.
  *     scalars: Neumann, B: Symmetric, rhoV: Symmetric, E: Antisymmetric,
  *     others: Neumann.
+ * - **IonosphericConvection** — basic ionospheric inner boundary.
+ *     E: Dirichlet(0), rhoV: Neumann, rho: adaptive Dirichlet/Neumann (criterion rhoV,
+ *     prescribed density), Etot1: TotalEnergyFromPressure with an adaptive Dirichlet/Neumann
+ *     pressure (criterion rhoV, prescribed pressure). Moments are enforced momentum → density
+ *     → energy via priorities.
  */
-enum class InnerBoundaryConditionType { Reflective };
+enum class InnerBoundaryConditionType { Reflective, IonosphericConvection };
 
 inline InnerBoundaryConditionType getInnerBoundaryConditionTypeFromString(std::string const& name)
 {
     static std::unordered_map<std::string, InnerBoundaryConditionType> const typeMap{
         {"reflective", InnerBoundaryConditionType::Reflective},
+        {"ionospheric-convection", InnerBoundaryConditionType::IonosphericConvection},
     };
     auto it = typeMap.find(name);
     if (it == typeMap.end())
@@ -85,13 +94,19 @@ public:
                        std::vector<scalar_qty> const& scalarQuantities,
                        std::vector<vector_qty> const& vectorQuantities,
                        scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
-                       std::shared_ptr<Thermo> thermo)
+                       std::shared_ptr<Thermo> thermo, double prescribedDensity = 0.,
+                       double prescribedPressure = 0.)
     {
         switch (type)
         {
             case InnerBoundaryConditionType::Reflective:
                 register_reflective_(scalarQuantities, vectorQuantities, scalarBCs, vectorBCs,
                                      std::move(thermo));
+                break;
+            case InnerBoundaryConditionType::IonosphericConvection:
+                register_ionospheric_convection_(scalarQuantities, vectorQuantities, scalarBCs,
+                                                 vectorBCs, std::move(thermo), prescribedDensity,
+                                                 prescribedPressure);
                 break;
             default: throw std::runtime_error("InnerBoundaryConditionFactory: unknown type");
         }
@@ -117,6 +132,15 @@ private:
     using TotalEnergyFromPressure
         = FieldTotalEnergyFromPressureInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT,
                                                              PhysicalStateT>;
+
+    template<typename ScalarOrTensorFieldT>
+    using Dirichlet
+        = FieldDirichletInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, PhysicalStateT>;
+
+    template<typename ScalarOrTensorFieldT>
+    using AdaptiveDirichletOrNeumann
+        = FieldAdaptiveDirichletOrNeumannInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT,
+                                                                PhysicalStateT>;
 
     /**
      * @brief Reflective body BC rules:
@@ -155,6 +179,64 @@ private:
                     break;
                 case PhysicalQuantityT::Vector::E:
                     vectorBCs[qty] = std::make_unique<Antisymmetric<vecfield_type>>();
+                    break;
+                default: vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>(); break;
+            }
+        }
+    }
+
+    /**
+     * @brief Basic ionospheric-convection body BC rules:
+     *   E       → Dirichlet(0)   (null electric field at the surface; motional E0 ignored for now)
+     *   rhoV    → Neumann        (momentum, enforced first)
+     *   rho     → adaptive Dirichlet/Neumann (criterion rhoV, prescribed density; enforced second)
+     *   Etot1   → TotalEnergyFromPressure wrapping an adaptive Dirichlet/Neumann pressure
+     *             (criterion rhoV, prescribed pressure; enforced last)
+     *   B       → None           (B handled via E + constrained transport, never written here)
+     *   others  → Neumann
+     *
+     * Moment priorities (momentum 0 < density < energy) make applyToMoments run them in the
+     * order momentum → density → energy.
+     */
+    static void register_ionospheric_convection_(std::vector<scalar_qty> const& scalars,
+                                                 std::vector<vector_qty> const& vectors,
+                                                 scalar_bc_map_type& scalarBCs,
+                                                 vector_bc_map_type& vectorBCs,
+                                                 std::shared_ptr<Thermo> thermo,
+                                                 double prescribedDensity,
+                                                 double prescribedPressure)
+    {
+        // density runs after momentum (0) and before energy (TotalEnergyFromPressure: 10)
+        constexpr int density_priority = 5;
+        auto const criterion           = MHDQuantity::Vector::rhoV;
+
+        for (auto const qty : scalars)
+        {
+            if (qty == PhysicalQuantityT::Scalar::Etot1)
+                scalarBCs[qty] = std::make_unique<TotalEnergyFromPressure<FieldT>>(
+                    std::make_unique<AdaptiveDirichletOrNeumann<FieldT>>(criterion,
+                                                                         prescribedPressure),
+                    thermo);
+            else if (qty == PhysicalQuantityT::Scalar::rho)
+                scalarBCs[qty] = std::make_unique<AdaptiveDirichletOrNeumann<FieldT>>(
+                    criterion, prescribedDensity, density_priority);
+            else
+                scalarBCs[qty] = std::make_unique<Neumann<FieldT>>();
+        }
+
+        for (auto const qty : vectors)
+        {
+            switch (qty)
+            {
+                case PhysicalQuantityT::Vector::B1:
+                    vectorBCs[qty] = std::make_unique<None<vecfield_type>>();
+                    break;
+                case PhysicalQuantityT::Vector::rhoV:
+                    vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>();
+                    break;
+                case PhysicalQuantityT::Vector::E:
+                    // null Dirichlet: ghost = -mirror ⇒ tangential & normal E vanish at the surface
+                    vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>();
                     break;
                 default: vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>(); break;
             }

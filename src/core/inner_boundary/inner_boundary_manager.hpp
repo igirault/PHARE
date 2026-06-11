@@ -10,8 +10,10 @@
 #include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_data.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 
 #include "core/numerics/thermo/thermo.hpp"
+#include "core/numerics/primite_conservative_converter/conversion_utils.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -19,6 +21,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -65,24 +68,42 @@ public:
     InnerBoundaryManager() = delete;
 
     /**
+     * @brief Prescribed "safe state" pinned into inactive (inside-body) cells.
+     *
+     * Primitive values; momentum (rhoV) and total energy (Etot1) are derived from these.
+     * Defaults reproduce the historical hardcoded reset (rho=1, P=1, V=0, B=0).
+     */
+    struct SafeStateValues
+    {
+        double density{1.};
+        double pressure{1.};
+        std::array<double, 3> velocity{0., 0., 0.};
+        std::array<double, 3> B0{0., 0., 0.};
+        std::array<double, 3> B1{0., 0., 0.};
+    };
+
+    /**
      * @brief Construct from pre-built geometry and BC condition type.
      *
      * @param geometry         Embedded boundary geometry (transferred ownership).
      * @param conditionType    Physics preset for per-quantity BC assignment.
      * @param scalarQuantities Scalar quantities that need a BC.
      * @param vectorQuantities Vector quantities that need a BC.
+     * @param safe             Prescribed safe state for inactive cells (see setSafeState).
      */
     InnerBoundaryManager(std::unique_ptr<geometry_type> geometry,
                          InnerBoundaryConditionType conditionType,
                          std::vector<scalar_qty> const& scalarQuantities,
                          std::vector<vector_qty> const& vectorQuantities,
-                         std::shared_ptr<Thermo> thermo)
+                         std::shared_ptr<Thermo> thermo, double prescribedDensity = 0.,
+                         double prescribedPressure = 0., SafeStateValues const& safe = {})
         : geometry_{std::move(geometry)}
         , meshData_{geometry_->name()}
         , thermo_{std::move(thermo)}
     {
         factory_type::create(conditionType, scalarQuantities, vectorQuantities, scalarBCs_,
-                             vectorBCs_, thermo_);
+                             vectorBCs_, thermo_, prescribedDensity, prescribedPressure);
+        buildSafeState_(safe);
     }
 
     /**
@@ -106,9 +127,34 @@ public:
         auto const typeName = ibDict["condition_type"].template to<std::string>();
         auto const condType = getInnerBoundaryConditionTypeFromString(typeName);
 
+        // prescribed reservoir values (used by types that impose Dirichlet moments, e.g.
+        // ionospheric-convection); absent for types that do not need them.
+        auto const prescribedDensity  = cppdict::get_value(ibDict, "density", 0.);
+        auto const prescribedPressure = cppdict::get_value(ibDict, "pressure", 0.);
+
+        // safe state pinned into inactive cells; optional, defaults reproduce the historical
+        // hardcoded reset (rho=1, P=1, V=0, B=0).
+        SafeStateValues safe{};
+        if (ibDict.contains("inactive_safe_state"))
+        {
+            auto const& ss = ibDict["inactive_safe_state"];
+            safe.density   = cppdict::get_value(ss, "density", 1.0);
+            safe.pressure  = cppdict::get_value(ss, "pressure", 1.0);
+            safe.velocity  = {cppdict::get_value(ss, "velocity/x", 0.0),
+                              cppdict::get_value(ss, "velocity/y", 0.0),
+                              cppdict::get_value(ss, "velocity/z", 0.0)};
+            safe.B0        = {cppdict::get_value(ss, "B0/x", 0.0),
+                              cppdict::get_value(ss, "B0/y", 0.0),
+                              cppdict::get_value(ss, "B0/z", 0.0)};
+            safe.B1        = {cppdict::get_value(ss, "B1/x", 0.0),
+                              cppdict::get_value(ss, "B1/y", 0.0),
+                              cppdict::get_value(ss, "B1/z", 0.0)};
+        }
+
         return std::make_unique<InnerBoundaryManager>(std::move(geometry), condType,
                                                       scalarQuantities, vectorQuantities,
-                                                      std::move(thermo));
+                                                      std::move(thermo), prescribedDensity,
+                                                      prescribedPressure, safe);
     }
 
     // -------------------------------------------------------------------------
@@ -192,6 +238,63 @@ public:
     }
 
     // -------------------------------------------------------------------------
+    //  Safe-state enforcement
+    // -------------------------------------------------------------------------
+
+    /**
+     * @brief Pin a scalar field to its prescribed safe value on elements tagged @p status.
+     *
+     * The safe value comes from the per-quantity map built at construction (rho, P from the
+     * config; Etot1 derived). Throws if the field's quantity has no registered safe value.
+     */
+    void setSafeState(FieldT& field, GridLayoutT const& layout,
+                      ElemStatus status = ElemStatus::Inactive)
+    {
+        auto it = safeScalars_.find(field.physicalQuantity());
+        if (it == safeScalars_.end())
+            throw std::runtime_error(
+                "InnerBoundaryManager::setSafeState: no safe value for this scalar quantity");
+
+        double const value = it->second;
+        auto const centering = layout.centering(field.physicalQuantity());
+        auto& statusField    = meshData_.getStatusFieldFromCentering(centering);
+        layout.evalOnGhostBox(field, [&](auto&... args) {
+            auto const idx = MeshIndex<dimension>{args...};
+            if (statusField(idx) == toDouble(status))
+                field(idx) = value;
+        });
+    }
+
+    /**
+     * @brief Pin a vector field to its prescribed safe value on elements tagged @p status.
+     *
+     * The safe value comes from the per-quantity map (velocity, B0, B1 from the config; rhoV
+     * derived). Throws if the vecfield's quantity has no registered safe value.
+     */
+    void setSafeState(vecfield_type& vecfield, GridLayoutT const& layout,
+                      ElemStatus status = ElemStatus::Inactive)
+    {
+        auto it = safeVectors_.find(vecfield.physicalQuantity());
+        if (it == safeVectors_.end())
+            throw std::runtime_error(
+                "InnerBoundaryManager::setSafeState: no safe value for this vector quantity");
+
+        auto const& values = it->second;
+        auto comps         = vecfield.components();
+        for_N<3>([&](auto ci) {
+            constexpr auto c     = ci();
+            auto& comp           = std::get<c>(comps);
+            auto const centering = layout.centering(comp.physicalQuantity());
+            auto& statusField    = meshData_.getStatusFieldFromCentering(centering);
+            layout.evalOnGhostBox(comp, [&](auto&... args) {
+                auto const idx = MeshIndex<dimension>{args...};
+                if (statusField(idx) == toDouble(status))
+                    comp(idx) = values[c];
+            });
+        });
+    }
+
+    // -------------------------------------------------------------------------
     //  Mesh data accessor
     // -------------------------------------------------------------------------
 
@@ -242,11 +345,42 @@ private:
                 }};
     }
 
+    /// Build the per-quantity safe-value maps from the prescribed primitives, deriving the
+    /// conserved momentum and total energy. Requires thermo_ to be set.
+    void buildSafeState_(SafeStateValues const& s)
+    {
+        using Scalar = scalar_qty;
+        using Vector = vector_qty;
+
+        safeScalars_[Scalar::rho] = s.density;
+        safeScalars_[Scalar::P]   = s.pressure;
+
+        // total energy from the safe primitives; Etot1 carries the perturbation field B1.
+        // Needs the equation of state — skipped if no thermo (e.g. unit tests that never
+        // call setSafeState(Etot1)); setSafeState would then throw for Etot1.
+        if (thermo_)
+        {
+            thermo_->setState_DP(s.density, s.pressure);
+            auto const e_int            = s.density * thermo_->internalEnergy();
+            safeScalars_[Scalar::Etot1] = totalEnergyFromInternalEnergy(
+                e_int, s.density, s.velocity[0], s.velocity[1], s.velocity[2], s.B1[0], s.B1[1],
+                s.B1[2]);
+        }
+
+        safeVectors_[Vector::V]    = s.velocity;
+        safeVectors_[Vector::rhoV] = {s.density * s.velocity[0], s.density * s.velocity[1],
+                                      s.density * s.velocity[2]};
+        safeVectors_[Vector::B0]   = s.B0;
+        safeVectors_[Vector::B1]   = s.B1;
+    }
+
     std::unique_ptr<geometry_type> geometry_;
     mesh_data_type meshData_;
     std::shared_ptr<Thermo> thermo_;
     scalar_bc_map_type scalarBCs_;
     vector_bc_map_type vectorBCs_;
+    std::unordered_map<scalar_qty, double> safeScalars_;
+    std::unordered_map<vector_qty, std::array<double, 3>> safeVectors_;
 };
 
 } // namespace PHARE::core

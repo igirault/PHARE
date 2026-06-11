@@ -82,32 +82,14 @@ public:
             amr::visitLevel<gridlayout_type>(
                 level, rm,
                 [&](auto& layout, auto&&, auto&&) {
-                    auto& meshData = ibm.getMeshData();
-
-                    // Zero inactive face-centered B1 first: the cell-centered safe reset
-                    // recomputes Etot1 from the projected B at the cell centre, so any
-                    // stale face value would leak into the energy.
-                    auto resetB = [&](auto component) {
-                        auto centering
-                            = layout.centering(statenew.B1(component).physicalQuantity());
-                        auto& faceStatus = meshData.getStatusFieldFromCentering(centering);
-                        layout.evalOnBox(statenew.B1(component), [&](auto&... args) {
-                            auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
-                            if (faceStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
-                                statenew.B1(component)(idx) = 0.0;
-                        });
-                    };
-                    resetB(core::Component::X);
-                    resetB(core::Component::Y);
-                    resetB(core::Component::Z);
-
-                    // Pin inactive cell-centered conservatives to (rho=1, P=1, V=0).
-                    auto& cellStatus = meshData.cellStatusField();
-                    layout.evalOnGhostBox(statenew.rho, [&](auto&... args) {
-                        auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
-                        if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
-                            statenew.safeResetInactiveCell(idx, layout, *model.thermo);
-                    });
+                    // Pin the inactive region to the prescribed safe state. Faces (B1, B0) first,
+                    // then the cell-centered conserved moments (rho, rhoV, Etot1). B0 is recomputed
+                    // each substep by updateExternalMagneticField above, so it is re-masked here.
+                    ibm.setSafeState(statenew.B1, layout);
+                    ibm.setSafeState(statenew.B0, layout);
+                    ibm.setSafeState(statenew.rho, layout);
+                    ibm.setSafeState(statenew.rhoV, layout);
+                    ibm.setSafeState(statenew.Etot1, layout);
                 },
                 ibm, statenew);
         }

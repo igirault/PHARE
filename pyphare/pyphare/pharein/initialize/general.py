@@ -184,6 +184,22 @@ def populateDict(sim):
         add_string(f"{base}/name", inner_boundary["name"])
         add_string(f"{base}/shape", inner_boundary["shape"])
         add_string(f"{base}/condition_type", inner_boundary["condition_type"])
+        # prescribed reservoir values for types that impose Dirichlet moments
+        if "density" in inner_boundary:
+            add_double(f"{base}/density", inner_boundary["density"])
+        if "pressure" in inner_boundary:
+            add_double(f"{base}/pressure", inner_boundary["pressure"])
+        # safe state pinned into inactive (inside-body) cells
+        if "inactive_safe_state" in inner_boundary:
+            safe = inner_boundary["inactive_safe_state"]
+            sbase = f"{base}/inactive_safe_state"
+            add_double(f"{sbase}/density", safe["density"])
+            add_double(f"{sbase}/pressure", safe["pressure"])
+            for vec in ("velocity", "B0", "B1"):
+                vx, vy, vz = safe[vec]
+                add_double(f"{sbase}/{vec}/x", vx)
+                add_double(f"{sbase}/{vec}/y", vy)
+                add_double(f"{sbase}/{vec}/z", vz)
         if inner_boundary["shape"] == "sphere":
             pp.add_array_as_vector(f"{base}/center", np.asarray(inner_boundary["center"]))
             add_double(f"{base}/radius", inner_boundary["radius"])

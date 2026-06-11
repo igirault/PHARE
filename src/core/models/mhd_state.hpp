@@ -13,6 +13,8 @@
 
 #include "initializer/data_provider.hpp"
 
+#include <stdexcept>
+
 namespace PHARE
 {
 namespace core
@@ -137,46 +139,8 @@ namespace core
             FieldUserFunctionInitializer::initialize(B0y_Ez, layout, b0yinit_);
         }
 
-        /**
-         * @brief Reset a single inactive/ghost cell to a physically safe state.
-         *
-         * Inactive cells sit deep inside an embedded body and play no role in the fluid
-         * solve, but their conservative values still flow through to-primitive conversion,
-         * mixing steps, and diagnostics. Pin them to (rho=1, P=1, V=0) and recompute Etot
-         * from the current face-centered B at the cell centre.
-         *
-         * Caller is responsible for checking cellStatus(idx) before invoking.
-         */
-        template<typename GridLayout, typename Thermo>
-        void safeResetInactiveCell(MeshIndex<dimension> const& idx, GridLayout const& /*layout*/,
-                                   Thermo& thermo)
-        {
-            constexpr double safeRho = 1.0;
-            constexpr double safeP   = 1.0;
-
-            rho(idx) = safeRho;
-            P(idx)   = safeP;
-
-            V(Component::X)(idx) = 0.0;
-            V(Component::Y)(idx) = 0.0;
-            V(Component::Z)(idx) = 0.0;
-
-            rhoV(Component::X)(idx) = 0.0;
-            rhoV(Component::Y)(idx) = 0.0;
-            rhoV(Component::Z)(idx) = 0.0;
-
-            auto const bx = GridLayout::template project<GridLayout::faceXToCellCenter>(
-                B1(Component::X), idx);
-            auto const by = GridLayout::template project<GridLayout::faceYToCellCenter>(
-                B1(Component::Y), idx);
-            auto const bz = GridLayout::template project<GridLayout::faceZToCellCenter>(
-                B1(Component::Z), idx);
-
-            thermo.setState_DP(safeRho, safeP);
-            auto const e_int = safeRho * thermo.internalEnergy();
-            Etot1(idx) = totalEnergyFromInternalEnergy(e_int, safeRho, 0., 0., 0., bx, by, bz);
-        }
-
+        // Inactive-cell safe state is now enforced by InnerBoundaryManager::setSafeState
+        // (config-driven, per quantity); the previous hardcoded safeResetInactiveCell was removed.
 
         template<typename GridLayout>
         void initialize(GridLayout const& layout)
@@ -201,6 +165,41 @@ namespace core
             ToConservativeConverter_ref{layout, gamma_}(
                 rho, V, B1, B0, P, rhoV, Etot1); // initial to conservative conversion because we
                                                  // store conservative quantities on the grid
+        }
+
+        /**
+         * @brief Resolve a vector member at runtime from its quantity enum.
+         *
+         * MHDState exposes its vectors only as named members; inner-boundary conditions that
+         * take a configurable "target vector quantity" (e.g. the adaptive Dirichlet/Neumann BC,
+         * which switches on the sign of rhoV·n) need to fetch the matching VecField from this enum.
+         */
+        NO_DISCARD VecFieldT& getVector(MHDQuantity::Vector q)
+        {
+            switch (q)
+            {
+                case MHDQuantity::Vector::V: return V;
+                case MHDQuantity::Vector::B1: return B1;
+                case MHDQuantity::Vector::B0: return B0;
+                case MHDQuantity::Vector::rhoV: return rhoV;
+                case MHDQuantity::Vector::E: return E;
+                case MHDQuantity::Vector::J: return J;
+                default: throw std::runtime_error("MHDState::getVector: unsupported vector quantity");
+            }
+        }
+
+        NO_DISCARD VecFieldT const& getVector(MHDQuantity::Vector q) const
+        {
+            switch (q)
+            {
+                case MHDQuantity::Vector::V: return V;
+                case MHDQuantity::Vector::B1: return B1;
+                case MHDQuantity::Vector::B0: return B0;
+                case MHDQuantity::Vector::rhoV: return rhoV;
+                case MHDQuantity::Vector::E: return E;
+                case MHDQuantity::Vector::J: return J;
+                default: throw std::runtime_error("MHDState::getVector: unsupported vector quantity");
+            }
         }
 
         field_type rho;

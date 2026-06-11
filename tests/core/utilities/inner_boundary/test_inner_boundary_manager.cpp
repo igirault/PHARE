@@ -12,6 +12,7 @@
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/inner_boundary/inner_boundary_manager.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
+#include "core/numerics/thermo/ideal_gas_thermo.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/interpolator/field_at_point.hpp"
@@ -43,6 +44,16 @@ struct DummyState
     ScalarField Etot1{"Etot1", PHARE::core::MHDQuantity::Scalar::Etot1};
     VecF        rhoV{"rhoV", PHARE::core::MHDQuantity::Vector::rhoV};
     VecF        B1{"B1", PHARE::core::MHDQuantity::Vector::B1};
+
+    // mirror MHDState's accessor so criterion-based BCs (adaptive Dirichlet/Neumann) compile
+    VecF& getVector(PHARE::core::MHDQuantity::Vector q)
+    {
+        if (q == PHARE::core::MHDQuantity::Vector::rhoV)
+            return rhoV;
+        if (q == PHARE::core::MHDQuantity::Vector::B1)
+            return B1;
+        throw std::runtime_error("DummyState::getVector: unsupported quantity");
+    }
 };
 
 using Manager = PHARE::core::InnerBoundaryManager<PHARE::core::MHDQuantity, ScalarField, GridLayout,
@@ -81,13 +92,15 @@ struct ManagerFixture
         PHARE::core::MHDQuantity::Vector::E,
     };
 
-    Manager manager{std::make_unique<PHARE::core::PlaneInnerBoundary<2>>(
-                        BOUNDARY_NAME, PHARE::core::Point<double, 2>{0.0, 0.0},
-                        PHARE::core::Point<double, 2>{1.0, 0.0}),
-                    PHARE::core::InnerBoundaryConditionType::Reflective, scalarQtys, vectorQtys,
-                    nullptr};
+    Manager manager;
 
-    ManagerFixture()
+    ManagerFixture(std::shared_ptr<PHARE::core::Thermo> thermo = nullptr,
+                   Manager::SafeStateValues safe = {})
+        : manager{std::make_unique<PHARE::core::PlaneInnerBoundary<2>>(
+                      BOUNDARY_NAME, PHARE::core::Point<double, 2>{0.0, 0.0},
+                      PHARE::core::Point<double, 2>{1.0, 0.0}),
+                  PHARE::core::InnerBoundaryConditionType::Reflective, scalarQtys, vectorQtys,
+                  std::move(thermo), 0., 0., safe}
     {
         // Wire storage into the manager's mesh data via temporary Field objects.
         // setBuffer() only retains the raw data pointer, so the temporaries can be
@@ -338,6 +351,159 @@ TEST(InnerBoundaryManager, applyBCIsNoopForUnregisteredScalar)
     for (auto i = 0u; i < field.shape()[0]; ++i)
         for (auto j = 0u; j < field.shape()[1]; ++j)
             EXPECT_NEAR(field(i, j), C, eps) << "unregistered scalar field was modified";
+}
+
+// ---------------------------------------------------------------------------
+// setSafeState — pins inactive cells to the prescribed/derived safe state
+// ---------------------------------------------------------------------------
+
+namespace
+{
+// Count inactive cells (and assert at least one exists in this geometry).
+template<typename MeshDataT, typename FieldT>
+std::size_t expectHasInactive(MeshDataT const& md, FieldT const& shaped)
+{
+    auto const& cellStatus = md.cellStatusField();
+    std::size_t n          = 0;
+    for (auto i = 0u; i < shaped.shape()[0]; ++i)
+        for (auto j = 0u; j < shaped.shape()[1]; ++j)
+            if (cellStatus(i, j) == PHARE::core::toDouble(PHARE::core::ElemStatus::Inactive))
+                ++n;
+    EXPECT_GT(n, 0u) << "geometry must produce at least one inactive cell";
+    return n;
+}
+} // namespace
+
+/**
+ * @brief setSafeState pins inactive cells to the prescribed scalar value, leaving others.
+ */
+TEST(InnerBoundaryManager, setSafeStateScalarPinsInactiveOnly)
+{
+    auto thermo = std::make_shared<PHARE::core::IdealGasThermo>(5.0 / 3.0);
+    Manager::SafeStateValues safe;
+    safe.density = 1.5;
+    ManagerFixture fix{thermo, safe};
+    auto const& layout   = fix.layout;
+    auto const& meshData = fix.manager.getMeshData();
+
+    constexpr double sentinel = 7.0;
+    PHARE::core::NdArrayVector<2, double> storage{
+        layout.allocSize(PHARE::core::MHDQuantity::Scalar::rho)};
+    ScalarField rho{"rho", PHARE::core::MHDQuantity::Scalar::rho, storage.data(), storage.shape()};
+    for (auto i = 0u; i < rho.shape()[0]; ++i)
+        for (auto j = 0u; j < rho.shape()[1]; ++j)
+            rho(i, j) = sentinel;
+
+    expectHasInactive(meshData, rho);
+    fix.manager.setSafeState(rho, layout);
+
+    auto const& cellStatus = meshData.cellStatusField();
+    for (auto i = 0u; i < rho.shape()[0]; ++i)
+        for (auto j = 0u; j < rho.shape()[1]; ++j)
+        {
+            bool inactive
+                = cellStatus(i, j) == PHARE::core::toDouble(PHARE::core::ElemStatus::Inactive);
+            EXPECT_NEAR(rho(i, j), inactive ? 1.5 : sentinel, eps)
+                << "cell (" << i << "," << j << ") inactive=" << inactive;
+        }
+}
+
+/**
+ * @brief setSafeState derives momentum (rhoV = density * velocity) for the vector path.
+ */
+TEST(InnerBoundaryManager, setSafeStateVectorDerivesMomentum)
+{
+    auto thermo = std::make_shared<PHARE::core::IdealGasThermo>(5.0 / 3.0);
+    Manager::SafeStateValues safe;
+    safe.density  = 1.5;
+    safe.velocity = {2.0, 0.0, 0.0}; // rhoV safe = {3, 0, 0}
+    ManagerFixture fix{thermo, safe};
+    auto const& layout   = fix.layout;
+    auto const& meshData = fix.manager.getMeshData();
+
+    constexpr double sentinel = 9.0;
+    VecFieldMHD2 rhoV{"rhoV", layout, PHARE::core::MHDQuantity::Vector::rhoV};
+    for (auto comp : {PHARE::core::Component::X, PHARE::core::Component::Y, PHARE::core::Component::Z})
+    {
+        auto& c = rhoV.getComponent(comp);
+        for (auto i = 0u; i < c.shape()[0]; ++i)
+            for (auto j = 0u; j < c.shape()[1]; ++j)
+                c(i, j) = sentinel;
+    }
+
+    fix.manager.setSafeState(rhoV, layout);
+
+    auto const& cellStatus = meshData.cellStatusField();
+    auto& rhoVx            = rhoV.getComponent(PHARE::core::Component::X);
+    auto& rhoVy            = rhoV.getComponent(PHARE::core::Component::Y);
+    for (auto i = 0u; i < rhoVx.shape()[0]; ++i)
+        for (auto j = 0u; j < rhoVx.shape()[1]; ++j)
+        {
+            bool inactive
+                = cellStatus(i, j) == PHARE::core::toDouble(PHARE::core::ElemStatus::Inactive);
+            EXPECT_NEAR(rhoVx(i, j), inactive ? 3.0 : sentinel, eps);
+            EXPECT_NEAR(rhoVy(i, j), inactive ? 0.0 : sentinel, eps);
+        }
+}
+
+/**
+ * @brief setSafeState derives Etot1 from the safe primitives via the equation of state.
+ *
+ * Ideal gas, gamma=5/3, V=0, B1=0 ⇒ Etot1 = P/(gamma-1) = 2 / (2/3) = 3.
+ */
+TEST(InnerBoundaryManager, setSafeStateEtot1Derived)
+{
+    auto thermo = std::make_shared<PHARE::core::IdealGasThermo>(5.0 / 3.0);
+    Manager::SafeStateValues safe;
+    safe.density  = 1.5;
+    safe.pressure = 2.0;
+    ManagerFixture fix{thermo, safe};
+    auto const& layout   = fix.layout;
+    auto const& meshData = fix.manager.getMeshData();
+
+    PHARE::core::NdArrayVector<2, double> storage{
+        layout.allocSize(PHARE::core::MHDQuantity::Scalar::Etot1)};
+    ScalarField etot{"Etot1", PHARE::core::MHDQuantity::Scalar::Etot1, storage.data(),
+                     storage.shape()};
+    for (auto i = 0u; i < etot.shape()[0]; ++i)
+        for (auto j = 0u; j < etot.shape()[1]; ++j)
+            etot(i, j) = 9.0;
+
+    fix.manager.setSafeState(etot, layout);
+
+    auto const& cellStatus = meshData.cellStatusField();
+    for (auto i = 0u; i < etot.shape()[0]; ++i)
+        for (auto j = 0u; j < etot.shape()[1]; ++j)
+        {
+            if (cellStatus(i, j) == PHARE::core::toDouble(PHARE::core::ElemStatus::Inactive))
+            {
+                EXPECT_NEAR(etot(i, j), 3.0, eps)
+                    << "derived Etot1 mismatch at (" << i << "," << j << ")";
+            }
+        }
+}
+
+/**
+ * @brief setSafeState throws for a quantity that has no registered safe value.
+ */
+TEST(InnerBoundaryManager, setSafeStateThrowsForUnknownQuantity)
+{
+    ManagerFixture fix; // null thermo, default safe state
+    auto const& layout = fix.layout;
+
+    // Etot (total energy) is not among the safe scalars (rho, P, Etot1).
+    PHARE::core::NdArrayVector<2, double> storage{
+        layout.allocSize(PHARE::core::MHDQuantity::Scalar::Etot)};
+    ScalarField etot{"Etot", PHARE::core::MHDQuantity::Scalar::Etot, storage.data(),
+                     storage.shape()};
+    EXPECT_THROW(fix.manager.setSafeState(etot, layout), std::runtime_error);
+
+    // Etot1 has no safe value when no thermo was supplied (derivation skipped).
+    PHARE::core::NdArrayVector<2, double> storage2{
+        layout.allocSize(PHARE::core::MHDQuantity::Scalar::Etot1)};
+    ScalarField etot1{"Etot1", PHARE::core::MHDQuantity::Scalar::Etot1, storage2.data(),
+                      storage2.shape()};
+    EXPECT_THROW(fix.manager.setSafeState(etot1, layout), std::runtime_error);
 }
 
 int main(int argc, char** argv)

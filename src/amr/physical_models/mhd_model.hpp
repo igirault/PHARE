@@ -173,6 +173,9 @@ template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename 
 void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::updateExternalFields(level_t& level,
                                                                                double time)
 {
+    // The background field is masked inside the body (inactive cells) via
+    // InnerBoundaryManager::setSafeState at the classified call sites (level initializer +
+    // euler substep), not here — at init this runs before classification.
     for (auto& patch : level)
     {
         auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);

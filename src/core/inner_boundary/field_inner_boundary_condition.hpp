@@ -19,8 +19,17 @@ namespace PHARE::core
  * - **Neumann** — the normal derivative of the field is prescribed on the boundary.
  * - **Symmetric** — the field is mirrored across the boundary (even reflection).
  * - **Antisymmetric** — the field is sign-flipped across the boundary (odd reflection).
+ * - **AdaptiveDirichletOrNeumann** — Dirichlet or Neumann selected per ghost element from the
+ *   sign of a target vector quantity projected on the boundary normal (characteristic switch).
  */
-enum class FieldInnerBoundaryConditionType { None, Dirichlet, Neumann, Symmetric, Antisymmetric };
+enum class FieldInnerBoundaryConditionType {
+    None,
+    Dirichlet,
+    Neumann,
+    Symmetric,
+    Antisymmetric,
+    AdaptiveDirichletOrNeumann
+};
 
 /**
  * @brief Abstract base class for applying a boundary condition to a scalar or tensor field

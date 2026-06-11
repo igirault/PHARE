@@ -79,18 +79,16 @@ public:
                 level, rm, [&](auto& layout, auto&&, auto&&) { ibm.classify(layout); }, ibm);
 
 
-            // Set inactive cells to a safe physical state so the Riemann solver
-            // never receives pathological input (negative or zero rho/P) from them.
+            // Set inactive cells (and faces) to the prescribed safe physical state so the Riemann
+            // solver never receives pathological input (negative/zero rho/P, singular B0) from them.
             amr::visitLevel<gridlayout_type>(
                 level, rm,
                 [&](auto& layout, auto&&, auto&&) {
-                    auto& meshData   = ibm.getMeshData();
-                    auto& cellStatus = meshData.cellStatusField();
-                    layout.evalOnGhostBox(mhdModel.state.rho, [&](auto&... args) {
-                        auto idx = core::MeshIndex<dimension>{args...};
-                        if (cellStatus(idx) == core::toDouble(core::ElemStatus::Inactive))
-                            mhdModel.state.safeResetInactiveCell(idx, layout, *mhdModel.thermo);
-                    });
+                    ibm.setSafeState(mhdModel.state.B1, layout);
+                    ibm.setSafeState(mhdModel.state.B0, layout);
+                    ibm.setSafeState(mhdModel.state.rho, layout);
+                    ibm.setSafeState(mhdModel.state.rhoV, layout);
+                    ibm.setSafeState(mhdModel.state.Etot1, layout);
                 },
                 ibm, mhdModel.state);
 
