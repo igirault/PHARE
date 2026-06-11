@@ -74,13 +74,14 @@ struct TimeStamperFactory
 {
     NO_DISCARD static std::unique_ptr<ITimeStamper> create(initializer::PHAREDict const& dict)
     {
-        if (dict.contains("time_step_type")
-            && dict["time_step_type"].template to<std::string>() == "adaptive")
+        auto const& time_step_dict = dict["time_step"];
+        if (time_step_dict.contains("mode")
+            && time_step_dict["mode"].template to<std::string>() == "adaptive")
             // dt_ seed is irrelevant: the first (varying) dt resets it on the first step
             return std::make_unique<VariableTimeStamper>(0.);
 
-        assert(dict.contains("time_step"));
-        auto time_step  = dict["time_step"].template to<double>();
+        assert(time_step_dict.contains("value"));
+        auto time_step  = time_step_dict["value"].template to<double>();
         std::size_t idx = 0;
 
         return std::make_unique<ConstantTimeStamper>(time_step, idx);

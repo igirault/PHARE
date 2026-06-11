@@ -443,11 +443,11 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , messengerFactory_{descriptors_}
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
-    // time_step / time_step_nbr are absent in the adaptive case (see ctor body for finalTime_)
-    , dt_{cppdict::get_value(dict, "simulation/time_step", 0.)}
-    , timeStepType_{cppdict::get_value(dict, "simulation/time_step_type", std::string{"constant"})}
-    , cfl_{cppdict::get_value(dict, "simulation/time_step_cfl", 0.)}
-    , fourier_{cppdict::get_value(dict, "simulation/time_step_fourier", 0.)}
+    // time_step/value and time_step_nbr are absent in the adaptive case (see ctor body for finalTime_)
+    , dt_{cppdict::get_value(dict, "simulation/time_step/value", 0.)}
+    , timeStepType_{cppdict::get_value(dict, "simulation/time_step/mode", std::string{"constant"})}
+    , cfl_{cppdict::get_value(dict, "simulation/time_step/cfl", 0.)}
+    , fourier_{cppdict::get_value(dict, "simulation/time_step/fourier", 0.)}
     , timeStepNbr_{cppdict::get_value(dict, "simulation/time_step_nbr", 0)}
     , finalTime_{dt_ * timeStepNbr_}
     , functors_{functors_setup(dict)}
