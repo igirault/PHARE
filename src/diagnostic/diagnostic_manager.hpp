@@ -170,6 +170,8 @@ private:
     std::map<std::string, std::size_t> nextWrite_;
     std::map<std::string, std::size_t> nextWriteElapsed_;
 
+    std::size_t iteration_ = 0; ///< coarse-step counter for writeNiterPeriod cadence
+
     std::time_t const start_time_{core::mpi::unix_timestamp_now()};
 };
 
@@ -193,6 +195,10 @@ DiagnosticsManager<Writer>::addDiagDict(initializer::PHAREDict const& diagParams
     }
 
     diagProps["flush_every"] = diagParams["flush_every"].template to<std::size_t>();
+
+    if (diagParams.contains("write_niter_period"))
+        diagProps.writeNiterPeriod
+            = diagParams["write_niter_period"].template to<std::size_t>();
 
     diagProps.computeTimestamps
         = diagParams["compute_timestamps"].template to<std::vector<double>>();
@@ -238,12 +244,21 @@ bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep)
     {
         auto diagID = diag.type + diag.quantity;
 
-        if (needsCompute_(diag, timeStamp, timeStep))
+        // iteration-based cadence: fires (compute + write) every writeNiterPeriod coarse steps.
+        // Used by dump_niter_period (the only timestamp-free option valid under adaptive dt).
+        bool const niterNow
+            = diag.writeNiterPeriod > 0 and (iteration_ % diag.writeNiterPeriod == 0);
+
+        bool const computeNow = needsCompute_(diag, timeStamp, timeStep);
+        if (computeNow or niterNow)
         {
             writer_->getDiagnosticWriterForType(diag.type)->compute(diag);
-            nextCompute_[diagID]++;
+            if (computeNow)
+                nextCompute_[diagID]++;
         }
-        if (needsWrite_(diag, timeStamp, timeStep))
+        // call needsWrite_ unconditionally so its timestamp index still advances
+        bool const writeNow = needsWrite_(diag, timeStamp, timeStep);
+        if (writeNow or niterNow)
         {
             activeDiagnostics.emplace_back(&diag);
         }
@@ -255,6 +270,7 @@ bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep)
         writer_->dump(activeDiagnostics, timeStamp);
     }
 
+    ++iteration_;
     return activeDiagnostics.size() > 0;
 }
 
