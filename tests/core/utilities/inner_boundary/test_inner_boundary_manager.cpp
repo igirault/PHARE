@@ -44,6 +44,7 @@ struct DummyState
     ScalarField Etot1{"Etot1", PHARE::core::MHDQuantity::Scalar::Etot1};
     VecF        rhoV{"rhoV", PHARE::core::MHDQuantity::Vector::rhoV};
     VecF        B1{"B1", PHARE::core::MHDQuantity::Vector::B1};
+    VecF        B0{"B0", PHARE::core::MHDQuantity::Vector::B0};
 
     // mirror MHDState's accessor so criterion-based BCs (adaptive Dirichlet/Neumann) compile
     VecF& getVector(PHARE::core::MHDQuantity::Vector q)
@@ -52,6 +53,8 @@ struct DummyState
             return rhoV;
         if (q == PHARE::core::MHDQuantity::Vector::B1)
             return B1;
+        if (q == PHARE::core::MHDQuantity::Vector::B0)
+            return B0;
         throw std::runtime_error("DummyState::getVector: unsupported quantity");
     }
 };

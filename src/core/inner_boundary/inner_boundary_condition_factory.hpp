@@ -10,8 +10,10 @@
 #include "core/inner_boundary/field_symmetric_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_dirichlet_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_adaptive_dirichlet_or_neumann_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_ionospheric_convection_momentum_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_total_energy_from_pressure_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_inner_boundary_condition.hpp"
+#include "core/inner_boundary/inner_boundary_geometry.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/thermo/thermo.hpp"
 
@@ -78,6 +80,7 @@ public:
     using vector_bc_type = FieldInnerBoundaryCondition<vecfield_type, GridLayoutT, PhysicalStateT>;
     using scalar_bc_map_type = std::unordered_map<scalar_qty, std::unique_ptr<scalar_bc_type>>;
     using vector_bc_map_type = std::unordered_map<vector_qty, std::unique_ptr<vector_bc_type>>;
+    using geometry_type      = InnerBoundaryGeometry<GridLayoutT::dimension>;
 
     InnerBoundaryConditionFactory() = delete;
 
@@ -95,7 +98,7 @@ public:
                        std::vector<vector_qty> const& vectorQuantities,
                        scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
                        std::shared_ptr<Thermo> thermo, double prescribedDensity = 0.,
-                       double prescribedPressure = 0.)
+                       double prescribedPressure = 0., geometry_type const* geometry = nullptr)
     {
         switch (type)
         {
@@ -106,7 +109,7 @@ public:
             case InnerBoundaryConditionType::IonosphericConvection:
                 register_ionospheric_convection_(scalarQuantities, vectorQuantities, scalarBCs,
                                                  vectorBCs, std::move(thermo), prescribedDensity,
-                                                 prescribedPressure);
+                                                 prescribedPressure, geometry);
                 break;
             default: throw std::runtime_error("InnerBoundaryConditionFactory: unknown type");
         }
@@ -132,6 +135,11 @@ private:
     using TotalEnergyFromPressure
         = FieldTotalEnergyFromPressureInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT,
                                                              PhysicalStateT>;
+
+    template<typename ScalarOrTensorFieldT>
+    using IonosphericConvectionMomentum
+        = FieldIonosphericConvectionMomentumInnerBoundaryCondition<ScalarOrTensorFieldT,
+                                                                   GridLayoutT, PhysicalStateT>;
 
     template<typename ScalarOrTensorFieldT>
     using Dirichlet
@@ -198,13 +206,12 @@ private:
      * Moment priorities (momentum 0 < density < energy) make applyToMoments run them in the
      * order momentum → density → energy.
      */
-    static void register_ionospheric_convection_(std::vector<scalar_qty> const& scalars,
-                                                 std::vector<vector_qty> const& vectors,
-                                                 scalar_bc_map_type& scalarBCs,
-                                                 vector_bc_map_type& vectorBCs,
-                                                 std::shared_ptr<Thermo> thermo,
-                                                 double prescribedDensity,
-                                                 double prescribedPressure)
+    static void
+    register_ionospheric_convection_(std::vector<scalar_qty> const& scalars,
+                                     std::vector<vector_qty> const& vectors,
+                                     scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
+                                     std::shared_ptr<Thermo> thermo, double prescribedDensity,
+                                     double prescribedPressure, geometry_type const* geometry)
     {
         // density runs after momentum (0) and before energy (TotalEnergyFromPressure: 10)
         constexpr int density_priority = 5;
@@ -232,10 +239,11 @@ private:
                     vectorBCs[qty] = std::make_unique<None<vecfield_type>>();
                     break;
                 case PhysicalQuantityT::Vector::rhoV:
-                    vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>();
+                    // Tanaka momentum: field-aligned + r^2 rhoV_n conserved (no-penetration)
+                    vectorBCs[qty]
+                        = std::make_unique<IonosphericConvectionMomentum<vecfield_type>>(geometry);
                     break;
                 case PhysicalQuantityT::Vector::E:
-                    // null Dirichlet: ghost = -mirror ⇒ tangential & normal E vanish at the surface
                     vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>();
                     break;
                 default: vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>(); break;

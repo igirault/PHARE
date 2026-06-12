@@ -39,6 +39,9 @@ public:
         return direction * (1. / length);
     }
 
+    point_type const& center() const { return center_; }
+    double radius() const { return radius_; }
+
 private:
     static double distance_(point_type const& a, point_type const& b)
     {

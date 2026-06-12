@@ -102,7 +102,8 @@ public:
         , thermo_{std::move(thermo)}
     {
         factory_type::create(conditionType, scalarQuantities, vectorQuantities, scalarBCs_,
-                             vectorBCs_, thermo_, prescribedDensity, prescribedPressure);
+                             vectorBCs_, thermo_, prescribedDensity, prescribedPressure,
+                             geometry_.get());
         buildSafeState_(safe);
     }
 

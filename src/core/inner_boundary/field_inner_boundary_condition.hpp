@@ -28,7 +28,8 @@ enum class FieldInnerBoundaryConditionType {
     Neumann,
     Symmetric,
     Antisymmetric,
-    AdaptiveDirichletOrNeumann
+    AdaptiveDirichletOrNeumann,
+    IonosphericConvectionMomentum
 };
 
 /**
