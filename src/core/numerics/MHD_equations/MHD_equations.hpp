@@ -25,13 +25,20 @@ public:
     {
         auto const rho = u.rho;
         auto const V   = u.V;
-        auto const B   = u.totalB(); // total field, formed by addition
+        auto const B   = u.totalB(); // total field, used by the induction flux
+        auto const B1  = u.B1;       // perturbation field
+        auto const B0  = u.B0;       // static background field
         auto const P   = u.P;
 
-        // Standard total-field MHD Maxwell stress: ½|B|² Id − BB. No B0 split here — the
-        // background field is kept well-balanced upstream by reconstructing only B1 and using
-        // a single (non-reconstructed) B0 per face/edge.
-        auto const MagPressure         = 0.5 * (B.x * B.x + B.y * B.y + B.z * B.z);
+        // Well-balanced B-split Maxwell stress: the magnetic part of the momentum flux is the
+        // total-field stress (½|B|² Id − BB) minus the static background (B0) self-stress
+        // (½|B0|² Id − B0B0). Developing B = B1 + B0 this leaves only the B1 and cross terms:
+        //   Id (½|B1|² + B1·B0) − B1B1 − B1B0 − B0B1.
+        // For a curl-free B0 the physical force (∇×B0)×B0 is zero, but the discrete divergence of
+        // the B0-only stress is not (B0 reconstructed independently to L/R faces), bending the
+        // upstream field. Removing it makes a B1 = 0 / V = 0 / uniform-P state a steady state.
+        auto const MagPressure = 0.5 * (B1.x * B1.x + B1.y * B1.y + B1.z * B1.z)
+                                 + (B1.x * B0.x + B1.y * B0.y + B1.z * B0.z);
         auto const GeneralisedPressure = P + MagPressure;
 
         // HD-only energy: kinetic + thermal. Magnetic energy transport (E × B1 for
@@ -43,9 +50,10 @@ public:
         if constexpr (direction == Direction::X)
         {
             auto F_rho   = rho * V.x;
-            auto F_rhoVx = rho * V.x * V.x + GeneralisedPressure - B.x * B.x;
-            auto F_rhoVy = rho * V.x * V.y - B.x * B.y;
-            auto F_rhoVz = rho * V.x * V.z - B.x * B.z;
+            auto F_rhoVx = rho * V.x * V.x + GeneralisedPressure
+                           - (B1.x * B1.x + B1.x * B0.x + B0.x * B1.x);
+            auto F_rhoVy = rho * V.x * V.y - (B1.x * B1.y + B1.x * B0.y + B0.x * B1.y);
+            auto F_rhoVz = rho * V.x * V.z - (B1.x * B1.z + B1.x * B0.z + B0.x * B1.z);
             auto F_Bx    = 0.0;
             auto F_By    = B.y * V.x - V.y * B.x;
             auto F_Bz    = B.z * V.x - V.z * B.x;
@@ -56,9 +64,10 @@ public:
         if constexpr (direction == Direction::Y)
         {
             auto F_rho   = rho * V.y;
-            auto F_rhoVx = rho * V.y * V.x - B.y * B.x;
-            auto F_rhoVy = rho * V.y * V.y + GeneralisedPressure - B.y * B.y;
-            auto F_rhoVz = rho * V.y * V.z - B.y * B.z;
+            auto F_rhoVx = rho * V.y * V.x - (B1.y * B1.x + B1.y * B0.x + B0.y * B1.x);
+            auto F_rhoVy = rho * V.y * V.y + GeneralisedPressure
+                           - (B1.y * B1.y + B1.y * B0.y + B0.y * B1.y);
+            auto F_rhoVz = rho * V.y * V.z - (B1.y * B1.z + B1.y * B0.z + B0.y * B1.z);
             auto F_Bx    = B.x * V.y - V.x * B.y;
             auto F_By    = 0.0;
             auto F_Bz    = B.z * V.y - V.z * B.y;
@@ -69,9 +78,10 @@ public:
         if constexpr (direction == Direction::Z)
         {
             auto F_rho   = rho * V.z;
-            auto F_rhoVx = rho * V.z * V.x - B.z * B.x;
-            auto F_rhoVy = rho * V.z * V.y - B.z * B.y;
-            auto F_rhoVz = rho * V.z * V.z + GeneralisedPressure - B.z * B.z;
+            auto F_rhoVx = rho * V.z * V.x - (B1.z * B1.x + B1.z * B0.x + B0.z * B1.x);
+            auto F_rhoVy = rho * V.z * V.y - (B1.z * B1.y + B1.z * B0.y + B0.z * B1.y);
+            auto F_rhoVz = rho * V.z * V.z + GeneralisedPressure
+                           - (B1.z * B1.z + B1.z * B0.z + B0.z * B1.z);
             auto F_Bx    = B.x * V.z - V.x * B.z;
             auto F_By    = B.y * V.z - V.y * B.z;
             auto F_Bz    = 0.0;
