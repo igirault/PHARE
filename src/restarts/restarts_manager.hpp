@@ -53,6 +53,10 @@ public:
         auto restarts_are_written = core::any(
             core::generate([&](auto const& v) { return dict.contains(v); },
                            std::vector<std::string>{"write_timestamps", "elapsed_timestamps"}));
+        // niter_period leaves no timestamp arrays; activate on a non-zero iteration cadence too.
+        if (dict.contains("write_niter_period")
+            and dict["write_niter_period"].template to<std::size_t>() > 0)
+            restarts_are_written = true;
         if (restarts_are_written) // else is only loading not saving restarts
             rMan->addRestartDict(dict);
         return rMan;
@@ -108,6 +112,7 @@ private:
     std::unique_ptr<Writer> writer_;
     std::size_t nextWriteSimUnit_ = 0;
     std::size_t nextWriteElapsed_ = 0;
+    std::size_t iteration_        = 0; ///< coarse-step counter for writeNiterPeriod cadence
 
     std::time_t const start_time_{core::mpi::unix_timestamp_now()};
 };
@@ -126,6 +131,10 @@ RestartsManager<Writer>::addRestartDict(initializer::PHAREDict const& params)
     if (params.contains("write_timestamps"))
         restarts_properties_->writeTimestamps
             = params["write_timestamps"].template to<std::vector<double>>();
+
+    if (params.contains("write_niter_period"))
+        restarts_properties_->writeNiterPeriod
+            = params["write_niter_period"].template to<std::size_t>();
 
     if (params.contains("elapsed_timestamps"))
     {
@@ -152,7 +161,15 @@ bool RestartsManager<Writer>::dump(double timeStamp, double timeStep)
     if (!restarts_properties_)
         return false; // not active
 
-    if (!needsWrite_(*restarts_properties_, timeStamp, timeStep))
+    // iteration-based cadence: write every writeNiterPeriod coarse steps (the only timestamp-free
+    // option valid under adaptive dt). needsWrite_ is called unconditionally so its timestamp
+    // index still advances.
+    bool const niterNow = restarts_properties_->writeNiterPeriod > 0
+                          and (iteration_ % restarts_properties_->writeNiterPeriod == 0);
+    bool const writeNow = needsWrite_(*restarts_properties_, timeStamp, timeStep);
+    ++iteration_;
+
+    if (!(writeNow || niterNow))
         return false; // not needed now
 
     PHARE_LOG_SCOPE(3, "RestartsManager::dump");
