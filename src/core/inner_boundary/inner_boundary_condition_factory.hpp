@@ -198,8 +198,8 @@ private:
      *   E       → Dirichlet(0)   (null electric field at the surface; motional E0 ignored for now)
      *   rhoV    → Neumann        (momentum, enforced first)
      *   rho     → adaptive Dirichlet/Neumann (criterion rhoV, prescribed density; enforced second)
-     *   Etot1   → TotalEnergyFromPressure wrapping an adaptive Dirichlet/Neumann pressure
-     *             (criterion rhoV, prescribed pressure; enforced last)
+     *   Etot1   → TotalEnergyFromPressure wrapping a Dirichlet pressure (prescribed p_in,
+     *             held at the surface; enforced last)
      *   B       → None           (B handled via E + constrained transport, never written here)
      *   others  → Neumann
      *
@@ -220,10 +220,10 @@ private:
         for (auto const qty : scalars)
         {
             if (qty == PhysicalQuantityT::Scalar::Etot1)
+                // energy reconstructed from a prescribed (Dirichlet) pressure p_in: holds the
+                // boundary pressure instead of letting it drain on inflow-into-body faces.
                 scalarBCs[qty] = std::make_unique<TotalEnergyFromPressure<FieldT>>(
-                    std::make_unique<AdaptiveDirichletOrNeumann<FieldT>>(criterion,
-                                                                         prescribedPressure),
-                    thermo);
+                    std::make_unique<Dirichlet<FieldT>>(prescribedPressure), thermo);
             else if (qty == PhysicalQuantityT::Scalar::rho)
                 scalarBCs[qty] = std::make_unique<AdaptiveDirichletOrNeumann<FieldT>>(
                     criterion, prescribedDensity, density_priority);
