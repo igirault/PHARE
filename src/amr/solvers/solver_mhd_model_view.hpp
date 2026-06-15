@@ -13,6 +13,7 @@
 #include "core/numerics/faraday/faraday.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
 #include "core/numerics/time_integrator_utils.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/utilities/box/box.hpp"
 #include "core/utilities/point/point.hpp"
 
@@ -198,14 +199,41 @@ public:
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp    = model.resourcesManager->setOnPatch(*patch, state, statenew, fluxes);
-            auto _sl    = core::SetLayout(&layout, euler_);
 
-            setTime(
-                *patch, [&]() -> auto&& { return state.rho; },
-                [&]() -> auto&& { return state.rhoV; }, [&]() -> auto&& { return state.Etot1; });
+            if (model.hasInnerBoundary())
+            {
+                // Only evolve genuine FV cells (Fluid / Cut). Inner-boundary Ghost and Inactive
+                // cells are owned by the inner BC and the safe-state; evolving them by flux
+                // divergence injects a meaningless conserved update that the BC may fail to
+                // reclaim (non-interpolable mirror), producing negative pressure -> NaN.
+                auto& ibm = *model.innerBoundaryManager;
+                auto _sp  = model.resourcesManager->setOnPatch(*patch, state, statenew, fluxes, ibm);
+                auto _sl  = core::SetLayout(&layout, euler_);
 
-            euler_(state, statenew, fluxes, dt);
+                setTime(
+                    *patch, [&]() -> auto&& { return state.rho; },
+                    [&]() -> auto&& { return state.rhoV; },
+                    [&]() -> auto&& { return state.Etot1; });
+
+                auto const& cellStatus = ibm.getMeshData().cellStatusField();
+                euler_(state, statenew, fluxes, dt, [&cellStatus](auto const& idx) {
+                    auto const s = cellStatus(idx);
+                    return s != core::toDouble(core::ElemStatus::Ghost)
+                           && s != core::toDouble(core::ElemStatus::Inactive);
+                });
+            }
+            else
+            {
+                auto _sp = model.resourcesManager->setOnPatch(*patch, state, statenew, fluxes);
+                auto _sl = core::SetLayout(&layout, euler_);
+
+                setTime(
+                    *patch, [&]() -> auto&& { return state.rho; },
+                    [&]() -> auto&& { return state.rhoV; },
+                    [&]() -> auto&& { return state.Etot1; });
+
+                euler_(state, statenew, fluxes, dt);
+            }
         }
     }
 

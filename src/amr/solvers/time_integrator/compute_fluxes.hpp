@@ -105,6 +105,16 @@ public:
                     zeroE(core::Component::Z);
                 },
                 ibm, state);
+
+            // applyBC / zeroE above write the corrected E into the body's ghost elements, but
+            // only on the patch that can interpolate the mirror (others skip them) and zeroE
+            // touches interior cells only. A patch holding one of those body-ghost cells merely
+            // as a *patch* ghost therefore keeps the pre-BC E filled by fillElectricGhosts above.
+            // Refill the electric ghosts so every patch copy reflects the post-BC value of its
+            // owning patch; without this the stale E feeds the cut-cell Faraday stencil (and the
+            // Poynting correction) and leaks an inconsistent B1 across patch boundaries at the
+            // body.
+            bc.fillElectricGhosts(state.E, level, newTime);
         }
         fvm_.apply_poynting_correction(level, model, ct_.constrained_transport_, state, fluxes);
 

@@ -12,6 +12,7 @@
 #include "core/utilities/mpi_utils.hpp"
 #include "core/utilities/timestamps.hpp"
 
+#include "amr/samrai.hpp"
 #include "amr/wrappers/integrator.hpp"
 #include "amr/tagging/tagger_factory.hpp"
 #include "amr/load_balancing/load_balancer_details.hpp"
@@ -527,6 +528,15 @@ void Simulator<opts>::initialize()
             throw std::runtime_error("Error - Simulator has no integrator");
 
         integrator_->initialize();
+
+        // On restart, SAMRAI restores saved patch-data but the level initializer is NOT invoked for
+        // restored levels, so non-saved / derived state is missing: refresh the static background
+        // (B0 + edge B0x_Ez/B0y_Ez) and re-establish the inner-boundary classification + safe state
+        // per restored level. The restored conserved fields (rho/rhoV/B1/Etot1) are left untouched.
+        if (mhdModel_ and SamraiLifeCycle::getRestartManager()->isFromRestart())
+            for (int ilvl = 0; ilvl < hierarchy_->getNumberOfLevels(); ++ilvl)
+                mhdModel_->reinitializeAfterRestart(SAMRAITypes::getLevel(*hierarchy_, ilvl),
+                                                    currentTime_);
     }
     catch (core::DictionaryException const& ex)
     {

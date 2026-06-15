@@ -110,9 +110,7 @@ public:
                 // mirrorPoint = 2*project(ghost) - ghost  ⇒  project = 0.5*(ghost + mirror).
                 auto const amrIdxU = layout.localToAMR(ghostElem.index);
                 Point<int, dimension> amrIdx;
-                for_N<dimension>([&](auto kc) {
-                    amrIdx[kc()] = static_cast<int>(amrIdxU[kc()]);
-                });
+                for_N<dimension>([&](auto kc) { amrIdx[kc()] = static_cast<int>(amrIdxU[kc()]); });
                 auto const ghostCoord = layout.fieldNodeCoordinates(field, amrIdx);
 
                 Point<double, dimension> boundaryPoint;
@@ -124,9 +122,9 @@ public:
                 // criterion must be interpolable at the boundary point for every component we dot
                 bool criterionInterpolable = true;
                 for_N<dimension>([&](auto kc) {
-                    constexpr auto k       = kc();
-                    auto const& critComp   = std::get<k>(criterionComps);
-                    auto const cCentering  = GridLayoutT::centering(critComp);
+                    constexpr auto k      = kc();
+                    auto const& critComp  = std::get<k>(criterionComps);
+                    auto const cCentering = GridLayoutT::centering(critComp);
                     if (!interpolator_type::pointIsInterpolable(layout, boundaryPoint, cCentering))
                         criterionInterpolable = false;
                 });
@@ -137,16 +135,16 @@ public:
                 double fluxNormal = 0.0;
                 for_N<dimension>([&](auto kc) {
                     constexpr auto k = kc();
-                    fluxNormal += this->interpolator_(layout, std::get<k>(criterionComps),
-                                                      boundaryPoint)
-                                  * ghostElem.normal[k];
+                    fluxNormal
+                        += this->interpolator_(layout, std::get<k>(criterionComps), boundaryPoint)
+                           * ghostElem.normal[k];
                 });
 
                 double const mirrorValue
                     = this->interpolator_(layout, field, ghostElem.mirrorPoint);
 
                 if (fluxNormal > 0.0)
-                    field(ghostElem.index) = 2.0 * values_[i] - mirrorValue; // Dirichlet
+                    field(ghostElem.index) = values_[i]; // Dirichlet
                 else
                     field(ghostElem.index) = mirrorValue; // Neumann (zero-gradient)
             }

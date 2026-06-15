@@ -6,6 +6,9 @@
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/resources_manager/resources_manager.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
+
+#include "core/inner_boundary/inner_bc_context.hpp"
 
 #include "core/boundary/boundary_manager.hpp"
 #include "core/def.hpp"
@@ -137,6 +140,46 @@ public:
     auto get_B0() const -> auto& { return state.B0; }
 
     bool hasInnerBoundary() const { return innerBoundaryManager != nullptr; }
+
+    // Inner-boundary setup: classify the mesh, pin inactive cells to the safe state, and apply the
+    // moment BCs. Factored out of MHDLevelInitializer so it can also be run on restart, where the
+    // level initializer is bypassed (the ghostElems classification is a computed, non-saved field).
+    void setupInnerBoundaryState(level_t& level, double time)
+    {
+        if (!hasInnerBoundary())
+            return;
+
+        auto& rm  = *resourcesManager;
+        auto& ibm = *innerBoundaryManager;
+
+        amr::visitLevel<gridlayout_type>(
+            level, rm, [&](auto& layout, auto&&, auto&&) { ibm.classify(layout); }, ibm);
+
+        amr::visitLevel<gridlayout_type>(
+            level, rm,
+            [&](auto& layout, auto&&, auto&&) {
+                ibm.setSafeState(state.B1, layout);
+                ibm.setSafeState(state.B0, layout);
+                ibm.setSafeState(state.rho, layout);
+                ibm.setSafeState(state.rhoV, layout);
+                ibm.setSafeState(state.Etot1, layout);
+            },
+            ibm, state);
+
+        core::InnerBCContext<state_type> ctx{state, state, time, 0.0};
+        amr::visitLevel<gridlayout_type>(
+            level, rm, [&](auto& layout, auto&&, auto&&) { ibm.applyToMoments(layout, ctx); }, ibm,
+            state);
+    }
+
+    // Restart entry point: refresh the static background field (B0, B0x_Ez, B0y_Ez) and re-establish
+    // the inner-boundary state, without touching the restored conserved fields. On restart the level
+    // initializer that normally does this is not invoked for restored levels.
+    void reinitializeAfterRestart(level_t& level, double time)
+    {
+        updateExternalFields(level, time);
+        setupInnerBoundaryState(level, time);
+    }
 
     //-------------------------------------------------------------------------
     //                  start the ResourcesUser interface

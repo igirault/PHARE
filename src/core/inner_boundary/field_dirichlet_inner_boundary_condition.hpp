@@ -12,7 +12,7 @@ class FieldDirichletInnerBoundaryCondition
 public:
     using Super = FieldInnerBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, PhysicalStateT>;
 
-    using value_type                    = typename Super::field_type::value_type;
+    using value_type                    = Super::field_type::value_type;
     using field_type                    = Super::field_type;
     using inner_boundary_mesh_data_type = Super::inner_boundary_mesh_data_type;
     using ghost_elem_data_type          = Super::ghost_elem_data_type;
@@ -25,21 +25,33 @@ public:
     static constexpr size_t N         = Super::N;
     static constexpr bool is_scalar   = Super::is_scalar;
 
+    enum class ExtrapolationType { Constant, Linear };
+
     FieldDirichletInnerBoundaryCondition() = default;
 
-    FieldDirichletInnerBoundaryCondition(value_type value)
+    FieldDirichletInnerBoundaryCondition(value_type value, ExtrapolationType extrapolationType
+                                                           = ExtrapolationType::Linear)
         : values_{value}
+        , extrapolation_type_(extrapolationType)
     {
     }
 
-    FieldDirichletInnerBoundaryCondition(std::array<value_type, N> values)
+    FieldDirichletInnerBoundaryCondition(std::array<value_type, N> values,
+                                         ExtrapolationType extrapolationType
+                                         = ExtrapolationType::Linear)
         : values_{values}
+        , extrapolation_type_(extrapolationType)
     {
     }
 
     FieldInnerBoundaryConditionType getType() const override
     {
         return FieldInnerBoundaryConditionType::Dirichlet;
+    }
+
+    void setExtrapolationType(ExtrapolationType extrapolationType)
+    {
+        extrapolation_type_ = extrapolationType;
     }
 
     void apply(ScalarOrTensorFieldT& scalarOrTensorField, GridLayoutT const& layout,
@@ -53,6 +65,10 @@ public:
                 return scalarOrTensorField.components();
         }();
 
+        auto extrapolate = (extrapolation_type_ == ExtrapolationType::Linear)
+                               ? [](value_type v, value_type m) { return 2.0 * v - m; }
+                               : [](value_type v, value_type /*m*/) { return v; };
+
         for_N<N>([&](auto i) {
             auto& field            = std::get<i>(fields);
             auto const centering   = GridLayoutT::centering(field);
@@ -62,17 +78,19 @@ public:
             {
                 // WARNING: when the mirror is not interpolable, the ghost cell is left
                 // untouched. This may be the cause of issues — TBD. If so, a lower-order
-                // interpolation could be applied instead. See GhostElemData::mirrorIsInterpolable.
+                // interpolation could be applied instead. See
+                // GhostElemData::mirrorIsInterpolable.
                 if (!ghostElem.mirrorIsInterpolable)
                     continue;
                 double mirrorValue     = this->interpolator_(layout, field, ghostElem.mirrorPoint);
-                field(ghostElem.index) = 2.0 * values_[i] - mirrorValue;
+                field(ghostElem.index) = extrapolate(values_[i], mirrorValue);
             }
         });
     }
 
 private:
     std::array<value_type, N> values_{0};
+    ExtrapolationType extrapolation_type_{ExtrapolationType::Linear};
 };
 
 } // namespace PHARE::core

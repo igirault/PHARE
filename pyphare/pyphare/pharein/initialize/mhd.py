@@ -19,6 +19,9 @@ def populateDict(sim):
     # runtime flag for the adaptive-dt whistler term (consistent with the compile-time Hall perm)
     add_bool("simulation/algo/fv_method/hall", sim.hall)
     add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
+    # positivity floor on the recovered pressure (0 = disabled); when triggered the conserved
+    # Etot1 is rewritten consistently. See ToPrimitiveConverter.
+    add_double("simulation/algo/to_primitive/pressure_floor", getattr(sim, "pressure_floor", 0.0))
     add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/constrained_transport/resistivity", sim.eta)
     add_double("simulation/algo/constrained_transport/hyper_resistivity", sim.nu)

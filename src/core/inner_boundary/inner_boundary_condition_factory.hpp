@@ -14,7 +14,6 @@
 #include "core/inner_boundary/field_total_energy_from_pressure_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_inner_boundary_condition.hpp"
 #include "core/inner_boundary/inner_boundary_geometry.hpp"
-#include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/thermo/thermo.hpp"
 
 #include <memory>
@@ -98,7 +97,8 @@ public:
                        std::vector<vector_qty> const& vectorQuantities,
                        scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
                        std::shared_ptr<Thermo> thermo, double prescribedDensity = 0.,
-                       double prescribedPressure = 0., geometry_type const* geometry = nullptr)
+                       double prescribedPressure                      = 0.,
+                       [[maybe_unused]] geometry_type const* geometry = nullptr)
     {
         switch (type)
         {
@@ -109,7 +109,7 @@ public:
             case InnerBoundaryConditionType::IonosphericConvection:
                 register_ionospheric_convection_(scalarQuantities, vectorQuantities, scalarBCs,
                                                  vectorBCs, std::move(thermo), prescribedDensity,
-                                                 prescribedPressure, geometry);
+                                                 prescribedPressure);
                 break;
             default: throw std::runtime_error("InnerBoundaryConditionFactory: unknown type");
         }
@@ -195,38 +195,37 @@ private:
 
     /**
      * @brief Basic ionospheric-convection body BC rules:
-     *   E       → Dirichlet(0)   (null electric field at the surface; motional E0 ignored for now)
-     *   rhoV    → Neumann        (momentum, enforced first)
-     *   rho     → adaptive Dirichlet/Neumann (criterion rhoV, prescribed density; enforced second)
-     *   Etot1   → TotalEnergyFromPressure wrapping a Dirichlet pressure (prescribed p_in,
-     *             held at the surface; enforced last)
+     *   E       → Dirichlet(0)   (no corotation: V→0 at the surface ⇒ E = -V×B = 0)
+     *   rhoV    → Dirichlet       (momentum, enforced first)
+     *   rho     → Dirichlet (constant extrapolation, prescribed density; enforced second)
+     *   Etot1   → TotalEnergyFromPressure wrapping a Dirichlet (constant extrapolation) pressure
+     *             (prescribed p_in, held at the surface; enforced last)
      *   B       → None           (B handled via E + constrained transport, never written here)
      *   others  → Neumann
      *
      * Moment priorities (momentum 0 < density < energy) make applyToMoments run them in the
      * order momentum → density → energy.
      */
-    static void
-    register_ionospheric_convection_(std::vector<scalar_qty> const& scalars,
-                                     std::vector<vector_qty> const& vectors,
-                                     scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
-                                     std::shared_ptr<Thermo> thermo, double prescribedDensity,
-                                     double prescribedPressure, geometry_type const* geometry)
+    static void register_ionospheric_convection_(
+        std::vector<scalar_qty> const& scalars, std::vector<vector_qty> const& vectors,
+        scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
+        std::shared_ptr<Thermo> thermo, double prescribedDensity, double prescribedPressure)
     {
-        // density runs after momentum (0) and before energy (TotalEnergyFromPressure: 10)
-        constexpr int density_priority = 5;
-        auto const criterion           = MHDQuantity::Vector::rhoV;
-
         for (auto const qty : scalars)
         {
             if (qty == PhysicalQuantityT::Scalar::Etot1)
-                // energy reconstructed from a prescribed (Dirichlet) pressure p_in: holds the
-                // boundary pressure instead of letting it drain on inflow-into-body faces.
+            {
+                std::unique_ptr<scalar_bc_type> bc_pressure = std::make_unique<Dirichlet<FieldT>>(
+                    prescribedPressure, Dirichlet<FieldT>::ExtrapolationType::Constant);
                 scalarBCs[qty] = std::make_unique<TotalEnergyFromPressure<FieldT>>(
-                    std::make_unique<Dirichlet<FieldT>>(prescribedPressure), thermo);
+                    std::move(bc_pressure), thermo);
+            }
             else if (qty == PhysicalQuantityT::Scalar::rho)
-                scalarBCs[qty] = std::make_unique<AdaptiveDirichletOrNeumann<FieldT>>(
-                    criterion, prescribedDensity, density_priority);
+            {
+                std::unique_ptr<scalar_bc_type> density_bc = std::make_unique<Dirichlet<FieldT>>(
+                    prescribedDensity, Dirichlet<FieldT>::ExtrapolationType::Constant);
+                scalarBCs[qty] = std::move(density_bc);
+            }
             else
                 scalarBCs[qty] = std::make_unique<Neumann<FieldT>>();
         }
@@ -239,9 +238,7 @@ private:
                     vectorBCs[qty] = std::make_unique<None<vecfield_type>>();
                     break;
                 case PhysicalQuantityT::Vector::rhoV:
-                    // Tanaka momentum: field-aligned + r^2 rhoV_n conserved (no-penetration)
-                    vectorBCs[qty]
-                        = std::make_unique<IonosphericConvectionMomentum<vecfield_type>>(geometry);
+                    vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>();
                     break;
                 case PhysicalQuantityT::Vector::E:
                     vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>();

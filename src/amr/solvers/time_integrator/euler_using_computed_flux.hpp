@@ -110,6 +110,15 @@ public:
                     ibm.applyToMoments(layout, ctx);
                 },
                 ibm, state, statenew);
+
+            // applyToMoments writes corrected moments into the body's ghost elements, but only
+            // on the patch that can interpolate the mirror (others `continue`-skip them). A patch
+            // that holds one of those body-ghost cells merely as a *patch* ghost therefore keeps
+            // the pre-BC value filled by fillMomentsGhosts above. Refill the moment ghosts so
+            // every patch copy reflects the post-BC value of its owning patch; without this the
+            // stale copies feed the next substep's fluxes and seed a cross-patch momentum runaway
+            // at the body that eventually drives a non-physical state -> NaN.
+            bc.fillMomentsGhosts(statenew, level, newTime, dt);
         }
     }
 

@@ -83,7 +83,15 @@ public:
                     "ionospheric-convection momentum BC requires a sphere inner boundary");
             auto const& center = sphere->center();
 
+            // Floor on the total-field magnitude below which the field direction b̂ is
+            // meaningless and we fall back to the bounded symmetric condition.
             constexpr double eps = 1e-3;
+            // Floor on |b̂·n| below which the perpendicular-to-b condition is ill-posed (B
+            // near-tangent to the surface, e.g. the magnetic equator of a dipole). Below it we
+            // fall back to the bounded symmetric condition. This also caps the 1/(b̂·n) gain of
+            // the Tanaka formula to ~1/eps_bn: too small (1e-3) and the equatorial band amplifies
+            // the ghost momentum ~1000x, feeding a runaway -> NaN. 0.1 caps it to ~10x.
+            constexpr double eps_bn = 0.1;
 
             for_N<N>([&](auto ic) {
                 constexpr auto i       = ic();
@@ -165,7 +173,7 @@ public:
                     {
                         auto const bhat = B_b * (static_cast<value_type>(1.) / Bnorm);
                         double const bn = dot_product(bhat, n);
-                        if (std::abs(bn) >= eps)
+                        if (std::abs(bn) >= eps_bn)
                         {
                             // null perpendicular-to-b momentum at the boundary point + r^2 rhoV_n
                             // conservation give:

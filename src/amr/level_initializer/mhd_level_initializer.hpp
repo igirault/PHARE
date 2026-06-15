@@ -68,37 +68,9 @@ public:
             }
         }
 
-        /// @todo init block for inner boundary could be wrapped as a model's method
-        if (mhdModel.hasInnerBoundary())
-        {
-            resources_manager_type& rm       = *mhdModel.resourcesManager;
-            inner_boundary_manager_type& ibm = *mhdModel.innerBoundaryManager;
-
-            // classification of mesh elements wrt the inner boundary
-            amr::visitLevel<gridlayout_type>(
-                level, rm, [&](auto& layout, auto&&, auto&&) { ibm.classify(layout); }, ibm);
-
-
-            // Set inactive cells (and faces) to the prescribed safe physical state so the Riemann
-            // solver never receives pathological input (negative/zero rho/P, singular B0) from them.
-            amr::visitLevel<gridlayout_type>(
-                level, rm,
-                [&](auto& layout, auto&&, auto&&) {
-                    ibm.setSafeState(mhdModel.state.B1, layout);
-                    ibm.setSafeState(mhdModel.state.B0, layout);
-                    ibm.setSafeState(mhdModel.state.rho, layout);
-                    ibm.setSafeState(mhdModel.state.rhoV, layout);
-                    ibm.setSafeState(mhdModel.state.Etot1, layout);
-                },
-                ibm, mhdModel.state);
-
-            // apply inner boundary conditions to the initial state
-            core::InnerBCContext<state_type> ctx{mhdModel.state, mhdModel.state, initDataTime, 0.0};
-            amr::visitLevel<gridlayout_type>(
-                level, rm,
-                [&](auto& layout, auto&&, auto&&) { ibm.applyToMoments(layout, ctx); },
-                ibm, mhdModel.state);
-        }
+        // Inner-boundary setup (classify + safe state + moment BCs). Shared with the restart path
+        // (MHDModel::reinitializeAfterRestart) so both fresh and restored runs establish it.
+        mhdModel.setupInnerBoundaryState(level, initDataTime);
     }
 };
 

@@ -1298,6 +1298,7 @@ def checker(func):
             "riemann",
             "mhd_timestepper",
             "inner_boundary",
+            "pressure_floor",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird

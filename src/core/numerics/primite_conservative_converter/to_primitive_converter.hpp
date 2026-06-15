@@ -3,9 +3,12 @@
 
 #include "core/data/grid/gridlayout_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/logger.hpp"
 #include "core/numerics/primite_conservative_converter/mhd_conversion.hpp"
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
+
+#include <cmath>
 
 namespace PHARE::core
 {
@@ -37,19 +40,23 @@ class ToPrimitiveConverter : public LayoutHolder<GridLayout>
 public:
     ToPrimitiveConverter(PHARE::initializer::PHAREDict const& dict)
         : gamma_{dict["heat_capacity_ratio"].template to<double>()}
+        , pressure_floor_{dict.contains("pressure_floor")
+                              ? dict["pressure_floor"].template to<double>()
+                              : 0.0}
     {
     }
 
     template<typename Field, typename VecField>
     void operator()(Field& rho, VecField const& rhoV, VecField const& B1, VecField const& B0,
-                    Field const& Etot1, VecField& V, Field& P) const
+                    Field& Etot1, VecField& V, Field& P) const
     {
-        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, rho, rhoV, B1, B0, Etot1, V,
-                                                            P);
+        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, pressure_floor_, rho, rhoV, B1,
+                                                            B0, Etot1, V, P);
     }
 
 private:
     double const gamma_;
+    double const pressure_floor_;
 };
 
 template<typename GridLayout>
@@ -64,12 +71,13 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B1,
-                    VecField const& B0, Field const& Etot1, VecField& V, Field& P) const
+    void operator()(double const gamma, double const pressure_floor, Field& rho,
+                    VecField const& rhoV, VecField const& B1, VecField const& B0, Field& Etot1,
+                    VecField& V, Field& P) const
     {
         rhoVToVOnGhostBox(rho, rhoV, V);
 
-        eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, Etot1, P);
+        eosEtot1ToPWithFloorOnGhostBox(gamma, pressure_floor, rho, rhoV, B1, B0, Etot1, P);
     }
 
     // used for diagnostics
@@ -80,13 +88,15 @@ public:
                                [&](auto&... args) mutable { rhoVToV_(rho, rhoV, V, {args...}); });
     }
 
+    // Read-only pressure recovery (diagnostics): never mutates Etot1, never floors.
     template<typename Field, typename VecField>
     void eosEtot1ToPOnGhostBox(double const gamma, Field const& rho, VecField const& rhoV,
                                VecField const& B1, VecField const& B0, Field const& Etot1,
                                Field& P) const
     {
         layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
-            eosEtot1ToP_(gamma, rho, rhoV, B1, B0, Etot1, P, {args...});
+            MeshIndex<Field::dimension> const index{args...};
+            P(index) = recoverP_(gamma, rho, rhoV, B1, Etot1, index);
         });
     }
 
@@ -96,6 +106,41 @@ public:
                               Field& P) const
     {
         eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, Etot1, P);
+    }
+
+    // Solve path: recover P with a positivity floor. When the floor triggers we clamp P AND
+    // rewrite the conserved perturbation energy Etot1 consistently, so the conserved state stays
+    // in sync and the next conversion does not re-derive the bad value.
+    template<typename Field, typename VecField>
+    void eosEtot1ToPWithFloorOnGhostBox(double const gamma, double const pressure_floor,
+                                        Field const& rho, VecField const& rhoV, VecField const& B1,
+                                        VecField const& B0, Field& Etot1, Field& P) const
+    {
+        layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
+            MeshIndex<Field::dimension> const index{args...};
+            auto p = recoverP_(gamma, rho, rhoV, B1, Etot1, index);
+
+            // an RK substage can momentarily drive the recovered pressure below a physical floor
+            // (or negative -> NaN sound speed), notably at cut-cell ghosts of the inner boundary.
+            // Catch non-finite p too: `p < floor` is false for NaN, so an already-NaN pressure
+            // would otherwise slip through unfloored.
+            if (pressure_floor > 0.0 && (!std::isfinite(p) || p < pressure_floor))
+            {
+                Point<int, dimension> localIdx;
+                for (std::size_t d = 0; d < dimension; ++d)
+                    localIdx[d] = static_cast<int>(index[d]);
+                auto const amrIdx = layout_.localToAMR(localIdx);
+                auto const pos    = layout_.fieldNodeCoordinates(rho, amrIdx);
+                PHARE_LOG_LINE_SS("pressure floored: " << p << " -> " << pressure_floor
+                                                       << " at local index " << localIdx << " AMR "
+                                                       << amrIdx << " position " << pos);
+                auto const [vx, vy, vz, b1x, b1y, b1z] = cellPrimitives_(rho, rhoV, B1, index);
+                p             = pressure_floor;
+                Etot1(index)  = eosPToEtot1(gamma, rho(index), vx, vy, vz, b1x, b1y, b1z,
+                                            pressure_floor);
+            }
+            P(index) = p;
+        });
     }
 
 private:
@@ -117,29 +162,35 @@ private:
         Vz(index)        = z;
     }
 
+    // cell-centered (vx, vy, vz, b1x, b1y, b1z) at index, shared by the read-only and floored
+    // pressure recoveries.
     template<typename Field, typename VecField>
-    static void eosEtot1ToP_(double const gamma, Field const& rho, VecField const& rhoV,
-                             VecField const& B1, VecField const&, Field const& Etot1, Field& P,
-                             MeshIndex<Field::dimension> index)
+    static auto cellPrimitives_(Field const& rho, VecField const& rhoV, VecField const& B1,
+                                MeshIndex<Field::dimension> index)
     {
         auto const& rhoVx = rhoV(Component::X);
         auto const& rhoVy = rhoV(Component::Y);
         auto const& rhoVz = rhoV(Component::Z);
-
-        auto const& B1x = B1(Component::X);
-        auto const& B1y = B1(Component::Y);
-        auto const& B1z = B1(Component::Z);
-        auto const vx = rhoVx(index) / rho(index);
-        auto const vy = rhoVy(index) / rho(index);
-        auto const vz = rhoVz(index) / rho(index);
+        auto const& B1x   = B1(Component::X);
+        auto const& B1y   = B1(Component::Y);
+        auto const& B1z   = B1(Component::Z);
+        auto const vx  = rhoVx(index) / rho(index);
+        auto const vy  = rhoVy(index) / rho(index);
+        auto const vz  = rhoVz(index) / rho(index);
         auto const b1x = GridLayout::template project<GridLayout::faceXToCellCenter>(B1x, index);
         auto const b1y = GridLayout::template project<GridLayout::faceYToCellCenter>(B1y, index);
         auto const b1z = GridLayout::template project<GridLayout::faceZToCellCenter>(B1z, index);
-        P(index)       = eosEtot1ToP(gamma, rho(index), vx, vy, vz, b1x, b1y, b1z, Etot1(index));
+        return std::array{vx, vy, vz, b1x, b1y, b1z};
     }
 
+    template<typename Field, typename VecField>
+    static auto recoverP_(double const gamma, Field const& rho, VecField const& rhoV,
+                          VecField const& B1, Field const& Etot1, MeshIndex<Field::dimension> index)
+    {
+        auto const [vx, vy, vz, b1x, b1y, b1z] = cellPrimitives_(rho, rhoV, B1, index);
+        return eosEtot1ToP(gamma, rho(index), vx, vy, vz, b1x, b1y, b1z, Etot1(index));
+    }
 
-private:
     GridLayout layout_;
 };
 
