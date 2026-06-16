@@ -245,7 +245,7 @@ bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep)
         auto diagID = diag.type + diag.quantity;
 
         // iteration-based cadence: fires (compute + write) every writeNiterPeriod coarse steps.
-        // Used by dump_niter_period (the only timestamp-free option valid under adaptive dt).
+        // Used by write_niter_period (the only timestamp-free option valid under adaptive dt).
         bool const niterNow
             = diag.writeNiterPeriod > 0 and (iteration_ % diag.writeNiterPeriod == 0);
 

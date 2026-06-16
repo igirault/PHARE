@@ -32,10 +32,10 @@ u_in = mach * speed_sound
 time_step = cfl * dl[0] / (u_in + speed_sound)
 
 dump_period = 0.5 * cylinder_radius / speed_sound
-dump_niter_period = int(np.ceil(dump_period / time_step)) 
+write_niter_period = int(np.ceil(dump_period / time_step)) 
 final_time = domain_size[0] / speed_sound
 
-timestamps = np.arange(0., final_time, dump_niter_period * time_step)
+timestamps = np.arange(0., final_time, write_niter_period * time_step)
 
 def config():
     sim = ph.Simulation(

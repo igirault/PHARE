@@ -41,11 +41,11 @@ u_in = magnetofast_mach * sound_speed
 time_step = cfl * dl[0] / (u_in + magnetofast_speed)
 
 dump_period = 0.1 * cylinder_radius / magnetofast_speed
-dump_niter_period = int(np.ceil(dump_period / time_step)) 
+write_niter_period = int(np.ceil(dump_period / time_step)) 
 final_time = domain_size[0] / magnetofast_speed
 time_step_nbr = int(final_time / time_step)
 
-timestamps = np.arange(0., final_time, dump_niter_period * time_step)
+timestamps = np.arange(0., final_time, write_niter_period * time_step)
 
 def step(x, delta):
     return 0.5 * (1.0 + np.tanh(x / delta))
