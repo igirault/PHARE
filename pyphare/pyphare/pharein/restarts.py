@@ -95,6 +95,7 @@ def validate(sim):
         period = float(restart_options.pop("time_period"))
         if period <= 0:
             raise RuntimeError("Error: restart_options time_period must be > 0")
+        phare_utilities.warn_dump_period_vs_dt(sim, period, "restart_options time_period")
         init = sim.start_time()
         nbr = int(np.floor((sim.final_time - init) / period + 1e-9)) + 1
         restart_options["timestamps"] = init + period * np.arange(nbr)

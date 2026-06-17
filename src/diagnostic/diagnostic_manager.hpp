@@ -120,10 +120,29 @@ public:
     DiagnosticsManager& operator=(DiagnosticsManager&&)      = delete;
 
 private:
-    NO_DISCARD bool needsAction_(double nextTime, double timeStamp, double timeStep)
+    // A scheduled time is "reached" once it lies at or before the end of the current coarse step
+    // [timeStamp, timeStamp+timeStep). Subtract in double then cast to float to truncate trailing
+    // fp imprecision (the residual is small -> good float resolution even at large times).
+    NO_DISCARD bool reached_(double scheduledTime, double timeStamp, double timeStep) const
     {
-        // casting to float to truncate double to avoid trailing imprecision
-        return static_cast<float>(std::abs(nextTime - timeStamp)) < static_cast<float>(timeStep);
+        return static_cast<float>(scheduledTime - timeStamp - timeStep) < 0.0f;
+    }
+
+    // Advance idx past every scheduled time the current step has reached; return true if any.
+    // The while-loop (vs a single ++) keeps the cadence from freezing when one step overshoots
+    // several scheduled times (dt > period, or adaptive dt growing past the period): a single ++
+    // would let nextTime fall more than a step behind currentTime, after which |nextTime-currentTime|
+    // never drops below dt again and all remaining dumps are silently lost.
+    NO_DISCARD bool catchUp_(std::vector<double> const& times, std::size_t& idx, double timeStamp,
+                             double timeStep) const
+    {
+        bool acted = false;
+        while (idx < times.size() and reached_(times[idx], timeStamp, timeStep))
+        {
+            acted = true;
+            ++idx;
+        }
+        return acted;
     }
 
     bool needsElapsedAction_(double const nextTime) const
@@ -140,15 +159,12 @@ private:
         auto& nextWriteElapsed   = nextWriteElapsed_[diag_key];
 
         auto const writeTimestampNow
-            = nextWriteTimestamp < diag.writeTimestamps.size()
-              and needsAction_(diag.writeTimestamps[nextWriteTimestamp], timeStamp, timeStep);
+            = catchUp_(diag.writeTimestamps, nextWriteTimestamp, timeStamp, timeStep);
 
         auto const writeElapsedNow
             = nextWriteElapsed < diag.elapsedTimestamps.size()
               and needsElapsedAction_(diag.elapsedTimestamps[nextWriteElapsed]);
 
-        if (writeTimestampNow)
-            ++nextWriteTimestamp;
         if (writeElapsedNow)
             ++nextWriteElapsed;
 
@@ -158,9 +174,8 @@ private:
 
     NO_DISCARD bool needsCompute_(DiagnosticProperties& diag, double timeStamp, double timeStep)
     {
-        auto nextCompute = nextCompute_[diag.type + diag.quantity];
-        return nextCompute < diag.computeTimestamps.size()
-               and needsAction_(diag.computeTimestamps[nextCompute], timeStamp, timeStep);
+        return catchUp_(diag.computeTimestamps, nextCompute_[diag.type + diag.quantity], timeStamp,
+                        timeStep);
     }
 
 
@@ -242,20 +257,15 @@ bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep)
     std::vector<DiagnosticProperties*> activeDiagnostics;
     for (auto& diag : diagnostics_)
     {
-        auto diagID = diag.type + diag.quantity;
-
         // iteration-based cadence: fires (compute + write) every writeNiterPeriod coarse steps.
         // Used by write_niter_period (the only timestamp-free option valid under adaptive dt).
         bool const niterNow
             = diag.writeNiterPeriod > 0 and (iteration_ % diag.writeNiterPeriod == 0);
 
+        // needsCompute_ advances its own timestamp index (catch-up), so call it unconditionally
         bool const computeNow = needsCompute_(diag, timeStamp, timeStep);
         if (computeNow or niterNow)
-        {
             writer_->getDiagnosticWriterForType(diag.type)->compute(diag);
-            if (computeNow)
-                nextCompute_[diagID]++;
-        }
         // call needsWrite_ unconditionally so its timestamp index still advances
         bool const writeNow = needsWrite_(diag, timeStamp, timeStep);
         if (writeNow or niterNow)

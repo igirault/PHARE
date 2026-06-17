@@ -77,11 +77,29 @@ public:
     RestartsManager& operator=(RestartsManager&&)      = delete;
 
 private:
-    bool needsCadenceAction_(double const nextTime, double const timeStamp,
-                             double const timeStep) const
+    // A scheduled time is "reached" once it lies at or before the end of the current coarse step
+    // [timeStamp, timeStamp+timeStep). Subtract in double then cast to float to truncate trailing
+    // fp imprecision (the residual is small -> good float resolution even at large times).
+    bool reached_(double const scheduledTime, double const timeStamp, double const timeStep) const
     {
-        // casting to float to truncate double to avoid trailing imprecision
-        return static_cast<float>(std::abs(nextTime - timeStamp)) < static_cast<float>(timeStep);
+        return static_cast<float>(scheduledTime - timeStamp - timeStep) < 0.0f;
+    }
+
+    // Advance idx past every scheduled time the current step has reached; return true if any.
+    // The while-loop (vs a single ++) keeps the cadence from freezing when one step overshoots
+    // several scheduled times (dt > period, or adaptive dt growing past the period): a single ++
+    // would let nextTime fall more than a step behind currentTime, after which |nextTime-currentTime|
+    // never drops below dt again and all remaining checkpoints are silently lost.
+    bool catchUp_(std::vector<double> const& times, std::size_t& idx, double const timeStamp,
+                  double const timeStep) const
+    {
+        bool acted = false;
+        while (idx < times.size() and reached_(times[idx], timeStamp, timeStep))
+        {
+            acted = true;
+            ++idx;
+        }
+        return acted;
     }
 
     bool needsElapsedAction_(double const nextTime) const
@@ -92,15 +110,11 @@ private:
 
     bool needsWrite_(RestartsProperties const& rest, double const timeStamp, double const timeStep)
     {
-        auto const simUnit
-            = nextWriteSimUnit_ < rest.writeTimestamps.size()
-              and needsCadenceAction_(rest.writeTimestamps[nextWriteSimUnit_], timeStamp, timeStep);
+        auto const simUnit = catchUp_(rest.writeTimestamps, nextWriteSimUnit_, timeStamp, timeStep);
 
         auto const elapsed = nextWriteElapsed_ < rest.elapsedTimestamps.size()
                              and needsElapsedAction_(rest.elapsedTimestamps[nextWriteElapsed_]);
 
-        if (simUnit)
-            ++nextWriteSimUnit_;
         if (elapsed)
             ++nextWriteElapsed_;
 

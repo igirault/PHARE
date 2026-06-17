@@ -37,6 +37,7 @@ def _resolve_dump_cadence(kwargs):
         period = float(kwargs.pop("write_time_period"))
         if period <= 0:
             raise RuntimeError("Error: write_time_period must be > 0")
+        phare_utilities.warn_dump_period_vs_dt(sim, period, "write_time_period")
         init = sim.start_time()
         nbr = int(np.floor((sim.final_time - init) / period + 1e-9)) + 1
         kwargs["write_timestamps"] = init + period * np.arange(nbr)
