@@ -7,6 +7,7 @@ from ..core import box as boxm
 from ..core import phare_utilities
 from ..core.box import Box
 from . import global_vars
+from .tagging import resolve_tagging
 
 # ------------------------------------------------------------------------------
 
@@ -40,11 +41,28 @@ def de_numpify_simulation(sim):
     return sim
 
 
+def _is_purely_numeric(obj):
+    """True for a number, or a (possibly nested) list/tuple made up only of numbers.
+
+    Used to decide whether a list is safe to hand to np.array(): anything containing a
+    non-numeric element anywhere in its structure (e.g. a string, as in the (name, threshold)
+    tuples of Tagging.quantities) must be left alone, since np.array() would otherwise
+    silently upcast the whole array to a string dtype.
+    """
+    if isinstance(obj, bool):
+        return False
+    if isinstance(obj, (int, float)):
+        return True
+    if isinstance(obj, (list, tuple)):
+        return len(obj) > 0 and all(_is_purely_numeric(item) for item in obj)
+    return False
+
+
 def re_numpify_recursive(owner, key):
     obj = getattr(owner, key)
     if obj is None:
         return
-    if isinstance(obj, list) and len(obj) and not isinstance(obj[0], str):
+    if isinstance(obj, list) and len(obj) and _is_purely_numeric(obj):
         object.__setattr__(owner, key, np.array(obj))
     elif hasattr(obj, "__dict__"):
         for k in obj.__dict__:
@@ -726,6 +744,7 @@ def checker(func):
             "diag_export_format",
             "refinement_boxes",
             "refinement",
+            "tagging",
             "tagging_threshold",
             "clustering",
             "smallest_patch_size",
@@ -804,6 +823,7 @@ def checker(func):
 
         kwargs["tag_buffer"] = kwargs.get("tag_buffer", 1)
 
+        kwargs["tagging"] = resolve_tagging(**kwargs)
         kwargs["refinement"] = check_refinement(**kwargs)
         if kwargs["refinement"] == "boxes":
             (
