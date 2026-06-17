@@ -120,12 +120,16 @@ public:
     DiagnosticsManager& operator=(DiagnosticsManager&&)      = delete;
 
 private:
-    // A scheduled time is "reached" once it lies at or before the end of the current coarse step
-    // [timeStamp, timeStamp+timeStep). Subtract in double then cast to float to truncate trailing
-    // fp imprecision (the residual is small -> good float resolution even at large times).
+    // A scheduled time is "reached" if it lies before the next step boundary: scheduledTime is
+    // within (or behind) the current step [timeStamp, timeStamp+timeStep). Compared as
+    // (scheduledTime - timeStamp) < timeStep with a float cast to truncate trailing fp imprecision
+    // (same robustness as the historical |nextTime-timeStamp| < timeStep): a time exactly one step
+    // ahead (scheduledTime == timeStamp+timeStep) is NOT consumed now -- it belongs to the next
+    // step. There is no abs(): a time already behind timeStamp yields a large negative difference,
+    // so it stays "reached" and the catch-up loop keeps advancing instead of freezing.
     NO_DISCARD bool reached_(double scheduledTime, double timeStamp, double timeStep) const
     {
-        return static_cast<float>(scheduledTime - timeStamp - timeStep) < 0.0f;
+        return static_cast<float>(scheduledTime - timeStamp) < static_cast<float>(timeStep);
     }
 
     // Advance idx past every scheduled time the current step has reached; return true if any.
