@@ -104,15 +104,21 @@ namespace amr
             std::unique_ptr<MHDMessengerInfo> mhdInfo{
                 dynamic_cast<MHDMessengerInfo*>(fromFinerInfo.release())};
 
-            auto b_id = resourcesManager_->getID(mhdInfo->modelB1);
+            auto b_id  = resourcesManager_->getID(mhdInfo->modelB1);
+            auto b0_id = resourcesManager_->getID(mhdInfo->modelB0);
 
-            if (!b_id)
+            if (!b_id || !b0_id)
             {
                 throw std::runtime_error(
                     "MHDMessengerStrategy: missing magnetic field variable IDs");
             }
 
-            magneticRefinePatchStrategy_.registerIDs(*b_id);
+            // Expose B1 (the field being filled) and B0 (background) to the magnetic ghost/regrid
+            // patch strategy so inflow B conditions (FieldB1FromBtot: B1 = B - B0) can read them.
+            // The total field B is never accessed — only the B1/B0 split.
+            magneticRefinePatchStrategy_.registerIDs(*b_id, {},
+                                                     {{core::MHDQuantity::Vector::B1, *b_id},
+                                                      {core::MHDQuantity::Vector::B0, *b0_id}});
 
             BalgoPatchGhost.registerRefine(*b_id, *b_id, *b_id, BfieldRefineOp_,
                                            nonOverwriteInteriorTFfillPattern);
