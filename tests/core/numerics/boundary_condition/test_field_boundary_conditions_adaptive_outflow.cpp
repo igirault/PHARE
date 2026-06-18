@@ -117,8 +117,9 @@ struct AdaptiveOutflowBC1D : testing::Test, AdaptiveOutflowState
 
     UsableVecFieldMHD<1> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<1> Bvec{"B", layout, MHDQuantity::Vector::B1};
+    UsableVecFieldMHD<1> B0vec{"B0", layout, MHDQuantity::Vector::B0}; // zero background
 
-    MHDPatchFieldAccessorTest<1> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDPatchFieldAccessorTest<1> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec, &B0vec};
 
     FieldMHD<1>& rhoField{*(&rhoGrid)};
     FieldMHD<1>& EtotField{*(&EtotGrid)};
@@ -191,8 +192,9 @@ struct AdaptiveOutflowBC2D : testing::Test, AdaptiveOutflowState
 
     UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B1};
+    UsableVecFieldMHD<2> B0vec{"B0", layout, MHDQuantity::Vector::B0}; // zero background
 
-    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec, &B0vec};
 
     FieldMHD<2>& EtotField{*(&EtotGrid)};
 
@@ -272,8 +274,9 @@ struct AdaptiveOutflowBC3D : testing::Test, AdaptiveOutflowState
 
     UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<3> Bvec{"B", layout, MHDQuantity::Vector::B1};
+    UsableVecFieldMHD<3> B0vec{"B0", layout, MHDQuantity::Vector::B0}; // zero background
 
-    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec, &B0vec};
 
     FieldMHD<3>& EtotField{*(&EtotGrid)};
 

@@ -156,9 +156,10 @@ TEST(FieldIonosphericConvectionMomentumInner, fieldAlignedRadialScaling)
     {
         if (!g.mirrorIsInterpolable)
             continue;
-        // skip near-tangent ghosts (handled by the fallback test)
+        // skip near-tangent ghosts: the BC caps the 1/(b̂·n) Tanaka gain by falling back to the
+        // symmetric condition for |b̂·n| < eps_bn (=0.1, see the BC); match that threshold here.
         double bn = bhat[0] * g.normal[0] + bhat[1] * g.normal[1];
-        if (std::abs(bn) < 1e-3)
+        if (std::abs(bn) < 0.1)
             continue;
 
         auto gc        = fix.ghostCoord(g);
