@@ -43,6 +43,9 @@ public:
         , pressure_floor_{dict.contains("pressure_floor")
                               ? dict["pressure_floor"].template to<double>()
                               : 0.0}
+        , density_floor_{dict.contains("density_floor")
+                             ? dict["density_floor"].template to<double>()
+                             : 0.0}
     {
     }
 
@@ -50,13 +53,14 @@ public:
     void operator()(Field& rho, VecField const& rhoV, VecField const& B1, VecField const& B0,
                     Field& Etot1, VecField& V, Field& P) const
     {
-        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, pressure_floor_, rho, rhoV, B1,
-                                                            B0, Etot1, V, P);
+        ToPrimitiveConverter_ref<GridLayout>{*this->layout_}(gamma_, pressure_floor_, density_floor_,
+                                                            rho, rhoV, B1, B0, Etot1, V, P);
     }
 
 private:
     double const gamma_;
     double const pressure_floor_;
+    double const density_floor_;
 };
 
 template<typename GridLayout>
@@ -71,13 +75,37 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void operator()(double const gamma, double const pressure_floor, Field& rho,
-                    VecField const& rhoV, VecField const& B1, VecField const& B0, Field& Etot1,
-                    VecField& V, Field& P) const
+    void operator()(double const gamma, double const pressure_floor, double const density_floor,
+                    Field& rho, VecField const& rhoV, VecField const& B1, VecField const& B0,
+                    Field& Etot1, VecField& V, Field& P) const
     {
+        // Floor the conserved mass density first (keeping momentum, like Athena++'s
+        // ConservedToPrimitive): an under-resolved coarse shock can drive rho < 0, which then
+        // makes V = rhoV/rho and the Riemann fast speed sqrt(gamma P / rho) blow up. Flooring
+        // rho here (before V-recovery) bounds V and keeps the reconstruction input positive.
+        floorDensityOnGhostBox(density_floor, rho);
+
         rhoVToVOnGhostBox(rho, rhoV, V);
 
         eosEtot1ToPWithFloorOnGhostBox(gamma, pressure_floor, rho, rhoV, B1, B0, Etot1, P);
+    }
+
+    // Clamp conserved mass density up to density_floor in place. Momentum (rhoV) and energy
+    // (Etot1) are left unchanged; the subsequent V-recovery and pressure floor then use the
+    // floored rho, so velocity stays bounded and the pressure stays consistent.
+    template<typename Field>
+    void floorDensityOnGhostBox(double const density_floor, Field& rho) const
+    {
+        if (density_floor <= 0.0)
+            return;
+        layout_.evalOnGhostBox(rho, [&](auto&... args) mutable {
+            MeshIndex<Field::dimension> const index{args...};
+            if (rho(index) < density_floor)
+            {
+                PHARE_LOG_LINE_SS("density floored: " << rho(index) << " -> " << density_floor);
+                rho(index) = density_floor;
+            }
+        });
     }
 
     // used for diagnostics

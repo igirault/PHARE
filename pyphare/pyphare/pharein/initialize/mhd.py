@@ -22,6 +22,9 @@ def populateDict(sim):
     # positivity floor on the recovered pressure (0 = disabled); when triggered the conserved
     # Etot1 is rewritten consistently. See ToPrimitiveConverter.
     add_double("simulation/algo/to_primitive/pressure_floor", getattr(sim, "pressure_floor", 0.0))
+    # positivity floor on the conserved mass density (0 = disabled); clamps rho in place before
+    # V-recovery so an under-resolved-shock negative rho can't blow up V or the Riemann sqrt.
+    add_double("simulation/algo/to_primitive/density_floor", getattr(sim, "density_floor", 0.0))
     add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/constrained_transport/resistivity", sim.eta)
     add_double("simulation/algo/constrained_transport/hyper_resistivity", sim.nu)
