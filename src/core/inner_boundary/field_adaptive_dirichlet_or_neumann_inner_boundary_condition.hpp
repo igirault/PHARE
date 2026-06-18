@@ -144,7 +144,9 @@ public:
                     = this->interpolator_(layout, field, ghostElem.mirrorPoint);
 
                 if (fluxNormal > 0.0)
-                    field(ghostElem.index) = values_[i]; // Dirichlet
+                    // Dirichlet: linear reflection so the surface (half-point between ghost and
+                    // mirror) equals the prescribed value values_[i].
+                    field(ghostElem.index) = 2.0 * values_[i] - mirrorValue;
                 else
                     field(ghostElem.index) = mirrorValue; // Neumann (zero-gradient)
             }
