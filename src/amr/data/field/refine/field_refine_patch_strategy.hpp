@@ -10,6 +10,7 @@
 #include "core/data/patch_field_accessor.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/boundary_condition_context.hpp"
 
 #include "SAMRAI/geom/CartesianPatchGeometry.h"
@@ -149,8 +150,7 @@ public:
      * @param old_vector_ids id-map of vector fields exposed as the *previous-substage* state.
      */
     void registerIDs(int const field_id, scalar_id_map_type all_scalar_ids = {},
-                     vector_id_map_type all_vector_ids = {},
-                     scalar_id_map_type old_scalar_ids = {},
+                     vector_id_map_type all_vector_ids = {}, scalar_id_map_type old_scalar_ids = {},
                      vector_id_map_type old_vector_ids = {})
     {
         data_id_        = field_id;
@@ -256,8 +256,41 @@ public:
                     throw std::runtime_error("Field boundary condition not found.");
 
                 // apply the boundary condition as if the current boundary was belonging to the
-                // primary boundary
-                bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout, ctx);
+                // primary boundary.
+                //
+                // SAMRAI invokes this callback not only on the real level patches (which carry the
+                // full MHD state) but also on temporary, single-quantity patches it builds for
+                // cross-level (coarse->fine) interpolation. PHARE's coupled MHD conditions read
+                // sibling fields off the patch (energy BC: rho/P/rhoV/B1; magnetic BCs: B0); those
+                // siblings are not allocated on the interpolation temp patches and the accessor
+                // throws there. The temp-patch ghosts still feed the fine level via interpolation,
+                // so they must not be left at the NaN sentinel: fall back to a sibling-free
+                // zero-gradient (Neumann) fill for that quantity. The real level patches, which
+                // carry the full state, still receive the exact coupled condition.
+                try
+                {
+                    bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
+                              ctx);
+                }
+                catch (std::exception const& e)
+                {
+                    PHARE_LOG_LINE_SS(
+                        "Neumann fallback triggered in setPhysicalBoundaryConditions"
+                        << " | field=" << scalarOrTensorField.name()
+                        << " | quantity=" << static_cast<int>(scalarOrTensorField.physicalQuantity())
+                        << " | codim=" << static_cast<int>(codim)
+                        << " | currentBoundaryLocation="
+                        << static_cast<int>(currentBoundaryLocation)
+                        << " | masterBoundaryLocation="
+                        << static_cast<int>(masterBoundaryLocation) << " | fill_time=" << fill_time
+                        << " | patch_box=" << patch_box << " | localBox=" << localBox
+                        << " | reason=" << e.what());
+                    core::FieldNeumannBoundaryCondition<scalar_or_tensor_field_type,
+                                                        gridlayout_type>
+                        neumannFallback;
+                    neumannFallback.apply(scalarOrTensorField, masterBoundaryLocation, localBox,
+                                          gridLayout, ctx);
+                }
             }
         });
     }
