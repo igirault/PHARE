@@ -1110,6 +1110,59 @@ def check_refinement(**kwargs):
     return kwargs.get("refinement", "boxes")
 
 
+def check_tagging(**kwargs):
+    """Normalize tagging configuration into {"method", "quantities":[(name, thr)]}.
+
+    Returns None when refinement is not "tagging". Configuration is carried by the
+    optional `tagging` kwarg, e.g.
+
+        refinement="tagging",
+        tagging={"method": "default", "quantities": {"B": 0.1, "rho": 0.4}}
+
+    where `quantities` maps a field name to its own threshold (a cell is tagged if
+    ANY quantity's indicator exceeds its threshold). Both keys are optional:
+    `method` defaults to "default"; when `quantities` is omitted (or no `tagging`
+    dict is given at all) the criterion falls back to B at `tagging_threshold`
+    (kept for backward compatibility, default 0.1).
+
+    Quantity names are not restricted here: the C++ tagger resolves them against
+    the model's field tree and throws if a name matches nothing.
+    """
+    valid_methods = ("default", "lohner")
+
+    if kwargs.get("refinement", "boxes") != "tagging":
+        return None
+
+    threshold = kwargs.get("tagging_threshold", 0.1)
+    if threshold is None:
+        threshold = 0.1
+    threshold = float(threshold)
+
+    spec = kwargs.get("tagging", None)
+    if spec is None:
+        spec = {}
+    if not isinstance(spec, dict):
+        raise ValueError("Error: 'tagging' must be a dict {'method':..., 'quantities':...}")
+
+    method = spec.get("method", "default")
+    if method not in valid_methods:
+        raise ValueError(
+            f"Error: invalid tagging method '{method}', expected one of {valid_methods}"
+        )
+
+    quantities = spec.get("quantities", None)
+    if quantities:
+        # accept the {name: threshold} mapping (preferred) or an iterable of
+        # (name, threshold) pairs.
+        items = quantities.items() if isinstance(quantities, dict) else quantities
+        quantities = [(str(name), float(thr)) for name, thr in items]
+    else:
+        # no quantities specified -> criterion applies to B at tagging_threshold
+        quantities = [("B", threshold)]
+
+    return {"method": method, "quantities": quantities}
+
+
 def check_nesting_buffer(ndim, **kwargs):
     nesting_buffer = phare_utilities.np_array_ify(kwargs.get("nesting_buffer", 0), ndim)
 
@@ -1267,8 +1320,8 @@ def checker(func):
             "diag_export_format",
             "refinement_boxes",
             "refinement",
+            "tagging",
             "tagging_threshold",
-            "tag_fields",
             "inner_boundary_no_refinement_halo",
             "physical_boundary_no_refinement_halo",
             "clustering",
@@ -1357,6 +1410,7 @@ def checker(func):
 
         kwargs["tag_buffer"] = kwargs.get("tag_buffer", 1)
 
+        kwargs["tagging"] = check_tagging(**kwargs)
         kwargs["refinement"] = check_refinement(**kwargs)
         if kwargs["refinement"] == "boxes":
             (
@@ -1370,7 +1424,6 @@ def checker(func):
 
             kwargs["refinement_boxes"] = None
             kwargs["tagging_threshold"] = kwargs.get("tagging_threshold", 0.1)
-            kwargs["tag_fields"] = kwargs.get("tag_fields", None)
             kwargs["inner_boundary_no_refinement_halo"] = kwargs.get("inner_boundary_no_refinement_halo", None)
             kwargs["physical_boundary_no_refinement_halo"] = kwargs.get("physical_boundary_no_refinement_halo", None)
 
