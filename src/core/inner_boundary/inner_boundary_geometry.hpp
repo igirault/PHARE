@@ -4,6 +4,8 @@
 #include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/utilities/point/point.hpp"
 
+#include <limits>
+
 namespace PHARE::core
 {
 
@@ -57,6 +59,21 @@ public:
      * @return Outward normal direction at @p point.
      */
     virtual point_type normal(point_type const& point) const = 0;
+
+    /**
+     * @brief Characteristic length of the boundary, used to decide whether a level
+     * resolves it.
+     *
+     * For a closed convex obstacle this is its smallest radius of curvature (e.g. the
+     * sphere radius); for an unbounded boundary (e.g. a plane) it is infinite, since a
+     * plane is resolved at any mesh spacing. The inner-boundary classifier compares this
+     * to the mesh spacing to switch to a degraded (first-order, ideal) flux near the
+     * obstacle on under-resolved levels.
+     */
+    virtual double characteristicLength() const
+    {
+        return std::numeric_limits<double>::infinity();
+    }
 
     /**
      * @brief Orthogonal projection of a point onto the boundary.

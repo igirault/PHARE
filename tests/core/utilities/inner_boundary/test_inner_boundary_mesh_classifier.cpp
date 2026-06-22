@@ -1,6 +1,7 @@
 #include "gtest/gtest.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "core/data/grid/gridlayout.hpp"
@@ -65,12 +66,14 @@ struct InnerBoundaryMeshClassifierBuffers
                             elem_storages[i].data(), elem_storages[i].shape()};
             tags.elemStatus[i].setBuffer(&tmp);
         }
-        tags.ghostElemsData._data = &ghost_array;
+        tags.ghostElemsData._data    = &ghost_array;
+        tags.degradedElemsData._data = &degraded_array;
     }
 
     PHARE::core::NdArrayVector<2, double> phi_storage;
     std::vector<PHARE::core::NdArrayVector<2, double>> elem_storages;
     PHARE::core::GhostElemPack<2>::ghost_elem_array_type ghost_array{};
+    PHARE::core::GhostElemPack<2>::ghost_elem_array_type degraded_array{};
     MeshData tags;
 };
 } // namespace
@@ -133,6 +136,10 @@ TEST(InnerBoundaryMeshClassifier, tagsCutInactiveAndGhostGeometry)
     auto& faceYField = buffers.tags.getStatusFieldFromCentering(kFaceYC);
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Ghost),
               faceYField(physicalLocalIndex(layout, faceYField, 0u, 0u)));
+
+    // A plane has infinite characteristic length, so the level is never under-resolved:
+    // no degraded elements are emitted.
+    EXPECT_TRUE(buffers.tags.getDegradedElemsFromCentering(kCellC).empty());
 
     // Note: in 2D, EdgeCenteredY has centering (primal, dual) identical to FaceCenteredX,
     // so both concepts share faceXField above. No separate edge assertions needed.
@@ -256,4 +263,43 @@ TEST(InnerBoundaryMeshClassifier, ghostCellMirrorsAreInPatch)
     }
     EXPECT_GT(interpolable_in_physical, 0u)
         << "At least one ghost mirror must land in the physical domain";
+}
+
+TEST(InnerBoundaryMeshClassifier, underResolvedSphereProducesDegradedElements)
+{
+    // radius spans a single cell (R/dx = 1), far below the (nbrGhosts + 1) requirement, so the
+    // level under-resolves the sphere and a degraded band must be emitted.
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.05, 0.05}, 1.0};
+    GridLayout layout{{1.0, 1.0}, {12u, 12u}, {-6., -6.}};
+    auto tagger = Mapper::withDefaults(sphere, layout);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    tagger(layout, buffers.tags);
+
+    EXPECT_FALSE(buffers.tags.getDegradedElemsFromCentering(kCellC).empty())
+        << "an under-resolved sphere must emit degraded cell elements";
+}
+
+TEST(InnerBoundaryMeshClassifier, resolvedSphereProducesNoDegradedElements)
+{
+    GridLayout probe{{1.0, 1.0}, {4u, 4u}, {0., 0.}};
+    auto const ng = probe.nbrGhosts();
+
+    double const dx     = 1.0;
+    double const radius = (static_cast<double>(ng) + 2.0) * dx; // comfortably resolves the sphere
+    auto const half     = static_cast<std::uint32_t>(std::ceil(radius / dx)) + ng + 2u;
+    std::uint32_t const ncell = 2u * half;
+    double const origin       = -static_cast<double>(half) * dx;
+
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.05, 0.05}, radius};
+    GridLayout layout{{dx, dx}, {ncell, ncell}, {origin, origin}};
+    auto tagger = Mapper::withDefaults(sphere, layout);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    tagger(layout, buffers.tags);
+
+    EXPECT_TRUE(buffers.tags.getDegradedElemsFromCentering(kCellC).empty())
+        << "a resolved sphere must not emit any degraded elements";
+    // sanity: the boundary surface is inside the grid, so a ghost shell exists.
+    EXPECT_FALSE(buffers.tags.getGhostDataFromCentering(kCellC).empty());
 }

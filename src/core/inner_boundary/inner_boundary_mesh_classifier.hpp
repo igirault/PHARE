@@ -68,6 +68,14 @@ public:
         std::size_t nghosts = 1;
         double cut_eps      = 0.0;
         double inactive_eps = 0.0;
+
+        /// True when the level under-resolves the boundary: the ghost shell is then grown only
+        /// 1 cell deep and a degraded (first-order, ideal) flux is used in a band near the body.
+        bool degraded = false;
+
+        /// Full reconstruction reach of the solver (= the field ghost width). Used to size the
+        /// degraded band even when @ref nghosts has been reduced to 1 for the shallow shell.
+        std::size_t full_reach = 1;
     };
 
     /**
@@ -99,8 +107,19 @@ public:
         auto const dx_min  = *std::min_element(dx.begin(), dx.end());
         auto const nghosts = layout.nbrGhosts();
 
+        // A level under-resolves the boundary when its characteristic length spans fewer than
+        // (nghosts + 1) cells: then the ghost shell cannot be grown to the full stencil reach and
+        // the mirror-point stencil would read into the body. On such levels the shell is grown
+        // only 1 cell deep and a degraded (first-order, ideal) flux is used near the body, so the
+        // stencil reaches only one cell into it. Resolved levels (e.g. finer levels, or a plane,
+        // whose characteristicLength is infinite) are untouched.
+        bool const underResolved
+            = boundary.characteristicLength() < (static_cast<double>(nghosts) + 1.0) * dx_min;
+
         Params p;
-        p.nghosts      = overrides.nghosts.value_or(nghosts);
+        p.full_reach   = nghosts;
+        p.degraded     = underResolved;
+        p.nghosts      = overrides.nghosts.value_or(underResolved ? std::size_t{1} : nghosts);
         p.cut_eps      = overrides.cut_eps.value_or(1e-6 * dx_min);
         p.inactive_eps = overrides.inactive_eps.value_or(p.cut_eps);
         return InnerBoundaryMeshClassifier{boundary, p};
@@ -135,6 +154,7 @@ public:
         classifyGhostCells_(layout, cell_status);
         classifyNonCellElems_(layout, meshData.signedDistanceAtNodes, cell_status, meshData);
         populateGhostLists_(layout, meshData);
+        populateDegradedLists_(layout, meshData);
     }
 
 private:
@@ -536,6 +556,100 @@ private:
                 ghost_list.push_back(
                     {local, mirror, boundary_.normal(pos),
                      FieldAtPoint<dim, 1>::pointIsInterpolable(layout, mirror, centerings)});
+            });
+        }
+    }
+
+    /**
+     * @brief Populate the per-centering degraded-element lists.
+     *
+     * On under-resolved levels, flags every mesh element whose full reconstruction stencil
+     * (reaching @c full_reach cells) could touch the body: the flux and CT correction passes
+     * recompute those elements with a first-order, ideal scheme. The flag set is built by
+     * growing a @c full_reach -cell ball outward from the Cut/Ghost cells over the cell grid,
+     * then marking any element adjacent to a ball cell. On resolved levels the lists stay empty.
+     */
+    void populateDegradedLists_(GridLayoutT const& layout, mesh_data_type& meshData) const
+    {
+        for (auto& vec : meshData.degradedElemsData)
+            vec.clear();
+
+        if (!params_.degraded)
+            return;
+
+        auto const& cell_status = meshData.cellStatusField();
+        auto const cell_shape   = cell_status.shape();
+
+        std::size_t total = 1;
+        for (std::size_t d = 0; d < dim; ++d)
+            total *= cell_shape[d];
+
+        auto flatten = [&](signed_local_index_type const& c) {
+            std::size_t flat = 0;
+            for (std::size_t d = 0; d < dim; ++d)
+                flat = flat * cell_shape[d] + static_cast<std::size_t>(c[d]);
+            return flat;
+        };
+
+        // Seed the ball with all Cut/Ghost cells, then grow full_reach layers outward into any
+        // in-bounds cell (Fluid as well as Inactive — the stencil reach is geometric).
+        std::vector<char> nearBody(total, 0);
+        std::vector<signed_local_index_type> frontier;
+        layout.evalOnGhostBox(cell_status, [&](auto... idx) {
+            auto const cell = local_index_type{static_cast<std::uint32_t>(idx)...};
+            auto const s    = cell_status(cell);
+            if (s == toDouble(ElemStatus::Cut) || s == toDouble(ElemStatus::Ghost))
+            {
+                auto const signed_cell  = asSigned_(cell);
+                nearBody[flatten(signed_cell)] = 1;
+                frontier.push_back(signed_cell);
+            }
+        });
+
+        for (std::size_t layer = 0; layer < params_.full_reach && !frontier.empty(); ++layer)
+        {
+            std::vector<signed_local_index_type> next_frontier;
+            for (auto const& source : frontier)
+            {
+                for (std::size_t d = 0; d < dim; ++d)
+                {
+                    for (int sgn : {-1, 1})
+                    {
+                        auto neigh = source;
+                        neigh[d] += sgn;
+                        if (!inBounds_(neigh, cell_shape) || nearBody[flatten(neigh)])
+                            continue;
+                        nearBody[flatten(neigh)] = 1;
+                        next_frontier.push_back(neigh);
+                    }
+                }
+            }
+            frontier = std::move(next_frontier);
+        }
+
+        // Mark every element (any centering) that touches a near-body cell.
+        for (std::size_t idx = 0; idx < mesh_data_type::num_elem_types; ++idx)
+        {
+            auto const centering     = mesh_data_type::idxToCentering(idx);
+            auto const& status_field = meshData.elemStatus[idx];
+            auto& degraded_list      = meshData.degradedElemsData[idx];
+
+            layout.evalOnGhostBox(status_field, [&](auto... local_idx_args) {
+                auto const local_elem
+                    = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
+
+                bool degraded = false;
+                signed_local_index_type cell{};
+                forEachAdjacentCell_<0>(local_elem, centering, cell,
+                                        [&](auto const& adjacent_cell) {
+                                            if (degraded || !inBounds_(adjacent_cell, cell_shape))
+                                                return;
+                                            if (nearBody[flatten(adjacent_cell)])
+                                                degraded = true;
+                                        });
+
+                if (degraded)
+                    degraded_list.push_back({local_elem, {}, {}, false});
             });
         }
     }

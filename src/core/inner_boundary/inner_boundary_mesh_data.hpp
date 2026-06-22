@@ -141,6 +141,20 @@ struct InnerBoundaryMeshData
      */
     GhostElemPack<dim> ghostElemsData;
 
+    /**
+     * @brief Per-centering lists of elements needing a degraded (first-order, ideal) flux/E
+     * recompute, indexed by @ref centeringToIdx.
+     *
+     * Populated by the classifier only on levels that under-resolve the boundary
+     * (characteristicLength/dx below the ghost-shell requirement): an element is listed when its
+     * full reconstruction stencil would reach a Cut/Ghost cell. Empty on resolved levels.
+     *
+     * Reuses the GhostElemPack backing — only the @c index field of each entry is meaningful here
+     * (mirror/normal are unused). The flux and CT correction passes iterate these lists to
+     * overwrite the high-order result with a first-order, ideal computation.
+     */
+    GhostElemPack<dim> degradedElemsData;
+
 
     // -------------------------------------------------------------------------
     //                              constructor
@@ -151,6 +165,7 @@ struct InnerBoundaryMeshData
                                 PhysicalQuantityT::Scalar::NodeCentered}
         , elemStatus{makeElemStatus_(boundaryName, std::make_index_sequence<num_elem_types>{})}
         , ghostElemsData{boundaryName + "_ghost_elems"}
+        , degradedElemsData{boundaryName + "_degraded_elems"}
     {
     }
 
@@ -221,6 +236,21 @@ struct InnerBoundaryMeshData
     }
 
     /**
+     * @brief Return the degraded-element list for the mesh element type matching @p centering.
+     */
+    std::vector<ghost_elem_data_type>&
+    getDegradedElemsFromCentering(std::array<QtyCentering, dim> const& centering)
+    {
+        return degradedElemsData[centeringToIdx(centering)];
+    }
+
+    std::vector<ghost_elem_data_type> const&
+    getDegradedElemsFromCentering(std::array<QtyCentering, dim> const& centering) const
+    {
+        return degradedElemsData[centeringToIdx(centering)];
+    }
+
+    /**
      * @brief Return a tuple of ghost data list references for a VecField component triplet.
      *
      * @param centerings Three per-dimension centering arrays, one per component.
@@ -255,7 +285,7 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto const&... fields) {
-                return isUsable(signedDistanceAtNodes, fields..., ghostElemsData);
+                return isUsable(signedDistanceAtNodes, fields..., ghostElemsData, degradedElemsData);
             },
             elemStatus);
     }
@@ -264,7 +294,8 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto const&... fields) {
-                return isSettable(signedDistanceAtNodes, fields..., ghostElemsData);
+                return isSettable(signedDistanceAtNodes, fields..., ghostElemsData,
+                                  degradedElemsData);
             },
             elemStatus);
     }
@@ -273,7 +304,8 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto&... fields) {
-                return std::forward_as_tuple(signedDistanceAtNodes, fields..., ghostElemsData);
+                return std::forward_as_tuple(signedDistanceAtNodes, fields..., ghostElemsData,
+                                             degradedElemsData);
             },
             elemStatus);
     }
@@ -282,7 +314,8 @@ struct InnerBoundaryMeshData
     {
         return std::apply(
             [this](auto const&... fields) {
-                return std::forward_as_tuple(signedDistanceAtNodes, fields..., ghostElemsData);
+                return std::forward_as_tuple(signedDistanceAtNodes, fields..., ghostElemsData,
+                                             degradedElemsData);
             },
             elemStatus);
     }

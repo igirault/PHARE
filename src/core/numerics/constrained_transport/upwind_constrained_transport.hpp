@@ -9,6 +9,7 @@
 #include "core/def.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/numerics/ohm/ohm.hpp"
+#include "core/numerics/reconstructions/constant.hpp"
 #include "core/utilities/index/index.hpp"
 #include "initializer/data_provider.hpp"
 
@@ -143,6 +144,49 @@ public:
                 });
             }
         }
+    }
+
+    /**
+     * @brief Inner-boundary degraded electric-field correction (second pass).
+     *
+     * Recompute E at the listed edges with first-order (piecewise-constant) reconstruction and
+     * the ideal Ohm's law only (no resistive ηJ, no hyper-resistive ν∇²J, no Hall term). Because
+     * the E equations assign E(idx), running this last overwrites the resistive/hyper
+     * contributions added by the main pass at those edges. The edge lists are keyed by each E
+     * component's centering and are empty on resolved levels, so this is a no-op there. Must run
+     * after the main constrained-transport pass and after the hydro flux correction (which leaves
+     * consistent first-order upwind coefficients at the degraded faces).
+     */
+    template<typename MeshData>
+    void degrade_E_near_inner_boundary(auto& state, auto const& B0x_Ez, auto const& B0y_Ez,
+                                       MeshData& meshData) const
+    {
+        if (!this->hasLayout())
+            throw std::runtime_error("Error - UpwindConstrainedTransport::"
+                                     "degrade_E_near_inner_boundary - GridLayout not set");
+
+        auto& E        = state.E;
+        auto const& B1 = state.B1;
+        auto const& B0 = state.B0;
+
+        using Constant = ConstantReconstruction<GridLayout>;
+
+        auto degradeComp = [&](auto& Ecomp, auto&& recompute) {
+            auto const centering = layout_->centering(Ecomp.physicalQuantity());
+            auto const& degraded = meshData.getDegradedElemsFromCentering(centering);
+            for (auto const& elem : degraded)
+                recompute(elem.index.template as<std::size_t>());
+        };
+
+        degradeComp(E(Component::X), [&](auto const& idx) {
+            ExEq_<Constant, true>(E(Component::X), B1, B0, idx);
+        });
+        degradeComp(E(Component::Y), [&](auto const& idx) {
+            EyEq_<Constant, true>(E(Component::Y), B1, B0, idx);
+        });
+        degradeComp(E(Component::Z), [&](auto const& idx) {
+            EzEq_<Constant, true>(E(Component::Z), B1, B0, B0x_Ez, B0y_Ez, idx);
+        });
     }
 
     // for energy resistive contributions
@@ -444,34 +488,33 @@ private:
             return GridLayout::template project<GridLayout::B0ToEdgeZ>(B0(component), idx);
     }
 
-    template<auto direction>
+    template<auto direction, typename Rec = Reconstruction_t>
     static auto reconstructTotal_(auto const& B1, auto const& B0, auto const component,
                                   auto const& idx)
     {
-        auto const [B1L, B1R]
-            = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
-        auto const B0e = B0AtEdge_<direction>(B0, component, idx);
+        auto const [B1L, B1R] = Rec::template reconstruct<direction>(B1(component), idx);
+        auto const B0e        = B0AtEdge_<direction>(B0, component, idx);
         return std::make_pair(B1L + B0e, B1R + B0e);
     }
 
     // Returns (B1L, B1R, BtotalL, BtotalR) — caller needs both for Ohm's law (total)
     // and for the Poynting Etot1 flux (perturbation B1 only).
-    template<auto direction>
+    template<auto direction, typename Rec = Reconstruction_t>
     static auto reconstructBoth_(auto const& B1, auto const& B0, auto const component,
                                  auto const& idx)
     {
-        auto const [B1L, B1R]
-            = Reconstruction_t::template reconstruct<direction>(B1(component), idx);
-        auto const B0e = B0AtEdge_<direction>(B0, component, idx);
+        auto const [B1L, B1R] = Rec::template reconstruct<direction>(B1(component), idx);
+        auto const B0e        = B0AtEdge_<direction>(B0, component, idx);
         return std::make_tuple(B1L, B1R, B1L + B0e, B1R + B0e);
     }
 
+    template<typename Rec = Reconstruction_t, bool IdealOnly = false>
     void ExEq_(auto& Ex, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 2)
         {
             auto [B1zL, B1zR, BzL, BzR]
-                = reconstructBoth_<Direction::Y>(B1, B0, Component::Z, idx);
+                = reconstructBoth_<Direction::Y, Rec>(B1, B0, Component::Z, idx);
             auto const By   = totalAt_(B1, B0, Component::Y, idx);
 
             auto FL = BzL * vt_y(Component::Y)(idx) - By * vt_y(Component::Z)(idx);
@@ -482,7 +525,7 @@ private:
             Bt_z_at_Ex(idx) = aL_y(idx) * BzL + aR_y(idx) * BzR;
             B1_z_at_Ex(idx) = aL_y(idx) * B1zL + aR_y(idx) * B1zR;
 
-            if constexpr (Hall)
+            if constexpr (Hall && !IdealOnly)
             {
                 auto invRho  = 1.0 / rhot_y(idx);
                 auto JxB_x_L = jt_y(Component::Y)(idx) * BzL
@@ -510,14 +553,14 @@ private:
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::Y>(idx)));
 
             auto [vyS, vyN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(vt_z(Component::Y), idx);
+                = Rec::template reconstruct<Direction::Y>(vt_z(Component::Y), idx);
             auto [vzB, vzT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(vt_y(Component::Z), idx);
+                = Rec::template reconstruct<Direction::Z>(vt_y(Component::Z), idx);
 
             auto [B1zS, B1zN, BzS, BzN]
-                = reconstructBoth_<Direction::Y>(B1, B0, Component::Z, idx);
+                = reconstructBoth_<Direction::Y, Rec>(B1, B0, Component::Z, idx);
             auto [B1yB, B1yT, ByB, ByT]
-                = reconstructBoth_<Direction::Z>(B1, B0, Component::Y, idx);
+                = reconstructBoth_<Direction::Z, Rec>(B1, B0, Component::Y, idx);
 
             Ex(idx) = (aB * vzB * ByB + aT * vzT * ByT) - (aS * vyS * BzS + aN * vyN * BzN)
                       - (dT * ByT - dB * ByB) + (dN * BzN - dS * BzS);
@@ -527,17 +570,17 @@ private:
             B1_y_at_Ex(idx) = aB * B1yB + aT * B1yT;
             B1_z_at_Ex(idx) = aS * B1zS + aN * B1zN;
 
-            if constexpr (Hall)
+            if constexpr (Hall && !IdealOnly)
             {
                 auto [jyS, jyN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(jt_z(Component::Y), idx);
+                    = Rec::template reconstruct<Direction::Y>(jt_z(Component::Y), idx);
                 auto [jzB, jzT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(jt_y(Component::Z), idx);
+                    = Rec::template reconstruct<Direction::Z>(jt_y(Component::Z), idx);
 
                 auto [rhoS, rhoN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(rhot_z, idx);
+                    = Rec::template reconstruct<Direction::Y>(rhot_z, idx);
                 auto [rhoB, rhoT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(rhot_y, idx);
+                    = Rec::template reconstruct<Direction::Z>(rhot_y, idx);
 
                 Ex(idx) += -(aB * jzB * ByB / rhoB + aT * jzT * ByT / rhoT)
                            + (aS * jyS * BzS / rhoS + aN * jyN * BzN / rhoN);
@@ -545,12 +588,13 @@ private:
         }
     }
 
+    template<typename Rec = Reconstruction_t, bool IdealOnly = false>
     void EyEq_(auto& Ey, auto const& B1, auto const& B0, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension <= 2)
         {
             auto [B1zL, B1zR, BzL, BzR]
-                = reconstructBoth_<Direction::X>(B1, B0, Component::Z, idx);
+                = reconstructBoth_<Direction::X, Rec>(B1, B0, Component::Z, idx);
             auto const Bx   = totalAt_(B1, B0, Component::X, idx);
 
             auto FL = BzL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Z)(idx);
@@ -561,7 +605,7 @@ private:
             Bt_z_at_Ey(idx) = aL_x(idx) * BzL + aR_x(idx) * BzR;
             B1_z_at_Ey(idx) = aL_x(idx) * B1zL + aR_x(idx) * B1zR;
 
-            if constexpr (Hall)
+            if constexpr (Hall && !IdealOnly)
             {
                 auto invRho  = 1.0 / rhot_x(idx);
                 auto JxB_y_L = jt_x(Component::Z)(idx) * Bx - jt_x(Component::X)(idx) * BzL;
@@ -587,13 +631,13 @@ private:
             auto dT = 0.5 * (dR_z(idx) + dR_z(layout_->template previous<Direction::X>(idx)));
 
             auto [vxW, vxE]
-                = Reconstruction_t::template reconstruct<Direction::X>(vt_z(Component::X), idx);
+                = Rec::template reconstruct<Direction::X>(vt_z(Component::X), idx);
             auto [vzB, vzT]
-                = Reconstruction_t::template reconstruct<Direction::Z>(vt_x(Component::Z), idx);
+                = Rec::template reconstruct<Direction::Z>(vt_x(Component::Z), idx);
             auto [B1zW, B1zE, BzW, BzE]
-                = reconstructBoth_<Direction::X>(B1, B0, Component::Z, idx);
+                = reconstructBoth_<Direction::X, Rec>(B1, B0, Component::Z, idx);
             auto [B1xB, B1xT, BxB, BxT]
-                = reconstructBoth_<Direction::Z>(B1, B0, Component::X, idx);
+                = reconstructBoth_<Direction::Z, Rec>(B1, B0, Component::X, idx);
 
             Ey(idx) = (aW * vxW * BzW + aE * vxE * BzE) - (aB * vzB * BxB + aT * vzT * BxT)
                       - (dE * BzE - dW * BzW) + (dT * BxT - dB * BxB);
@@ -603,29 +647,30 @@ private:
             B1_x_at_Ey(idx) = aB * B1xB + aT * B1xT;
             B1_z_at_Ey(idx) = aW * B1zW + aE * B1zE;
 
-            if constexpr (Hall)
+            if constexpr (Hall && !IdealOnly)
             {
                 auto [jxW, jxE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(jt_z(Component::X), idx);
+                    = Rec::template reconstruct<Direction::X>(jt_z(Component::X), idx);
                 auto [jzB, jzT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(jt_x(Component::Z), idx);
+                    = Rec::template reconstruct<Direction::Z>(jt_x(Component::Z), idx);
                 auto [rhoW, rhoE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(rhot_z, idx);
+                    = Rec::template reconstruct<Direction::X>(rhot_z, idx);
                 auto [rhoB, rhoT]
-                    = Reconstruction_t::template reconstruct<Direction::Z>(rhot_x, idx);
+                    = Rec::template reconstruct<Direction::Z>(rhot_x, idx);
                 Ey(idx) += -(aW * jxW * BzW / rhoW + aE * jxE * BzE / rhoE)
                            + (aB * jzB * BxB / rhoB + aT * jzT * BxT / rhoT);
             }
         }
     }
 
+    template<typename Rec = Reconstruction_t, bool IdealOnly = false>
     void EzEq_(auto& Ez, auto const& B1, auto const& B0, [[maybe_unused]] auto const& B0x_Ez,
                [[maybe_unused]] auto const& B0y_Ez, MeshIndex<dimension> idx) const
     {
         if constexpr (dimension == 1)
         {
             auto [B1yL, B1yR, ByL, ByR]
-                = reconstructBoth_<Direction::X>(B1, B0, Component::Y, idx);
+                = reconstructBoth_<Direction::X, Rec>(B1, B0, Component::Y, idx);
             auto const Bx = totalAt_(B1, B0, Component::X, idx);
 
             auto FL = ByL * vt_x(Component::X)(idx) - Bx * vt_x(Component::Y)(idx);
@@ -636,7 +681,7 @@ private:
             Bt_y_at_Ez(idx) = aL_x(idx) * ByL + aR_x(idx) * ByR;
             B1_y_at_Ez(idx) = aL_x(idx) * B1yL + aR_x(idx) * B1yR;
 
-            if constexpr (Hall)
+            if constexpr (Hall && !IdealOnly)
             {
                 auto invRho  = 1.0 / rhot_x(idx);
                 auto JxB_z_L = jt_x(Component::X)(idx) * ByL
@@ -664,18 +709,18 @@ private:
             auto dN = 0.5 * (dR_y(idx) + dR_y(layout_->template previous<Direction::X>(idx)));
 
             auto [vyS, vyN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(vt_x(Component::Y), idx);
+                = Rec::template reconstruct<Direction::Y>(vt_x(Component::Y), idx);
             auto [vxW, vxE]
-                = Reconstruction_t::template reconstruct<Direction::X>(vt_y(Component::X), idx);
+                = Rec::template reconstruct<Direction::X>(vt_y(Component::X), idx);
 
             // Reconstruct only the perturbation B1 (upwinded), then add the EXACT B0 sampled at
             // the Ez edge (single value, same on L/R). The dissipation (dE*ByE - dW*ByW etc.)
             // still cancels B0, and for uniform V the motional EMF reproduces -Vx(B0+B1)
             // exactly regardless of grad B0 -> well-balanced, no spurious bending.
             auto [B1xS, B1xN]
-                = Reconstruction_t::template reconstruct<Direction::Y>(B1(Component::X), idx);
+                = Rec::template reconstruct<Direction::Y>(B1(Component::X), idx);
             auto [B1yW, B1yE]
-                = Reconstruction_t::template reconstruct<Direction::X>(B1(Component::Y), idx);
+                = Rec::template reconstruct<Direction::X>(B1(Component::Y), idx);
             auto const b0x_e = B0x_Ez(idx);
             auto const b0y_e = B0y_Ez(idx);
             auto const BxS = B1xS + b0x_e, BxN = B1xN + b0x_e;
@@ -689,17 +734,17 @@ private:
             B1_x_at_Ez(idx) = aS * B1xS + aN * B1xN;
             B1_y_at_Ez(idx) = aW * B1yW + aE * B1yE;
 
-            if constexpr (Hall)
+            if constexpr (Hall && !IdealOnly)
             {
                 auto [jyS, jyN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(jt_x(Component::Y), idx);
+                    = Rec::template reconstruct<Direction::Y>(jt_x(Component::Y), idx);
                 auto [jxW, jxE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(jt_y(Component::X), idx);
+                    = Rec::template reconstruct<Direction::X>(jt_y(Component::X), idx);
 
                 auto [rhoS, rhoN]
-                    = Reconstruction_t::template reconstruct<Direction::Y>(rhot_x, idx);
+                    = Rec::template reconstruct<Direction::Y>(rhot_x, idx);
                 auto [rhoW, rhoE]
-                    = Reconstruction_t::template reconstruct<Direction::X>(rhot_y, idx);
+                    = Rec::template reconstruct<Direction::X>(rhot_y, idx);
 
                 Ez(idx) += (aW * jxW * ByW / rhoW + aE * jxE * ByE / rhoE)
                            - (aS * jyS * BxS / rhoS + aN * jyN * BxN / rhoN);

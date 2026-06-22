@@ -152,15 +152,38 @@ public:
         for (auto const& patch : level)
         {
             auto layout = PHARE::amr::layoutFromPatch<GridLayout>(*patch);
-            auto _sp = model.resourcesManager->setOnPatch(*patch, finite_volume_method_, ct, state,
-                                                          fluxes);
-            auto _sl = core::SetLayout(&layout, finite_volume_method_, ct);
 
-            setTime(
-                *patch, [&]() -> auto&& { return state.rho; }, [&]() -> auto&& { return state.V; },
-                [&]() -> auto&& { return state.P; }, [&]() -> auto&& { return state.J; });
+            if (model.hasInnerBoundary())
+            {
+                auto& ibm = *model.innerBoundaryManager;
+                auto _sp  = model.resourcesManager->setOnPatch(*patch, finite_volume_method_, ct,
+                                                               state, fluxes, ibm);
+                auto _sl  = core::SetLayout(&layout, finite_volume_method_, ct);
 
-            finite_volume_method_(ct, state, fluxes);
+                setTime(
+                    *patch, [&]() -> auto&& { return state.rho; },
+                    [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; },
+                    [&]() -> auto&& { return state.J; });
+
+                finite_volume_method_(ct, state, fluxes);
+                // Recompute the hydro flux with a first-order, ideal scheme at the faces near an
+                // under-resolved inner boundary; no-op (empty list) on resolved levels.
+                finite_volume_method_.degrade_fluxes_near_inner_boundary(ct, ibm.getMeshData(),
+                                                                         state, fluxes);
+            }
+            else
+            {
+                auto _sp = model.resourcesManager->setOnPatch(*patch, finite_volume_method_, ct,
+                                                              state, fluxes);
+                auto _sl = core::SetLayout(&layout, finite_volume_method_, ct);
+
+                setTime(
+                    *patch, [&]() -> auto&& { return state.rho; },
+                    [&]() -> auto&& { return state.V; }, [&]() -> auto&& { return state.P; },
+                    [&]() -> auto&& { return state.J; });
+
+                finite_volume_method_(ct, state, fluxes);
+            }
         }
     }
 
@@ -258,10 +281,26 @@ public:
             // which is exact at the Ez edge. The processed `state` may be an RK intermediate
             // whose edge-B0 is not propagated; its face B0 is, but only the exact edge values
             // make the motional EMF well-balanced w.r.t. grad B0.
-            auto _sp = model.resourcesManager->setOnPatch(*patch, constrained_transport_, state,
-                                                          model.state.B0x_Ez, model.state.B0y_Ez);
-            auto _sl = core::SetLayout(&layout, constrained_transport_);
-            constrained_transport_(state, model.state.B0x_Ez, model.state.B0y_Ez);
+            if (model.hasInnerBoundary())
+            {
+                auto& ibm = *model.innerBoundaryManager;
+                auto _sp  = model.resourcesManager->setOnPatch(
+                    *patch, constrained_transport_, state, model.state.B0x_Ez, model.state.B0y_Ez,
+                    ibm);
+                auto _sl = core::SetLayout(&layout, constrained_transport_);
+                constrained_transport_(state, model.state.B0x_Ez, model.state.B0y_Ez);
+                // Recompute E with a first-order, ideal Ohm's law at the edges near an
+                // under-resolved inner boundary; no-op (empty list) on resolved levels.
+                constrained_transport_.degrade_E_near_inner_boundary(
+                    state, model.state.B0x_Ez, model.state.B0y_Ez, ibm.getMeshData());
+            }
+            else
+            {
+                auto _sp = model.resourcesManager->setOnPatch(
+                    *patch, constrained_transport_, state, model.state.B0x_Ez, model.state.B0y_Ez);
+                auto _sl = core::SetLayout(&layout, constrained_transport_);
+                constrained_transport_(state, model.state.B0x_Ez, model.state.B0y_Ez);
+            }
         }
     }
 
