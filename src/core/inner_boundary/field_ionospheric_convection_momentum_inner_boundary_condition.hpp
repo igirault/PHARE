@@ -101,11 +101,13 @@ public:
 
                 for (ghost_elem_data_type const& ghostElem : ghostElems)
                 {
-                    if (!ghostElem.mirrorIsInterpolable)
+                    if (!ghostElem.interpValid)
                         continue;
 
                     // ghost-node physical coords and the boundary (surface) point, midway between
-                    // the ghost and its mirror: project = 0.5*(ghost + mirror).
+                    // the ghost and its true mirror: project = 0.5*(ghost + mirror). The surface
+                    // point (and the field direction b̂ read there) stays exact; only the momentum
+                    // sample moves to the farthest interpolable point Q when the mirror is off-patch.
                     auto const amrIdxU = layout.localToAMR(ghostElem.index);
                     Point<int, dimension> amrIdx;
                     for_N<dimension>(
@@ -117,7 +119,7 @@ public:
                         boundaryPoint[k] = 0.5 * (ghostCoord[k] + ghostElem.mirrorPoint[k]);
                     });
 
-                    // momentum is read at the mirror; the field direction b̂ is read at the
+                    // momentum is read at the sample point Q; the field direction b̂ is read at the
                     // boundary point (where the perpendicular-to-b condition is imposed).
                     bool allInterpolable = true;
                     for_N<N>([&](auto jc) {
@@ -125,7 +127,7 @@ public:
                         auto const cV    = GridLayoutT::centering(std::get<j>(rhoVfields));
                         auto const cB1   = GridLayoutT::centering(std::get<j>(B1fields));
                         auto const cB0   = GridLayoutT::centering(std::get<j>(B0fields));
-                        if (!interpolator_type::pointIsInterpolable(layout, ghostElem.mirrorPoint, cV)
+                        if (!interpolator_type::pointIsInterpolable(layout, ghostElem.interpPoint, cV)
                             || !interpolator_type::pointIsInterpolable(layout, boundaryPoint, cB1)
                             || !interpolator_type::pointIsInterpolable(layout, boundaryPoint, cB0))
                             allInterpolable = false;
@@ -133,12 +135,12 @@ public:
                     if (!allInterpolable)
                         continue;
 
-                    Point<value_type, N> rhoV_m; // momentum at the mirror point
+                    Point<value_type, N> rhoV_q; // momentum at the sample point Q
                     Point<value_type, N> B_b;    // total field B1+B0 at the boundary point
                     for_N<N>([&](auto jc) {
                         constexpr auto j = jc();
-                        rhoV_m[j]        = this->interpolator_(layout, std::get<j>(rhoVfields),
-                                                               ghostElem.mirrorPoint);
+                        rhoV_q[j]        = this->interpolator_(layout, std::get<j>(rhoVfields),
+                                                               ghostElem.interpPoint);
                         B_b[j]           = this->interpolator_(layout, std::get<j>(B1fields),
                                                                boundaryPoint)
                                  + this->interpolator_(layout, std::get<j>(B0fields), boundaryPoint);
@@ -151,21 +153,26 @@ public:
                         n[k]             = static_cast<value_type>(ghostElem.normal[k]);
                     });
 
-                    // radial distances to the sphere centre (ghost inside, mirror outside)
-                    double rg2 = 0., rm2 = 0.;
+                    // radial distances to the sphere centre (ghost inside, sample Q outside)
+                    double rg2 = 0., rq2 = 0.;
                     for_N<dimension>([&](auto kc) {
                         constexpr auto k = kc();
                         double const dg  = ghostCoord[k] - center[k];
-                        double const dm  = ghostElem.mirrorPoint[k] - center[k];
+                        double const dq  = ghostElem.interpPoint[k] - center[k];
                         rg2 += dg * dg;
-                        rm2 += dm * dm;
+                        rq2 += dq * dq;
                     });
                     double const r_g = std::sqrt(rg2);
-                    double const r_m = std::sqrt(rm2);
+                    double const r_q = std::sqrt(rq2);
                     if (r_g <= 0.)
                         continue;
 
-                    auto const rhoVn   = dot_product(rhoV_m, n); // mirror normal momentum
+                    // surface weight of the linear-along-normal model: the surface momentum is
+                    // (1-t)*rhoV_ghost + t*rhoV_q, with t -> 1/2 when Q is the true mirror.
+                    double const t   = -ghostElem.phiGhost / (ghostElem.phiInterp - ghostElem.phiGhost);
+                    double const inv = 1.0 / (1.0 - t);
+
+                    auto const rhoVn   = dot_product(rhoV_q, n); // sample normal momentum
                     double const Bnorm = std::sqrt(dot_product(B_b, B_b));
 
                     Point<value_type, N> rhoV_ghost;
@@ -175,25 +182,28 @@ public:
                         double const bn = dot_product(bhat, n);
                         if (std::abs(bn) >= eps_bn)
                         {
-                            // null perpendicular-to-b momentum at the boundary point + r^2 rhoV_n
-                            // conservation give:
-                            //   rhoV_g = (1 + (r_m/r_g)^2) (rhoV_m·n / (b̂·n)) b̂ - rhoV_m
-                            double const ratio = r_m / r_g;
+                            // null perpendicular-to-b surface momentum + r^2 rhoV_n conservation,
+                            // with the surface taken from the linear model at weight t:
+                            //   rhoV_g = ( [t + kappa(1-t)] (rhoV_q·n / b̂·n) b̂ - t rhoV_q ) / (1-t)
+                            // kappa = (r_q/r_g)^2. Reduces to (1+(r_m/r_g)^2)(rhoV_m·n/b̂·n)b̂ - rhoV_m
+                            // when Q is the true mirror (t = 1/2, r_q = r_m).
+                            double const kappa = (r_q / r_g) * (r_q / r_g);
                             value_type const c
-                                = (static_cast<value_type>(1.) + ratio * ratio) * (rhoVn / bn);
-                            rhoV_ghost = bhat * c - rhoV_m;
+                                = static_cast<value_type>((t + kappa * (1.0 - t)) * inv)
+                                  * (rhoVn / static_cast<value_type>(bn));
+                            rhoV_ghost = bhat * c - rhoV_q * static_cast<value_type>(t * inv);
                         }
                         else
                         {
-                            // B ~tangent to the surface: symmetric (zero normal, Neumann
-                            // tangential)
-                            rhoV_ghost = rhoV_m - n * (static_cast<value_type>(2.) * rhoVn);
+                            // B ~tangent to the surface: symmetric (zero surface-normal momentum,
+                            // Neumann tangential) under the same linear model.
+                            rhoV_ghost = rhoV_q - n * (rhoVn * static_cast<value_type>(inv));
                         }
                     }
                     else
                     {
                         // negligible field: fall back to symmetric
-                        rhoV_ghost = rhoV_m - n * (static_cast<value_type>(2.) * rhoVn);
+                        rhoV_ghost = rhoV_q - n * (rhoVn * static_cast<value_type>(inv));
                     }
 
                     currentField(ghostElem.index) = rhoV_ghost[i];

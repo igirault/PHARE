@@ -100,10 +100,10 @@ public:
 
             for (ghost_elem_data_type const& ghostElem : ghostElems)
             {
-                // WARNING: when the mirror is not interpolable, the ghost cell is left
-                // untouched. This may be the cause of issues — TBD. If so, a lower-order
-                // interpolation could be applied instead. See GhostElemData::mirrorIsInterpolable.
-                if (!ghostElem.mirrorIsInterpolable)
+                // The field value is reflected/extrapolated from the farthest interpolable point
+                // (== mirror when reachable); skip only when no fluid-side sample exists. The
+                // criterion at the surface point keeps its own strict interpolability check below.
+                if (!ghostElem.interpValid)
                     continue;
 
                 // boundary (surface) point = projection of the ghost onto the boundary.
@@ -140,15 +140,18 @@ public:
                            * ghostElem.normal[k];
                 });
 
-                double const mirrorValue
-                    = this->interpolator_(layout, field, ghostElem.mirrorPoint);
+                double const sampleValue
+                    = this->interpolator_(layout, field, ghostElem.interpPoint);
 
                 if (fluxNormal > 0.0)
-                    // Dirichlet: linear reflection so the surface (half-point between ghost and
-                    // mirror) equals the prescribed value values_[i].
-                    field(ghostElem.index) = 2.0 * values_[i] - mirrorValue;
+                    // Dirichlet: linear profile through the surface value values_[i], extrapolated
+                    // to the ghost with the signed-distance lever arm. Reduces to the legacy
+                    // 2*values - mirror when the sample is the true mirror (phi ratio -1).
+                    field(ghostElem.index)
+                        = values_[i]
+                          + (ghostElem.phiGhost / ghostElem.phiInterp) * (sampleValue - values_[i]);
                 else
-                    field(ghostElem.index) = mirrorValue; // Neumann (zero-gradient)
+                    field(ghostElem.index) = sampleValue; // Neumann (zero-gradient)
             }
         });
     }

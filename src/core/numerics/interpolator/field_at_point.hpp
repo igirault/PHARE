@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <tuple>
+#include <utility>
 
 #include "core/numerics/interpolator/interpolator.hpp"
 #include "core/utilities/point/point.hpp"
@@ -47,19 +48,57 @@ public:
     static bool pointIsInterpolable(GridLayout const& layout, Point<double, dim> const& point,
                                     std::array<QtyCentering, dim> const& centerings)
     {
-        auto const& dx     = layout.meshSize();
-        auto const& amrBox = layout.AMRBox();
-        auto const nGhosts = static_cast<int>(layout.nbrGhosts());
+        auto const& dx = layout.meshSize();
         for (auto d = 0u; d < dim; ++d)
         {
-            int const margin = (centerings[d] == QtyCentering::dual) ? 1 : 0;
-            int const iCell  = static_cast<int>(std::floor(point[d] / dx[d]));
-            if (iCell < amrBox.lower[d] - nGhosts + margin
-                || iCell > amrBox.upper[d] + nGhosts - margin)
+            auto const [lo, hi] = amrInterpBounds_(layout, centerings, d);
+            int const iCell     = static_cast<int>(std::floor(point[d] / dx[d]));
+            if (iCell < lo || iCell > hi)
                 return false;
         }
         return true;
     }
+
+    /**
+     * @brief Physical-space axis-aligned box of points interpolable for @p centerings.
+     *
+     * Per direction the returned half-open interval `[min, max)` is exactly the set of physical
+     * coordinates for which @ref pointIsInterpolable would return true along that direction
+     * (`floor(x/dx) in [lo, hi]` ⇔ `x in [lo*dx, (hi+1)*dx)`). Derived from the SAME bounds as
+     * @ref pointIsInterpolable, so the two cannot drift. Used to clip a ray to the interpolable
+     * region in closed form (no stepping).
+     */
+    template<typename GridLayout>
+    static std::array<std::pair<double, double>, dim>
+    interpolableBox(GridLayout const& layout, std::array<QtyCentering, dim> const& centerings)
+    {
+        auto const& dx = layout.meshSize();
+        std::array<std::pair<double, double>, dim> box;
+        for (auto d = 0u; d < dim; ++d)
+        {
+            auto const [lo, hi] = amrInterpBounds_(layout, centerings, d);
+            box[d]              = {static_cast<double>(lo) * dx[d],
+                                   static_cast<double>(hi + 1) * dx[d]};
+        }
+        return box;
+    }
+
+private:
+    /// AMR-index inclusive bounds [lo, hi] of the order-1 interp support along direction @p d.
+    /// `floor(point[d]/dx[d])` must lie in [lo, hi] for the stencil to fit (dual centering needs
+    /// one extra cell of slack at each end). Single source shared by the predicate and the box.
+    template<typename GridLayout>
+    static std::pair<int, int> amrInterpBounds_(GridLayout const& layout,
+                                                std::array<QtyCentering, dim> const& centerings,
+                                                std::size_t d)
+    {
+        auto const& amrBox = layout.AMRBox();
+        auto const nGhosts = static_cast<int>(layout.nbrGhosts());
+        int const margin   = (centerings[d] == QtyCentering::dual) ? 1 : 0;
+        return {amrBox.lower[d] - nGhosts + margin, amrBox.upper[d] + nGhosts - margin};
+    }
+
+public:
 
     /**
      * @brief Evaluate @p field at @p physPoint using order-interpOrder interpolation.

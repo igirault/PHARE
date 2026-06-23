@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -537,6 +538,68 @@ private:
         }
     }
 
+    /// Result of resolving the field sample point for a ghost element.
+    struct InterpSample
+    {
+        Point<double, dim> point; ///< farthest interpolable point on the outward-normal ray
+        double phi;               ///< signedDistance(point)
+        bool valid;               ///< a usable fluid-side sample exists
+    };
+
+    /**
+     * @brief Farthest interpolable point on the outward-normal ray from ghost @p G to its mirror.
+     *
+     * The interpolable region is the axis-aligned box from @ref FieldAtPoint::interpolableBox.
+     * Clip the ray `Q(s) = G + s*n`, `s in [0, sMirror=-2*phiG]`, to that box in closed form
+     * (slab method), then keep the largest feasible `s` that also lands on the fluid side
+     * (`phi(Q) >= phiFloor`) — the longest reachable lever arm. Returns `valid=false` when no such
+     * point exists (the whole interpolable region is on the body side / off-patch).
+     */
+    InterpSample farthestInterpolablePoint_(GridLayoutT const& layout, Point<double, dim> const& G,
+                                            Point<double, dim> const& n, double phiG,
+                                            std::array<QtyCentering, dim> const& centerings) const
+    {
+        auto const box = FieldAtPoint<dim, 1>::interpolableBox(layout, centerings);
+        auto const& dx = layout.meshSize();
+
+        double dxMin = dx[0];
+        for (std::size_t d = 1; d < dim; ++d)
+            dxMin = std::min(dxMin, dx[d]);
+        double const phiFloor = 0.5 * dxMin;
+
+        double const sMirror = -2.0 * phiG; // phiG < 0 (ghost inside body) => sMirror > 0
+        double sLo           = 0.0;
+        double sHi           = sMirror; // never sample farther out than the true mirror
+        for (std::size_t d = 0; d < dim; ++d)
+        {
+            double const lo = box[d].first;
+            double const hi = box[d].second - 1e-9 * dx[d]; // half-open upper edge
+            if (std::abs(n[d]) < 1e-300)
+            {
+                if (G[d] < lo || G[d] >= hi)
+                    return {G, phiG, false}; // ray parallel to a face it never enters
+                continue;
+            }
+            double a = (lo - G[d]) / n[d];
+            double b = (hi - G[d]) / n[d];
+            if (a > b)
+                std::swap(a, b);
+            sLo = std::max(sLo, a);
+            sHi = std::min(sHi, b);
+        }
+
+        double const sFluidMin = phiFloor - phiG; // phi(Q) >= phiFloor  <=>  s >= phiFloor - phiG
+        double const feasLo    = std::max(sLo, sFluidMin);
+        if (feasLo > sHi)
+            return {G, phiG, false};
+
+        double const sStar = sHi; // farthest reachable interpolable, fluid-side point
+        Point<double, dim> Q;
+        for (std::size_t d = 0; d < dim; ++d)
+            Q[d] = G[d] + sStar * n[d];
+        return {Q, phiG + sStar, true};
+    }
+
     /**
      * @brief Scan all status fields and populate precomputed ghost lists in @p meshData.
      *
@@ -544,7 +607,8 @@ private:
      * precomputed data are:
      *  - its local array index,
      *  - the physical position of its symmetric (mirror) point in the fluid,
-     *  - the outward boundary normal at the element centre.
+     *  - the outward boundary normal at the element centre,
+     *  - the farthest interpolable sample point and its signed-distance lever arm.
      */
     void populateGhostLists_(GridLayoutT const& layout, mesh_data_type& meshData) const
     {
@@ -564,10 +628,16 @@ private:
 
                 auto const amr    = fieldAMRIndex_(layout, status_field, local);
                 auto const pos    = layout.fieldNodeCoordinates(status_field, amr);
+                auto const normal = boundary_.normal(pos);
+                auto const phiG   = boundary_.signedDistance(pos);
                 auto const mirror = boundary_.symmetric(pos);
-                ghost_list.push_back(
-                    {local, mirror, boundary_.normal(pos),
-                     FieldAtPoint<dim, 1>::pointIsInterpolable(layout, mirror, centerings)});
+                auto const mirrorInterpolable
+                    = FieldAtPoint<dim, 1>::pointIsInterpolable(layout, mirror, centerings);
+
+                auto const sample = farthestInterpolablePoint_(layout, pos, normal, phiG, centerings);
+
+                ghost_list.push_back({local, mirror, normal, mirrorInterpolable, sample.point, phiG,
+                                      sample.phi, sample.valid});
             });
         }
     }
@@ -668,7 +738,9 @@ private:
                                         });
 
                 if (degraded)
-                    degraded_list.push_back({local_elem, {}, {}, false});
+                    // degraded elements only carry their index; the interp/mirror fields are unused
+                    // by the flux/E degrade passes (they reconstruct from the cell state directly).
+                    degraded_list.push_back({local_elem, {}, {}, false, {}, 0., 0., false});
             });
         }
     }

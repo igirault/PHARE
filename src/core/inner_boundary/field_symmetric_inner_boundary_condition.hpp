@@ -57,15 +57,15 @@ public:
 
                 for (ghost_elem_data_type const& ghostElem : ghostElems)
                 {
-                    // WARNING: when the mirror is not interpolable, the ghost cell is left
-                    // untouched. This may be the cause of issues — TBD. If so, a lower-order
-                    // interpolation could be applied. See GhostElemData::mirrorIsInterpolable.
-                    if (!ghostElem.mirrorIsInterpolable)
+                    // Symmetric reflection is distance-independent along the normal, so sample at
+                    // the farthest interpolable point (== mirror when reachable) instead of
+                    // skipping. Skip only when no fluid-side sample exists.
+                    if (!ghostElem.interpValid)
                         continue;
 
-                    // ghostElem.mirrorIsInterpolable was vetted only for component i's centering.
-                    // Symmetric BC interpolates ALL sibling components at the same mirror, so every
-                    // component j must also be interpolable for its own centering.
+                    // interpValid was vetted only for component i's centering. Symmetric BC
+                    // interpolates ALL sibling components at the same point, so every component j
+                    // must also be interpolable there for its own centering.
                     bool allInterpolable = true;
                     for_N<N>([&](auto jc) {
                         constexpr auto j = jc();
@@ -73,19 +73,19 @@ public:
                         {
                             auto const centering_j = GridLayoutT::centering(std::get<j>(fields));
                             if (!interpolator_type::pointIsInterpolable(
-                                    layout, ghostElem.mirrorPoint, centering_j))
+                                    layout, ghostElem.interpPoint, centering_j))
                                 allInterpolable = false;
                         }
                     });
                     if (!allInterpolable)
                         continue;
 
-                    // get interpolated value of all components at the mirror point
+                    // get interpolated value of all components at the sample point
                     Point<value_type, N> interpolatedComponents;
                     for_N<N>([&](auto jc) {
                         constexpr auto j          = jc();
                         interpolatedComponents[j] = this->interpolator_(layout, std::get<j>(fields),
-                                                                        ghostElem.mirrorPoint);
+                                                                        ghostElem.interpPoint);
                     });
 
                     // Extend the dim-dimensional boundary normal to N dimensions,

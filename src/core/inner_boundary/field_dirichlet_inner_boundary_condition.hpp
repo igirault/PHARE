@@ -65,9 +65,7 @@ public:
                 return scalarOrTensorField.components();
         }();
 
-        auto extrapolate = (extrapolation_type_ == ExtrapolationType::Linear)
-                               ? [](value_type v, value_type m) { return 2.0 * v - m; }
-                               : [](value_type v, value_type /*m*/) { return v; };
+        bool const linear = (extrapolation_type_ == ExtrapolationType::Linear);
 
         for_N<N>([&](auto i) {
             auto& field            = std::get<i>(fields);
@@ -76,14 +74,24 @@ public:
 
             for (ghost_elem_data_type const& ghostElem : ghostElems)
             {
-                // WARNING: when the mirror is not interpolable, the ghost cell is left
-                // untouched. This may be the cause of issues — TBD. If so, a lower-order
-                // interpolation could be applied instead. See
-                // GhostElemData::mirrorIsInterpolable.
-                if (!ghostElem.mirrorIsInterpolable)
+                // Sample at the farthest interpolable point Q on the normal (== mirror when
+                // reachable); extrapolate to the ghost with the signed-distance lever arm. For a
+                // linear profile f(phi)=V+c*phi through the surface value V:
+                //   ghost = V + (phiGhost/phiInterp) * (f(Q) - V),
+                // which is exactly the legacy 2*V - f(mirror) when Q is the mirror (phi ratio -1).
+                // Skip only when no fluid-side sample exists.
+                if (!ghostElem.interpValid)
                     continue;
-                double mirrorValue     = this->interpolator_(layout, field, ghostElem.mirrorPoint);
-                field(ghostElem.index) = extrapolate(values_[i], mirrorValue);
+                double const sampleValue
+                    = this->interpolator_(layout, field, ghostElem.interpPoint);
+                if (linear)
+                {
+                    double const ratio = ghostElem.phiGhost / ghostElem.phiInterp;
+                    field(ghostElem.index)
+                        = values_[i] + ratio * (sampleValue - values_[i]);
+                }
+                else
+                    field(ghostElem.index) = values_[i]; // constant extrapolation
             }
         });
     }

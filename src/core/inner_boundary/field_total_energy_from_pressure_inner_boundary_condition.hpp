@@ -142,16 +142,16 @@ public:
             pressureBC_->apply(P, layout, boundaryMeshData, ctx);
 
             // -- Step 3: reconstruct ghost Etot1 from the freshly filled ghost P + ghost
-            //    rho/rhoV/B1. rho/rhoV are co-located with Etot1, so mirrorIsInterpolable covers
-            //    them; B1 is read as maintained by constrained transport.
+            //    rho/rhoV/B1. rho/rhoV are co-located with Etot1, so interpValid covers them; B1 is
+            //    read as maintained by constrained transport.
             auto const centering   = GridLayoutT::centering(Etot1Field);
             auto const& ghostElems = boundaryMeshData.getGhostDataFromCentering(centering);
 
             for (ghost_elem_data_type const& ghostElem : ghostElems)
             {
-                // Mirror not interpolable: step 2 left this P ghost untouched, so skip (matches the
+                // No fluid-side sample: step 2 left this P ghost untouched, so skip (matches the
                 // "leave untouched" convention of every inner BC).
-                if (!ghostElem.mirrorIsInterpolable)
+                if (!ghostElem.interpValid)
                     continue;
 
                 auto const idx = toMeshIndex_(ghostElem.index);

@@ -49,12 +49,12 @@ public:
 
             for (ghost_elem_data_type const& ghostElem : ghostElems)
             {
-                // WARNING: when the mirror is not interpolable, the ghost cell is left
-                // untouched. This may be the cause of issues — TBD. If so, a lower-order
-                // interpolation could be applied instead. See GhostElemData::mirrorIsInterpolable.
-                if (!ghostElem.mirrorIsInterpolable)
+                // Neumann (zero normal gradient) is distance-independent: sample at the farthest
+                // interpolable point on the normal (== the mirror when reachable) and copy it.
+                // Only skip when no fluid-side sample exists at all.
+                if (!ghostElem.interpValid)
                     continue;
-                field(ghostElem.index) = this->interpolator_(layout, field, ghostElem.mirrorPoint);
+                field(ghostElem.index) = this->interpolator_(layout, field, ghostElem.interpPoint);
             }
         });
     }
