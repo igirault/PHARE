@@ -114,10 +114,9 @@ public:
             // owning patch; without this the stale E feeds the cut-cell Faraday stencil (and the
             // Poynting correction) and leaks an inconsistent B1 across patch boundaries at the
             // body.
-            bc.fillElectricGhosts(state.E, level, newTime);
+            // bc.fillElectricGhosts(state.E, level, newTime);
         }
         fvm_.apply_poynting_correction(level, model, ct_.constrained_transport_, state, fluxes);
-
     }
 
     void registerResources(MHDModel& model)

@@ -103,9 +103,21 @@ public:
                                                     GridLayoutT const& layout,
                                                     Overrides const& overrides = {})
     {
-        auto const& dx     = layout.meshSize();
-        auto const dx_min  = *std::min_element(dx.begin(), dx.end());
-        auto const nghosts = layout.nbrGhosts();
+        auto const& dx    = layout.meshSize();
+        auto const dx_min = *std::min_element(dx.begin(), dx.end());
+        // Inner-boundary ghost shell / degraded-band reach is sized from the reconstruction
+        // stencil (reconstruction_nghosts + 1) when the layout exposes it (MHD), NOT the field
+        // ghost width (layout.nbrGhosts()). The field ghost width is inflated (even-rounded, with
+        // extra layers for the J Laplacian and refinement formulas) and would over-grow the shell,
+        // spuriously flipping well-resolved refined levels into the under-resolved/degraded path.
+        // The reconstruction reach is what actually bounds how far the mirror-point stencil reads.
+        // Layouts without a reconstruction stencil (e.g. Hybrid) fall back to the field ghosts.
+        auto const nghosts = [&]() -> std::uint32_t {
+            if constexpr (requires { GridLayoutT::implT::reconstruction_nghosts; })
+                return GridLayoutT::implT::reconstruction_nghosts + 1;
+            else
+                return layout.nbrGhosts();
+        }();
 
         // A level under-resolves the boundary when its characteristic length spans fewer than
         // (nghosts + 1) cells: then the ghost shell cannot be grown to the full stencil reach and
@@ -628,13 +640,20 @@ private:
         }
 
         // Mark every element (any centering) that touches a near-body cell.
+        // Iterate the *physical* box only (not the ghost box): the flux/E degrade passes
+        // reconstruct at each listed element with a first-order stencil reading the
+        // cell-centered state at idx and previous(idx). That stencil is in-bounds exactly on
+        // the physical box (the same domain the normal flux/E passes use via evalOnBox); a
+        // ghost-region face/edge would read the cell-centered field out of its allocated
+        // array (face fields have one more point than cell fields along a primal axis),
+        // causing a segfault. Ghost-region elements are never consumed by the solver anyway.
         for (std::size_t idx = 0; idx < mesh_data_type::num_elem_types; ++idx)
         {
             auto const centering     = mesh_data_type::idxToCentering(idx);
             auto const& status_field = meshData.elemStatus[idx];
             auto& degraded_list      = meshData.degradedElemsData[idx];
 
-            layout.evalOnGhostBox(status_field, [&](auto... local_idx_args) {
+            layout.evalOnBox(status_field, [&](auto... local_idx_args) {
                 auto const local_elem
                     = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
 

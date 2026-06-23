@@ -106,7 +106,8 @@ public:
             amr::visitLevel<gridlayout_type>(
                 level, rm,
                 [&](auto& layout, auto&&, auto&&) {
-                    // Apply inner boundary conditions on the moments (priority-ordered: Etot1 last).
+                    // Apply inner boundary conditions on the moments (priority-ordered: Etot1
+                    // last).
                     ibm.applyToMoments(layout, ctx);
                 },
                 ibm, state, statenew);
@@ -118,7 +119,7 @@ public:
             // every patch copy reflects the post-BC value of its owning patch; without this the
             // stale copies feed the next substep's fluxes and seed a cross-patch momentum runaway
             // at the body that eventually drives a non-physical state -> NaN.
-            bc.fillMomentsGhosts(statenew, level, newTime, dt);
+            // bc.fillMomentsGhosts(statenew, level, newTime, dt);
         }
     }
 
