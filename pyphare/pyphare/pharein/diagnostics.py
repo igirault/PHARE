@@ -279,6 +279,7 @@ class MHDDiagnostics(Diagnostics):
         "P",
         "rhoV",
         "Etot",
+        "divB",
         "IBSignedDistance",
         "IBCellStatus",
         "IBStatusE_x",

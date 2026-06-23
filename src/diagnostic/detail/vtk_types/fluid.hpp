@@ -161,6 +161,8 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
         return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "V"))
         return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
+    if (isActiveDiag(diagnostic, tree, "divB"))
+        return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "IBCellStatus"))
         return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
@@ -275,6 +277,8 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
         file_writer.writeField(P, layout);
     else if (isActiveDiag(diagnostic, tree, "V"))
         file_writer.template writeTensorField<1>(V, layout);
+    else if (isActiveDiag(diagnostic, tree, "divB"))
+        file_writer.writeField(modelView.getDivB(), layout);
     else if (isActiveDiag(diagnostic, tree, "IBCellStatus"))
         file_writer.writeField(innerBoundaryMeshData.cellStatusField(), layout);
     else if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
@@ -353,6 +357,7 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
     auto& rho      = modelView.getRho();
     auto& V        = modelView.getV();
     auto& P        = modelView.getP();
+    auto& divB     = modelView.getDivB();
     auto& rhoV     = modelView.getRhoV();
     auto& Etot     = modelView.getEtot();
     auto const& B1 = modelView.getB1();
@@ -395,6 +400,37 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
                     Etot(args...) = core::etot1ToEtot(E1(args...), B1x(args...), B1y(args...),
                                                      B1z(args...), B0x(args...), B0y(args...),
                                                      B0z(args...));
+                });
+            },
+            minLvl, maxLvl);
+    }
+    else if (isActiveDiag(diagnostic, tree, "divB"))
+    {
+        // Cell-centered divergence of the total field B = B0 + B1. deriv is linear, so we sum the
+        // B0 and B1 contributions per direction; each deriv<dir> on a face-centered component lands
+        // on the cell centre where divB lives.
+        modelView.visitHierarchy(
+            [&](GridLayout& layout, std::string, std::size_t) {
+                auto const& B1x = B1.getComponent(core::Component::X);
+                auto const& B0x = B0.getComponent(core::Component::X);
+                layout.evalOnBox(divB, [&](auto&... args) mutable {
+                    auto d        = layout.template deriv<core::Direction::X>(B1x, {args...})
+                             + layout.template deriv<core::Direction::X>(B0x, {args...});
+                    if constexpr (GridLayout::dimension >= 2)
+                    {
+                        auto const& B1y = B1.getComponent(core::Component::Y);
+                        auto const& B0y = B0.getComponent(core::Component::Y);
+                        d += layout.template deriv<core::Direction::Y>(B1y, {args...})
+                             + layout.template deriv<core::Direction::Y>(B0y, {args...});
+                    }
+                    if constexpr (GridLayout::dimension == 3)
+                    {
+                        auto const& B1z = B1.getComponent(core::Component::Z);
+                        auto const& B0z = B0.getComponent(core::Component::Z);
+                        d += layout.template deriv<core::Direction::Z>(B1z, {args...})
+                             + layout.template deriv<core::Direction::Z>(B0z, {args...});
+                    }
+                    divB(args...) = d;
                 });
             },
             minLvl, maxLvl);

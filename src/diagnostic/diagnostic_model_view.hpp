@@ -317,14 +317,14 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, this->model_.BTotal_, this->model_.EtotTotal_,
-                                     tmpField_, tmpVec_);
+        return std::forward_as_tuple(V_diag_, P_diag_, divB_diag_, this->model_.BTotal_,
+                                     this->model_.EtotTotal_, tmpField_, tmpVec_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, this->model_.BTotal_, this->model_.EtotTotal_,
-                                     tmpField_, tmpVec_);
+        return std::forward_as_tuple(V_diag_, P_diag_, divB_diag_, this->model_.BTotal_,
+                                     this->model_.EtotTotal_, tmpField_, tmpVec_);
     }
 
     auto& tmpField() { return tmpField_; }

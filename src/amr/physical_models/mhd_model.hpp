@@ -63,6 +63,7 @@ public:
     field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
     vecfield_type BTotal_{"diagnostics_B_", core::MHDQuantity::Vector::B};
     field_type EtotTotal_{"diagnostics_Etot_", core::MHDQuantity::Scalar::Etot};
+    field_type divB_diag_{"diagnostics_divB_", core::MHDQuantity::Scalar::divB};
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
@@ -82,6 +83,7 @@ public:
         resourcesManager->allocate(P_diag_, patch, allocateTime);
         resourcesManager->allocate(BTotal_, patch, allocateTime);
         resourcesManager->allocate(EtotTotal_, patch, allocateTime);
+        resourcesManager->allocate(divB_diag_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
         if (innerBoundaryManager)
@@ -107,6 +109,7 @@ public:
         resourcesManager->registerResources(P_diag_);
         resourcesManager->registerResources(BTotal_);
         resourcesManager->registerResources(EtotTotal_);
+        resourcesManager->registerResources(divB_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
 
