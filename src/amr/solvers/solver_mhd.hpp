@@ -9,7 +9,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/errors.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
@@ -20,6 +19,10 @@
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "amr/messengers/messenger.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
+#include "amr/utilities/box/amr_box.hpp"
+#include <SAMRAI/hier/BoxContainer.h>
+#include "amr/solvers/reflux_geometry.hpp"
 #include "amr/messengers/mhd_messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -45,7 +48,6 @@ private:
 
     using FieldT      = MHDModel::field_type;
     using VecFieldT   = MHDModel::vecfield_type;
-    using MHDStateT   = MHDModel::state_type;
     using GridLayout  = MHDModel::gridlayout_type;
     using MHDQuantity = core::MHDQuantity;
 
@@ -57,11 +59,8 @@ private:
     TimeIntegratorStrategy evolve_;
 
     // Refluxing
-    MHDStateT stateOld_{this->name() + "_stateOld"};
-
     core::AllFluxes<FieldT, VecFieldT> fluxSum_;
     VecFieldT fluxSumE_{this->name() + "_fluxSumE", MHDQuantity::Vector::E};
-    EulerUsingComputedFlux<MHDModel> reflux_euler_;
 
     std::unordered_map<std::size_t, double> oldTime_;
 
@@ -124,12 +123,14 @@ public:
                      double const currentTime) override;
 
     void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const coef) override;
+                           double const coef,
+                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
     void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-                double const time) override;
+                double const time, SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+                SAMRAI::hier::PatchLevel const& fineLevel) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& view,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -147,12 +148,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_, stateOld_);
+        return std::forward_as_tuple(fluxes_, fluxSum_, fluxSumE_);
     }
 
 private:
@@ -224,8 +225,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
     }
     mhdmodel.resourcesManager->registerResources(fluxSumE_);
 
-    mhdmodel.resourcesManager->registerResources(stateOld_);
-
     evolve_.registerResources(mhdmodel);
 }
 
@@ -280,8 +279,6 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     }
     mhdmodel.resourcesManager->allocate(fluxSumE_, patch, allocateTime);
 
-    mhdmodel.resourcesManager->allocate(stateOld_, patch, allocateTime);
-
     evolve_.allocate(mhdmodel, patch, allocateTime);
 }
 
@@ -319,35 +316,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::prepareStep(
-    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const currentTime)
+    IPhysicalModel_t&, SAMRAI::hier::PatchLevel& level, double const currentTime)
 {
     oldTime_[level.getLevelNumber()] = currentTime;
-
-    auto& mhdModel = dynamic_cast<MHDModel&>(model);
-
-    auto& rho  = mhdModel.state.rho;
-    auto& rhoV = mhdModel.state.rhoV;
-    auto& B1   = mhdModel.state.B1;
-    auto& B0   = mhdModel.state.B0;
-    auto& Etot1 = mhdModel.state.Etot1;
-
-    for (auto& patch : level)
-    {
-        auto dataOnPatch
-            = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B1, B0, Etot1, stateOld_);
-
-        mhdModel.resourcesManager->setTime(stateOld_.rho, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.rhoV, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.B1, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.B0, *patch, currentTime);
-        mhdModel.resourcesManager->setTime(stateOld_.Etot1, *patch, currentTime);
-
-        stateOld_.rho.copyData(rho);
-        stateOld_.rhoV.copyData(rhoV);
-        stateOld_.B1.copyData(B1);
-        stateOld_.B0.copyData(B0);
-        stateOld_.Etot1.copyData(Etot1);
-    }
 }
 
 
@@ -355,7 +326,8 @@ template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
                ModelViews_t>::accumulateFluxSum(IPhysicalModel_t& model,
-                                                SAMRAI::hier::PatchLevel& level, double const coef)
+                                                SAMRAI::hier::PatchLevel& level, double const coef,
+                                                SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::accumulateFluxSum");
 
@@ -363,36 +335,94 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
     for (auto& patch : level)
     {
-        // MacOS clang still unhappy with structured bindings captures in lambdas
         auto&& tf          = evolve_.exposeFluxes();
         auto& timeFluxes   = std::get<0>(tf);
         auto& timeElectric = std::get<1>(tf);
 
-        auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
+        auto const& layout       = amr::layoutFromPatch<GridLayout>(*patch);
+        auto const& patchCellBox = patch->getBox();
         auto _ = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_, timeFluxes,
                                                        timeElectric);
 
-        evalFluxesOnGhostBox(
-            layout,
-            [&](auto& left, auto const& right, auto const&... args) mutable {
-                left(args...) += right(args...) * coef;
-            },
-            fluxSum_, timeFluxes);
+        auto const addScalar = [&](auto& left, auto const& right,
+                                   core::Point<int, dimension> const& amrIdx) {
+            auto const idx = layout.AMRToLocal(amrIdx);
+            left(idx) += right(idx) * coef;
+        };
+        auto const addVector = [&](auto& left, auto const& right,
+                                   core::Point<int, dimension> const& amrIdx) {
+            auto const idx = layout.AMRToLocal(amrIdx);
+            left(core::Component::X)(idx) += right(core::Component::X)(idx) * coef;
+            left(core::Component::Y)(idx) += right(core::Component::Y)(idx) * coef;
+            left(core::Component::Z)(idx) += right(core::Component::Z)(idx) * coef;
+        };
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::X), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::X)(args...)
-                += timeElectric(core::Component::X)(args...) * coef;
-        });
+        auto const inPatchTransverse = [&](auto const& amrIdx, int normalDir) {
+            for (int d = 0; d < static_cast<int>(dimension); ++d)
+            {
+                if (d == normalDir) continue;
+                if (amrIdx[d] < patchCellBox.lower(d) || amrIdx[d] > patchCellBox.upper(d))
+                    return false;
+            }
+            return true;
+        };
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Y), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Y)(args...)
-                += timeElectric(core::Component::Y)(args...) * coef;
-        });
+        // Pass 1: conserved flux accumulation (codim-1 boundaries)
+        for (auto const& bb : cfBoundary.getBoundaries(patch->getGlobalId(), 1))
+        {
+            auto const location = bb.getLocationIndex();
+            bool const isLower  = (location % 2 == 0);
+            // codim-1 boundary location is in [0, 2*dimension); normalDir < dimension always.
+            // The explicit modulo lets the compiler prove the readIdx[normalDir] index is in
+            // range (silences a -Warray-bounds=2 false positive in the 1D instantiation).
+            int const normalDir = (location / 2) % static_cast<int>(dimension);
 
-        layout.evalOnGhostBox(fluxSumE_(core::Component::Z), [&](auto const&... args) mutable {
-            fluxSumE_(core::Component::Z)(args...)
-                += timeElectric(core::Component::Z)(args...) * coef;
-        });
+            for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
+            {
+                if (!inPatchTransverse(amrIdx, normalDir)) continue;
+                auto readIdx = amrIdx;
+                if (isLower) readIdx[normalDir] += 1;
+
+                if (normalDir == core::dirX)
+                {
+                    addScalar(fluxSum_.rho_fx, timeFluxes.rho_fx, readIdx);
+                    addVector(fluxSum_.rhoV_fx, timeFluxes.rhoV_fx, readIdx);
+                    addVector(fluxSum_.B_fx, timeFluxes.B_fx, readIdx);
+                    addScalar(fluxSum_.Etot_fx, timeFluxes.Etot_fx, readIdx);
+                }
+                else if (normalDir == core::dirY)
+                {
+                    addScalar(fluxSum_.rho_fy, timeFluxes.rho_fy, readIdx);
+                    addVector(fluxSum_.rhoV_fy, timeFluxes.rhoV_fy, readIdx);
+                    addVector(fluxSum_.B_fy, timeFluxes.B_fy, readIdx);
+                    addScalar(fluxSum_.Etot_fy, timeFluxes.Etot_fy, readIdx);
+                }
+                else if constexpr (dimension == 3)
+                {
+                    addScalar(fluxSum_.rho_fz, timeFluxes.rho_fz, readIdx);
+                    addVector(fluxSum_.rhoV_fz, timeFluxes.rhoV_fz, readIdx);
+                    addVector(fluxSum_.B_fz, timeFluxes.B_fz, readIdx);
+                    addScalar(fluxSum_.Etot_fz, timeFluxes.Etot_fz, readIdx);
+                }
+            }
+        }
+
+        // Pass 2: E field accumulation. Geometry (codim-1 vs codim-2, transverse clipping,
+        // Ez primal-endpoint patching) lives in the dim-generic enumerator, which returns
+        // read-shifted, box-deduped containers per E component. Box-dedup (simplify)
+        // replaces the per-index seenEzNodes set.
+        auto const eBoxes = reflux_geometry::cfElectricBoxes<dimension>(
+            cfBoundary, patch->getGlobalId(), patchCellBox);
+
+        auto const accumulateE = [&](SAMRAI::hier::BoxContainer const& boxes, core::Component comp) {
+            for (auto const& box : boxes)
+                for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
+                    addScalar(fluxSumE_(comp), timeElectric(comp), amrIdx);
+        };
+
+        accumulateE(eBoxes.ex, core::Component::X);
+        accumulateE(eBoxes.ey, core::Component::Y);
+        accumulateE(eBoxes.ez, core::Component::Z);
     }
 }
 
@@ -431,14 +461,145 @@ template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy,
          typename ModelViews_t>
 void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::reflux(
     IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-    double const time)
+    double const time, SAMRAI::hier::CoarseFineBoundary const& /*fineCfBdry*/,
+    SAMRAI::hier::PatchLevel const& fineLevel)
 {
-    auto& bc                          = dynamic_cast<Messenger&>(messenger);
-    auto& mhdModel                    = dynamic_cast<MHDModel&>(model);
-    auto&& [timeFluxes, timeElectric] = evolve_.exposeFluxes();
+    auto& bc           = dynamic_cast<Messenger&>(messenger);
+    auto& mhdModel     = dynamic_cast<MHDModel&>(model);
+    auto&& tf          = evolve_.exposeFluxes();
+    auto& timeFluxes   = std::get<0>(tf);
+    auto& timeElectric = std::get<1>(tf);
+    auto& state        = mhdModel.state;
+    double const dt    = time - oldTime_[level.getLevelNumber()];
 
-    reflux_euler_(mhdModel, stateOld_, mhdModel.state, timeElectric, timeFluxes, bc, level, time,
-                  time - oldTime_[level.getLevelNumber()]);
+    constexpr auto dirX = core::dirX;
+    constexpr auto dirY = core::dirY;
+
+    // Build coarsened fine domain from global fine boxes (MPI-collective, done once per call)
+    auto const& globalFineBoxes = fineLevel.getBoxLevel()->getGlobalizedVersion().getGlobalBoxes();
+    auto const ratio            = fineLevel.getRatioToCoarserLevel();
+
+    std::vector<SAMRAI::hier::Box> coarsenedFine;
+    for (auto const& box : globalFineBoxes)
+        coarsenedFine.push_back(SAMRAI::hier::Box::coarsen(box, ratio));
+
+    for (auto& coarsePatch : level)
+    {
+        auto const& patchAMRBox = coarsePatch->getBox();
+        auto const& layout      = amr::layoutFromPatch<GridLayout>(*coarsePatch);
+        auto _                  = mhdModel.resourcesManager->setOnPatch(
+            *coarsePatch, state.rho, state.rhoV, state.Etot1, state.B1, fluxSum_, fluxSumE_,
+            timeFluxes, timeElectric);
+
+        // Pass 1: hydro flux correction. Coarse cells adjacent to the CF boundary for
+        // (dir, side), box-deduped across all coarsened-fine boxes (replaces seenFlux). The
+        // boundary flux read coordinate is recovered per cell from amrIdx[dir]
+        // (= isLower ? amrIdx[dir]+1 : amrIdx[dir]), same reconstruction as the B pass.
+        for (int dir = 0; dir < static_cast<int>(dimension); ++dir)
+            for (int side = 0; side < 2; ++side)
+            {
+                bool const isLower      = (side == 0);
+                int const sign          = isLower ? +1 : -1;
+                double const hydroScale = sign * dt / layout.meshSize()[dir];
+
+                auto const cells = reflux_geometry::cfAdjacentCoarseCells(
+                    dir, side, patchAMRBox, coarsenedFine, /*expand=*/0);
+
+                for (auto const& ccBox : cells)
+                    for (auto const& amrIdx : amr::phare_box_from<dimension>(ccBox))
+                    {
+                        auto fReadIdx   = amrIdx;
+                        fReadIdx[dir]   = isLower ? amrIdx[dir] + 1 : amrIdx[dir];
+                        auto const idxF = layout.AMRToLocal(fReadIdx);
+                        auto const idx  = layout.AMRToLocal(amrIdx);
+
+                        if (dir == dirX)
+                        {
+                            state.rho(idx) += hydroScale * (timeFluxes.rho_fx(idxF) - fluxSum_.rho_fx(idxF));
+                            state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::X)(idxF) - fluxSum_.rhoV_fx(core::Component::X)(idxF));
+                            state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Y)(idxF) - fluxSum_.rhoV_fx(core::Component::Y)(idxF));
+                            state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Z)(idxF) - fluxSum_.rhoV_fx(core::Component::Z)(idxF));
+                            state.Etot1(idx) += hydroScale * (timeFluxes.Etot_fx(idxF) - fluxSum_.Etot_fx(idxF));
+                        }
+                        else if (dir == dirY)
+                        {
+                            state.rho(idx) += hydroScale * (timeFluxes.rho_fy(idxF) - fluxSum_.rho_fy(idxF));
+                            state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::X)(idxF) - fluxSum_.rhoV_fy(core::Component::X)(idxF));
+                            state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Y)(idxF) - fluxSum_.rhoV_fy(core::Component::Y)(idxF));
+                            state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Z)(idxF) - fluxSum_.rhoV_fy(core::Component::Z)(idxF));
+                            state.Etot1(idx) += hydroScale * (timeFluxes.Etot_fy(idxF) - fluxSum_.Etot_fy(idxF));
+                        }
+                        else if constexpr (dimension == 3)
+                        {
+                            state.rho(idx) += hydroScale * (timeFluxes.rho_fz(idxF) - fluxSum_.rho_fz(idxF));
+                            state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::X)(idxF) - fluxSum_.rhoV_fz(core::Component::X)(idxF));
+                            state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Y)(idxF) - fluxSum_.rhoV_fz(core::Component::Y)(idxF));
+                            state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Z)(idxF) - fluxSum_.rhoV_fz(core::Component::Z)(idxF));
+                            state.Etot1(idx) += hydroScale * (timeFluxes.Etot_fz(idxF) - fluxSum_.Etot_fz(idxF));
+                        }
+                    }
+            }
+
+        // Pass 2: B correction via Faraday. Coarse Yee B-faces on the CF boundary are
+        // enumerated and box-deduped per (component, dir, side) across all coarsened-fine
+        // boxes (replaces seenBx/By/Bz). B is the evolved perturbation field (B1); B0 is
+        // static and never refluxed. Hydro and B touch disjoint fields, so this runs after
+        // all hydro corrections.
+        for (int dir = 0; dir < static_cast<int>(dimension); ++dir)
+            for (int side = 0; side < 2; ++side)
+            {
+                bool const isLower  = (side == 0);
+                int const sign      = isLower ? +1 : -1;
+                double const bScale = -sign * dt / layout.meshSize()[dir];
+
+                for (auto const& t : reflux_geometry::faradayTerms<core::MHDQuantity::Scalar>(dir))
+                {
+                    auto const faces = reflux_geometry::cfBFaceBoxes(layout, t.bQty, dir, side,
+                                                                     patchAMRBox, coarsenedFine);
+
+                    for (auto const& box : faces)
+                        for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
+                        {
+                            if (reflux_geometry::bFaceInsideFine(layout, t.bQty, dir, amrIdx,
+                                                                 coarsenedFine))
+                                continue;
+
+                            auto eReadIdx   = amrIdx;
+                            eReadIdx[dir]   = isLower ? amrIdx[dir] + 1 : amrIdx[dir];
+                            auto const idxE = layout.AMRToLocal(eReadIdx);
+                            auto const idx  = layout.AMRToLocal(amrIdx);
+
+                            auto const tE = timeElectric(t.eComp)(idxE);
+                            auto const fE = fluxSumE_(t.eComp)(idxE);
+                            state.B1(t.bComp)(idx) += t.eSign * bScale * (tE - fE);
+                        }
+                }
+            }
+    }
+
+    // Decision D (embedded-boundary): the textbook reflux is inner-boundary-agnostic, but on
+    // this branch the inner-boundary inactive region must stay pinned to the prescribed safe
+    // state. Re-apply the same safe-state masking the per-substep Euler step does, now over the
+    // reflux-corrected coarse level. B0 is static (never refluxed) but is re-masked for
+    // consistency; masking is idempotent on cells reflux did not touch.
+    if (mhdModel.hasInnerBoundary())
+    {
+        auto& ibm = *mhdModel.innerBoundaryManager;
+        auto& rm  = *mhdModel.resourcesManager;
+        amr::visitLevel<GridLayout>(
+            level, rm,
+            [&](auto& layout, auto&&, auto&&) {
+                ibm.setSafeState(state.B1, layout);
+                ibm.setSafeState(state.B0, layout);
+                ibm.setSafeState(state.rho, layout);
+                ibm.setSafeState(state.rhoV, layout);
+                ibm.setSafeState(state.Etot1, layout);
+            },
+            ibm, state);
+    }
+
+    bc.fillMomentsGhosts(state, level, time, dt);
+    bc.fillMagneticGhosts(state.B1, level, time);
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,

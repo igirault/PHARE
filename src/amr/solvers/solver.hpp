@@ -10,9 +10,12 @@
 
 #include <SAMRAI/hier/PatchLevel.h>
 #include <SAMRAI/hier/PatchHierarchy.h>
+#include <SAMRAI/hier/CoarseFineBoundary.h>
+#include <SAMRAI/hier/BoundaryBox.h>
 
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace PHARE::solver
 {
@@ -97,7 +100,8 @@ namespace solver
          * refluxing later.
          */
         virtual void accumulateFluxSum(IPhysicalModel<AMR_Types>& model,
-                                       SAMRAI::hier::PatchLevel& level, double const coef)
+                                       SAMRAI::hier::PatchLevel& level, double const coef,
+                                       SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
             = 0;
 
 
@@ -113,7 +117,9 @@ namespace solver
          */
         virtual void reflux(IPhysicalModel<AMR_Types>& model, SAMRAI::hier::PatchLevel& level,
                             amr::IMessenger<IPhysicalModel<AMR_Types>>& messenger,
-                            double const time)
+                            double const time,
+                            SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+                            SAMRAI::hier::PatchLevel const& fineLevel)
             = 0;
 
         /**

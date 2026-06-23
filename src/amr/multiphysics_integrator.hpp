@@ -14,6 +14,8 @@
 
 #include <SAMRAI/algs/TimeRefinementLevelStrategy.h>
 #include <SAMRAI/mesh/StandardTagAndInitStrategy.h>
+#include <SAMRAI/hier/CoarseFineBoundary.h>
+#include <SAMRAI/hier/BoundaryBox.h>
 
 #include "SAMRAI/tbox/RestartManager.h"
 #include "SAMRAI/hier/PatchDataRestartManager.h"
@@ -599,7 +601,9 @@ namespace solver
             {
                 auto ratio = (level->getRatioToCoarserLevel()).max();
                 auto coef  = 1. / (ratio * ratio);
-                solver.accumulateFluxSum(model, *level, coef);
+                SAMRAI::hier::CoarseFineBoundary cfBdry{
+                    *hierarchy, iLevel, SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
+                solver.accumulateFluxSum(model, *level, coef, cfBdry);
             }
 
             load_balancer_manager_->estimate(*level, model);
@@ -632,8 +636,12 @@ namespace solver
                 auto& coarseSolver = getSolver_(iCoarseLevel);
                 auto& coarseModel  = getModel_(iCoarseLevel);
 
+                SAMRAI::hier::CoarseFineBoundary fineCfBdry{
+                    *hierarchy, ilvl, SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
+
                 toCoarser.reflux(iCoarseLevel, ilvl, syncTime);
-                coarseSolver.reflux(coarseModel, coarseLevel, toCoarser, syncTime);
+                coarseSolver.reflux(coarseModel, coarseLevel, toCoarser, syncTime, fineCfBdry,
+                                    fineLevel);
 
                 // Now the fluxSum includes the contributions of the finer levels thanks to
                 // toCoarser.reflux(). We can now accumulate the fluxSum that will be used for the
@@ -643,7 +651,10 @@ namespace solver
                 {
                     auto ratio = (coarseLevel.getRatioToCoarserLevel()).max();
                     auto coef  = 1. / (ratio * ratio);
-                    coarseSolver.accumulateFluxSum(coarseModel, coarseLevel, coef);
+                    SAMRAI::hier::CoarseFineBoundary coarseCfBdry{
+                        *hierarchy, iCoarseLevel,
+                        SAMRAI::hier::IntVector::getOne(hierarchy->getDim())};
+                    coarseSolver.accumulateFluxSum(coarseModel, coarseLevel, coef, coarseCfBdry);
                 }
 
                 // recopy (patch) ghosts

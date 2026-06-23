@@ -99,12 +99,14 @@ public:
                      double const currentTime) override;
 
     void accumulateFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const coef) override;
+                           double const coef,
+                           SAMRAI::hier::CoarseFineBoundary const& cfBoundary) override;
 
     void resetFluxSum(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level) override;
 
     void reflux(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
-                double const time) override;
+                double const time, SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+                SAMRAI::hier::PatchLevel const& fineLevel) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, ISolverModelView& views,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -279,9 +281,9 @@ void SolverPPC<HybridModel, AMR_Types>::prepareStep(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(IPhysicalModel_t& model,
-                                                          SAMRAI::hier::PatchLevel& level,
-                                                          double const coef)
+void SolverPPC<HybridModel, AMR_Types>::accumulateFluxSum(
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const coef,
+    SAMRAI::hier::CoarseFineBoundary const& /*cfBoundary*/)
 {
     PHARE_LOG_SCOPE(3, "SolverPPC::accumulateFluxSum");
 
@@ -327,9 +329,10 @@ void SolverPPC<HybridModel, AMR_Types>::resetFluxSum(IPhysicalModel_t& model,
 
 
 template<typename HybridModel, typename AMR_Types>
-void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
-                                               SAMRAI::hier::PatchLevel& level,
-                                               IMessenger& messenger, double const time)
+void SolverPPC<HybridModel, AMR_Types>::reflux(
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, IMessenger& messenger,
+    double const time, SAMRAI::hier::CoarseFineBoundary const& /*fineCfBdry*/,
+    SAMRAI::hier::PatchLevel const& /*fineLevel*/)
 {
     auto& hybridModel     = dynamic_cast<HybridModel&>(model);
     auto& hybridMessenger = dynamic_cast<HybridMessenger&>(messenger);
