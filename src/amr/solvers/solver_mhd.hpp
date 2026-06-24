@@ -344,23 +344,24 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         auto _ = mhdModel.resourcesManager->setOnPatch(*patch, fluxSum_, fluxSumE_, timeFluxes,
                                                        timeElectric);
 
-        auto const addScalar = [&](auto& left, auto const& right,
-                                   core::Point<int, dimension> const& amrIdx) {
-            auto const idx = layout.AMRToLocal(amrIdx);
-            left(idx) += right(idx) * coef;
-        };
-        auto const addVector = [&](auto& left, auto const& right,
-                                   core::Point<int, dimension> const& amrIdx) {
-            auto const idx = layout.AMRToLocal(amrIdx);
-            left(core::Component::X)(idx) += right(core::Component::X)(idx) * coef;
-            left(core::Component::Y)(idx) += right(core::Component::Y)(idx) * coef;
-            left(core::Component::Z)(idx) += right(core::Component::Z)(idx) * coef;
-        };
+        auto const addScalar
+            = [&](auto& left, auto const& right, core::Point<int, dimension> const& amrIdx) {
+                  auto const idx = layout.AMRToLocal(amrIdx);
+                  left(idx) += right(idx) * coef;
+              };
+        auto const addVector
+            = [&](auto& left, auto const& right, core::Point<int, dimension> const& amrIdx) {
+                  auto const idx = layout.AMRToLocal(amrIdx);
+                  left(core::Component::X)(idx) += right(core::Component::X)(idx) * coef;
+                  left(core::Component::Y)(idx) += right(core::Component::Y)(idx) * coef;
+                  left(core::Component::Z)(idx) += right(core::Component::Z)(idx) * coef;
+              };
 
         auto const inPatchTransverse = [&](auto const& amrIdx, int normalDir) {
             for (int d = 0; d < static_cast<int>(dimension); ++d)
             {
-                if (d == normalDir) continue;
+                if (d == normalDir)
+                    continue;
                 if (amrIdx[d] < patchCellBox.lower(d) || amrIdx[d] > patchCellBox.upper(d))
                     return false;
             }
@@ -379,9 +380,11 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
 
             for (auto const& amrIdx : amr::phare_box_from<dimension>(bb.getBox()))
             {
-                if (!inPatchTransverse(amrIdx, normalDir)) continue;
+                if (!inPatchTransverse(amrIdx, normalDir))
+                    continue;
                 auto readIdx = amrIdx;
-                if (isLower) readIdx[normalDir] += 1;
+                if (isLower)
+                    readIdx[normalDir] += 1;
 
                 if (normalDir == core::dirX)
                 {
@@ -414,11 +417,12 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger,
         auto const eBoxes = reflux_geometry::cfElectricBoxes<dimension>(
             cfBoundary, patch->getGlobalId(), patchCellBox);
 
-        auto const accumulateE = [&](SAMRAI::hier::BoxContainer const& boxes, core::Component comp) {
-            for (auto const& box : boxes)
-                for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
-                    addScalar(fluxSumE_(comp), timeElectric(comp), amrIdx);
-        };
+        auto const accumulateE
+            = [&](SAMRAI::hier::BoxContainer const& boxes, core::Component comp) {
+                  for (auto const& box : boxes)
+                      for (auto const& amrIdx : amr::phare_box_from<dimension>(box))
+                          addScalar(fluxSumE_(comp), timeElectric(comp), amrIdx);
+              };
 
         accumulateE(eBoxes.ex, core::Component::X);
         accumulateE(eBoxes.ey, core::Component::Y);
@@ -487,9 +491,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
     {
         auto const& patchAMRBox = coarsePatch->getBox();
         auto const& layout      = amr::layoutFromPatch<GridLayout>(*coarsePatch);
-        auto _                  = mhdModel.resourcesManager->setOnPatch(
-            *coarsePatch, state.rho, state.rhoV, state.Etot1, state.B1, fluxSum_, fluxSumE_,
-            timeFluxes, timeElectric);
+        auto _ = mhdModel.resourcesManager->setOnPatch(*coarsePatch, state.rho, state.rhoV,
+                                                       state.Etot1, state.B1, fluxSum_, fluxSumE_,
+                                                       timeFluxes, timeElectric);
 
         // Pass 1: hydro flux correction. Coarse cells adjacent to the CF boundary for
         // (dir, side), box-deduped across all coarsened-fine boxes (replaces seenFlux). The
@@ -515,27 +519,60 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
                         if (dir == dirX)
                         {
-                            state.rho(idx) += hydroScale * (timeFluxes.rho_fx(idxF) - fluxSum_.rho_fx(idxF));
-                            state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::X)(idxF) - fluxSum_.rhoV_fx(core::Component::X)(idxF));
-                            state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Y)(idxF) - fluxSum_.rhoV_fx(core::Component::Y)(idxF));
-                            state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fx(core::Component::Z)(idxF) - fluxSum_.rhoV_fx(core::Component::Z)(idxF));
-                            state.Etot1(idx) += hydroScale * (timeFluxes.Etot_fx(idxF) - fluxSum_.Etot_fx(idxF));
+                            state.rho(idx)
+                                += hydroScale * (timeFluxes.rho_fx(idxF) - fluxSum_.rho_fx(idxF));
+                            state.rhoV(core::Component::X)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fx(core::Component::X)(idxF)
+                                      - fluxSum_.rhoV_fx(core::Component::X)(idxF));
+                            state.rhoV(core::Component::Y)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fx(core::Component::Y)(idxF)
+                                      - fluxSum_.rhoV_fx(core::Component::Y)(idxF));
+                            state.rhoV(core::Component::Z)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fx(core::Component::Z)(idxF)
+                                      - fluxSum_.rhoV_fx(core::Component::Z)(idxF));
+                            state.Etot1(idx)
+                                += hydroScale * (timeFluxes.Etot_fx(idxF) - fluxSum_.Etot_fx(idxF));
                         }
                         else if (dir == dirY)
                         {
-                            state.rho(idx) += hydroScale * (timeFluxes.rho_fy(idxF) - fluxSum_.rho_fy(idxF));
-                            state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::X)(idxF) - fluxSum_.rhoV_fy(core::Component::X)(idxF));
-                            state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Y)(idxF) - fluxSum_.rhoV_fy(core::Component::Y)(idxF));
-                            state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fy(core::Component::Z)(idxF) - fluxSum_.rhoV_fy(core::Component::Z)(idxF));
-                            state.Etot1(idx) += hydroScale * (timeFluxes.Etot_fy(idxF) - fluxSum_.Etot_fy(idxF));
+                            state.rho(idx)
+                                += hydroScale * (timeFluxes.rho_fy(idxF) - fluxSum_.rho_fy(idxF));
+                            state.rhoV(core::Component::X)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fy(core::Component::X)(idxF)
+                                      - fluxSum_.rhoV_fy(core::Component::X)(idxF));
+                            state.rhoV(core::Component::Y)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fy(core::Component::Y)(idxF)
+                                      - fluxSum_.rhoV_fy(core::Component::Y)(idxF));
+                            state.rhoV(core::Component::Z)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fy(core::Component::Z)(idxF)
+                                      - fluxSum_.rhoV_fy(core::Component::Z)(idxF));
+                            state.Etot1(idx)
+                                += hydroScale * (timeFluxes.Etot_fy(idxF) - fluxSum_.Etot_fy(idxF));
                         }
                         else if constexpr (dimension == 3)
                         {
-                            state.rho(idx) += hydroScale * (timeFluxes.rho_fz(idxF) - fluxSum_.rho_fz(idxF));
-                            state.rhoV(core::Component::X)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::X)(idxF) - fluxSum_.rhoV_fz(core::Component::X)(idxF));
-                            state.rhoV(core::Component::Y)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Y)(idxF) - fluxSum_.rhoV_fz(core::Component::Y)(idxF));
-                            state.rhoV(core::Component::Z)(idx) += hydroScale * (timeFluxes.rhoV_fz(core::Component::Z)(idxF) - fluxSum_.rhoV_fz(core::Component::Z)(idxF));
-                            state.Etot1(idx) += hydroScale * (timeFluxes.Etot_fz(idxF) - fluxSum_.Etot_fz(idxF));
+                            state.rho(idx)
+                                += hydroScale * (timeFluxes.rho_fz(idxF) - fluxSum_.rho_fz(idxF));
+                            state.rhoV(core::Component::X)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fz(core::Component::X)(idxF)
+                                      - fluxSum_.rhoV_fz(core::Component::X)(idxF));
+                            state.rhoV(core::Component::Y)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fz(core::Component::Y)(idxF)
+                                      - fluxSum_.rhoV_fz(core::Component::Y)(idxF));
+                            state.rhoV(core::Component::Z)(idx)
+                                += hydroScale
+                                   * (timeFluxes.rhoV_fz(core::Component::Z)(idxF)
+                                      - fluxSum_.rhoV_fz(core::Component::Z)(idxF));
+                            state.Etot1(idx)
+                                += hydroScale * (timeFluxes.Etot_fz(idxF) - fluxSum_.Etot_fz(idxF));
                         }
                     }
             }
@@ -598,8 +635,21 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
             ibm, state);
     }
 
-    bc.fillMomentsGhosts(state, level, time, dt);
-    bc.fillMagneticGhosts(state.B1, level, time);
+    // Refresh the moment ghosts so neighbouring coarse patches see the reflux-corrected
+    // conserved state. The moment inflow BCs (Dirichlet rho/rhoV, TotalEnergyFromPressure
+    // Etot1) refill the physical-boundary ghosts after the NaN sentinel, so this is safe.
+    // bc.fillMomentsGhosts(state, level, time, dt);
+
+    // NOTE: do NOT fillMagneticGhosts(state.B1) here. fillMagneticGhosts first stamps the NaN
+    // sentinel over every B1 ghost and then refills via the refiners; at a
+    // super-magnetofast inflow B1 carries the None condition (the field is driven through CT
+    // from the prescribed motional E, never pinned in the ghost), so the inflow B1 ghost is
+    // left at NaN. Unlike the per-substep Euler step — whose subsequent CT/Faraday pass and
+    // next-substep fills repair it — nothing recomputes B1 between reflux and the next coarse
+    // advance, whose first to_primitive reads the ghost box directly and floods
+    // "pressure floored: nan" from the inflow column. B1 on the coarse CF faces is refreshed
+    // by the next advance's own magnetic ghost fill, so skipping it here only defers the
+    // inter-patch B1-ghost sync by one substep.
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
@@ -647,7 +697,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,
          typename ModelViews_t>
-double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::computeStableDt(
+double
+SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelViews_t>::computeStableDt(
     IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const cfl,
     double const fourier)
 {
@@ -717,8 +768,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelVi
 
                 // Etot1 carries only the perturbation field B1, so recover P from B1 (matches
                 // ToPrimitiveConverter::eosEtot1ToP_); wave speeds below use the total field B1+B0.
-                auto const P
-                    = core::eosEtot1ToP(gamma_, r, vx, vy, vz, b1x, b1y, b1z, Etot(index));
+                auto const P = core::eosEtot1ToP(gamma_, r, vx, vy, vz, b1x, b1y, b1z, Etot(index));
 
                 auto const bx    = b1x + b0x;
                 auto const by    = b1y + b0y;
@@ -765,8 +815,8 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
                 auto const pos    = layout.fieldNodeCoordinates(field, amrIdx);
                 std::stringstream ss;
                 ss << "NaN detected in MHD field '" << field.name() << "' at physical position "
-                   << pos << " (local index " << localIdx << ") on level "
-                   << level.getLevelNumber() << " at time " << time;
+                   << pos << " (local index " << localIdx << ") on level " << level.getLevelNumber()
+                   << " at time " << time;
                 throw core::DictionaryException{"cause", ss.str()};
             }
         });

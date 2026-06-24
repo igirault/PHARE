@@ -11,6 +11,7 @@
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/inner_boundary/field_total_energy_from_pressure_inner_boundary_condition.hpp"
 #include "core/inner_boundary/field_neumann_inner_boundary_condition.hpp"
+#include "core/inner_boundary/field_dirichlet_inner_boundary_condition.hpp"
 #include "core/inner_boundary/inner_boundary_mesh_classifier.hpp"
 #include "core/inner_boundary/plane_inner_boundary.hpp"
 #include "core/mhd/mhd_quantities.hpp"
@@ -87,12 +88,14 @@ struct MeshDataBuffers
                             elem_storages[i].shape()};
             tags.elemStatus[i].setBuffer(&tmp);
         }
-        tags.ghostElemsData._data = &ghost_array;
+        tags.ghostElemsData._data    = &ghost_array;
+        tags.degradedElemsData._data = &degraded_array;
     }
 
     NdArrayVector<2, double> phi_storage;
     std::vector<NdArrayVector<2, double>> elem_storages;
     GhostElemPack<2>::ghost_elem_array_type ghost_array{};
+    GhostElemPack<2>::ghost_elem_array_type degraded_array{};
     MeshData tags;
 };
 
@@ -104,7 +107,7 @@ struct Fixture
     GridLayout layout{{1.0, 1.0}, {4u, 2u}, {0.0, 0.0}, amr_box};
 
     MeshDataBuffers buffers{layout};
-    MhdState        state{layout};
+    MhdState state{layout};
 
     Fixture()
     {
@@ -128,8 +131,21 @@ struct Fixture
         auto pressureBC = std::make_unique<
             FieldNeumannInnerBoundaryCondition<ScalarField, GridLayout, MhdState>>();
         auto thermo = std::make_shared<IdealGasThermo>(gamma);
-        return FieldTotalEnergyFromPressureInnerBoundaryCondition<ScalarField, GridLayout, MhdState>{
-            std::move(pressureBC), thermo};
+        return FieldTotalEnergyFromPressureInnerBoundaryCondition<ScalarField, GridLayout,
+                                                                  MhdState>{std::move(pressureBC),
+                                                                            thermo};
+    }
+
+    // Variant whose pressure sub-BC is a constant (0th-order) Dirichlet at p_bc: it fills every
+    // ghost P, so the energy reconstruction also covers non-interpolable ghosts.
+    auto makeConstantDirichletBC(double p_bc)
+    {
+        using Dirichlet = FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, MhdState>;
+        auto pressureBC = std::make_unique<Dirichlet>(p_bc, Dirichlet::ExtrapolationType::Constant);
+        auto thermo     = std::make_shared<IdealGasThermo>(gamma);
+        return FieldTotalEnergyFromPressureInnerBoundaryCondition<ScalarField, GridLayout,
+                                                                  MhdState>{std::move(pressureBC),
+                                                                            thermo};
     }
 };
 
@@ -148,12 +164,12 @@ double totalEnergy(double rho, double vx, double vy, double vz, double bx, doubl
 TEST(FieldTotalEnergyFromPressureInner, uniformStateGhostEtotEqualsInterior)
 {
     Fixture fix;
-    auto&   st     = fix.state;
-    auto&   layout = fix.layout;
+    auto& st     = fix.state;
+    auto& layout = fix.layout;
 
     constexpr double rho = 2.0, vx = 0.3, vy = -0.4, vz = 0.1;
     constexpr double bx = 0.5, by = -0.2, bz = 0.7, P = 1.5;
-    double const     etot = totalEnergy(rho, vx, vy, vz, bx, by, bz, P);
+    double const etot = totalEnergy(rho, vx, vy, vz, bx, by, bz, P);
 
     Fixture::fillAll(st.rho, rho);
     Fixture::fillAll(st.P, P);
@@ -191,13 +207,13 @@ TEST(FieldTotalEnergyFromPressureInner, uniformStateGhostEtotEqualsInterior)
 TEST(FieldTotalEnergyFromPressureInner, ghostEnergyUsesGhostMomentumAndNeumannPressure)
 {
     Fixture fix;
-    auto&   st     = fix.state;
-    auto&   layout = fix.layout;
+    auto& st     = fix.state;
+    auto& layout = fix.layout;
 
     // interior (fluid) primitive state
     constexpr double rho_i = 2.0, vx_i = 0.5, vy_i = 0.0, vz_i = 0.0;
     constexpr double bx = 0.4, by = 0.0, bz = 0.0, P0 = 1.0;
-    double const     etot_i = totalEnergy(rho_i, vx_i, vy_i, vz_i, bx, by, bz, P0);
+    double const etot_i = totalEnergy(rho_i, vx_i, vy_i, vz_i, bx, by, bz, P0);
 
     // distinct ghost density / velocity (mimics rho & rhoV inner BCs having run)
     constexpr double rho_g = 3.0, vx_g = -0.2, vy_g = 0.6, vz_g = 0.0;
@@ -249,12 +265,12 @@ TEST(FieldTotalEnergyFromPressureInner, ghostEnergyUsesGhostMomentumAndNeumannPr
 TEST(FieldTotalEnergyFromPressureInner, nonInterpolableGhostsUntouched)
 {
     Fixture fix;
-    auto&   st     = fix.state;
-    auto&   layout = fix.layout;
+    auto& st     = fix.state;
+    auto& layout = fix.layout;
 
     constexpr double rho = 1.0, P = 1.0, bx = 0.0, by = 0.0, bz = 0.0;
     constexpr double sentinel = -999.0;
-    double const     etot     = totalEnergy(rho, 0, 0, 0, bx, by, bz, P);
+    double const etot         = totalEnergy(rho, 0, 0, 0, bx, by, bz, P);
 
     Fixture::fillAll(st.rho, rho);
     Fixture::fillAll(st.P, P);
@@ -282,6 +298,64 @@ TEST(FieldTotalEnergyFromPressureInner, nonInterpolableGhostsUntouched)
                 << "non-interpolable ghost (" << g.index[0] << "," << g.index[1] << ") changed";
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// With a CONSTANT Dirichlet pressure sub-BC, ghost P is filled on every ghost
+// (interpolable or not), so Etot1 is reconstructed even on non-interpolable
+// ghosts — using the ghost rho/rhoV/B1 and the prescribed pressure.
+// ---------------------------------------------------------------------------
+TEST(FieldTotalEnergyFromPressureInner, constantPressureSubBCFillsNonInterpolableGhosts)
+{
+    Fixture fix;
+    auto& st     = fix.state;
+    auto& layout = fix.layout;
+
+    constexpr double rho_i = 2.0, P_bc = 1.7;
+    constexpr double bx = 0.3, by = -0.1, bz = 0.2;
+    // distinct ghost state, as if rho/rhoV inner BCs had already filled every ghost
+    constexpr double rho_g = 3.0, vx_g = -0.2, vy_g = 0.6, vz_g = 0.1;
+    constexpr double sentinel = -999.0;
+
+    Fixture::fillAll(st.rho, rho_i);
+    Fixture::fillAll(st.P, P_bc);
+    Fixture::fillAll(st.Etot1, totalEnergy(rho_i, 0, 0, 0, bx, by, bz, P_bc));
+    Fixture::fillAll(st.rhoV[0], 0.0);
+    Fixture::fillAll(st.rhoV[1], 0.0);
+    Fixture::fillAll(st.rhoV[2], 0.0);
+    Fixture::fillAll(st.B1[0], bx);
+    Fixture::fillAll(st.B1[1], by);
+    Fixture::fillAll(st.B1[2], bz);
+
+    // every ghost carries the distinct ghost rho/rhoV; non-interpolable ones get a sentinel Etot1
+    bool sawNonInterpolable = false;
+    for (auto const& g : fix.buffers.tags.getGhostDataFromCentering(kCellC))
+    {
+        st.rho(g.index)     = rho_g;
+        st.rhoV[0](g.index) = rho_g * vx_g;
+        st.rhoV[1](g.index) = rho_g * vy_g;
+        st.rhoV[2](g.index) = rho_g * vz_g;
+        if (!g.interpValid)
+        {
+            sawNonInterpolable = true;
+            st.Etot1(g.index)  = sentinel;
+        }
+    }
+    ASSERT_TRUE(sawNonInterpolable)
+        << "fixture should expose at least one non-interpolable ghost to exercise the fix";
+
+    double const etot_expected = totalEnergy(rho_g, vx_g, vy_g, vz_g, bx, by, bz, P_bc);
+
+    auto bc = fix.makeConstantDirichletBC(P_bc);
+    bc.apply(st.Etot1, layout, fix.buffers.tags, InnerBCContext<MhdState>{st, st, 0.0});
+
+    for (auto const& g : fix.buffers.tags.getGhostDataFromCentering(kCellC))
+        if (!g.interpValid)
+        {
+            EXPECT_NEAR(st.Etot1(g.index), etot_expected, 1e-10)
+                << "non-interpolable ghost (" << g.index[0] << "," << g.index[1]
+                << ") not reconstructed with constant pressure sub-BC";
+        }
 }
 
 int main(int argc, char** argv)

@@ -53,12 +53,14 @@ struct MeshDataBuffers
                             elem_storages[i].data(), elem_storages[i].shape()};
             tags.elemStatus[i].setBuffer(&tmp);
         }
-        tags.ghostElemsData._data = &ghost_array;
+        tags.ghostElemsData._data    = &ghost_array;
+        tags.degradedElemsData._data = &degraded_array;
     }
 
     PHARE::core::NdArrayVector<2, double> phi_storage;
     std::vector<PHARE::core::NdArrayVector<2, double>> elem_storages;
     PHARE::core::GhostElemPack<2>::ghost_elem_array_type ghost_array{};
+    PHARE::core::GhostElemPack<2>::ghost_elem_array_type degraded_array{};
     MeshData tags;
 };
 
@@ -159,6 +161,54 @@ TEST(FieldDirichletInnerBoundaryCondition, ghostCellReceivesExtrapolatedBoundary
             << "ghost at (" << g.index[0] << ", " << g.index[1] << ")";
     }
     EXPECT_TRUE(foundInPatch) << "at least one in-patch ghost must exist";
+}
+
+TEST(FieldDirichletInnerBoundaryCondition, fillsNonInterpolableGhostsReflectsExtrapolationMode)
+{
+    using BC = PHARE::core::FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, DummyState>;
+    BC constantBC{0.0, BC::ExtrapolationType::Constant};
+    BC linearBC{0.0, BC::ExtrapolationType::Linear};
+    EXPECT_TRUE(constantBC.fillsNonInterpolableGhosts());
+    EXPECT_FALSE(linearBC.fillsNonInterpolableGhosts());
+}
+
+TEST(FieldDirichletInnerBoundaryCondition, constantModeFillsEveryGhostIncludingNonInterpolable)
+{
+    DirichletBCFixture fix;
+    auto const& layout   = fix.layout;
+    auto const& meshData = fix.buffers.tags;
+
+    constexpr double boundaryValue = 3.0;
+    constexpr double sentinel      = -999.0;
+
+    PHARE::core::NdArrayVector<2, double> storage{
+        layout.allocSize(PHARE::core::MHDQuantity::Scalar::CellCentered)};
+    ScalarField field{"rho", PHARE::core::MHDQuantity::Scalar::CellCentered,
+                      storage.data(), storage.shape()};
+
+    for (auto const& g : meshData.getGhostDataFromCentering(kCellC))
+        field(g.index) = sentinel;
+
+    using BC = PHARE::core::FieldDirichletInnerBoundaryCondition<ScalarField, GridLayout, DummyState>;
+    BC bc{boundaryValue, BC::ExtrapolationType::Constant};
+    DummyState state;
+    bc.apply(field, layout, meshData, PHARE::core::InnerBCContext<DummyState>{state, state, 0.0});
+
+    auto const& ghostCells = meshData.getGhostDataFromCentering(kCellC);
+    ASSERT_FALSE(ghostCells.empty());
+
+    bool sawNonInterpolable = false;
+    for (auto const& g : ghostCells)
+    {
+        if (!g.interpValid)
+            sawNonInterpolable = true;
+        // Constant mode must fill *every* ghost, interpolable or not.
+        EXPECT_NEAR(field(g.index), boundaryValue, eps)
+            << "ghost at (" << g.index[0] << ", " << g.index[1]
+            << ") interpValid=" << g.interpValid << " not filled in constant mode";
+    }
+    EXPECT_TRUE(sawNonInterpolable)
+        << "fixture should expose at least one non-interpolable ghost to exercise the fix";
 }
 
 int main(int argc, char** argv)

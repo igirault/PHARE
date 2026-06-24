@@ -54,6 +54,13 @@ public:
         extrapolation_type_ = extrapolationType;
     }
 
+    // Constant (0th-order) extrapolation sets the ghost to the prescribed value with no
+    // interpolation, so it fills every ghost regardless of interpolability.
+    bool fillsNonInterpolableGhosts() const override
+    {
+        return extrapolation_type_ == ExtrapolationType::Constant;
+    }
+
     void apply(ScalarOrTensorFieldT& scalarOrTensorField, GridLayoutT const& layout,
                inner_boundary_mesh_data_type const& boundaryMeshData,
                context_type const& ctx) override
@@ -74,9 +81,17 @@ public:
 
             for (ghost_elem_data_type const& ghostElem : ghostElems)
             {
-                // Sample at the farthest interpolable point Q on the normal (== mirror when
-                // reachable); extrapolate to the ghost with the signed-distance lever arm. For a
-                // linear profile f(phi)=V+c*phi through the surface value V:
+                // Constant extrapolation needs no interpolation: set the ghost to the prescribed
+                // value directly. This fills *every* ghost, including non-interpolable ones with
+                // no fluid-side sample, so 0th-order Dirichlet leaves no unset ghost behind.
+                if (!linear)
+                {
+                    field(ghostElem.index) = values_[i];
+                    continue;
+                }
+                // Linear profile: sample at the farthest interpolable point Q on the normal
+                // (== mirror when reachable) and extrapolate to the ghost with the signed-distance
+                // lever arm. For f(phi)=V+c*phi through the surface value V:
                 //   ghost = V + (phiGhost/phiInterp) * (f(Q) - V),
                 // which is exactly the legacy 2*V - f(mirror) when Q is the mirror (phi ratio -1).
                 // Skip only when no fluid-side sample exists.
@@ -84,14 +99,8 @@ public:
                     continue;
                 double const sampleValue
                     = this->interpolator_(layout, field, ghostElem.interpPoint);
-                if (linear)
-                {
-                    double const ratio = ghostElem.phiGhost / ghostElem.phiInterp;
-                    field(ghostElem.index)
-                        = values_[i] + ratio * (sampleValue - values_[i]);
-                }
-                else
-                    field(ghostElem.index) = values_[i]; // constant extrapolation
+                double const ratio = ghostElem.phiGhost / ghostElem.phiInterp;
+                field(ghostElem.index) = values_[i] + ratio * (sampleValue - values_[i]);
             }
         });
     }

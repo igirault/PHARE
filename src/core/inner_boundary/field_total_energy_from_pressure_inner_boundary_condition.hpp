@@ -147,11 +147,16 @@ public:
             auto const centering   = GridLayoutT::centering(Etot1Field);
             auto const& ghostElems = boundaryMeshData.getGhostDataFromCentering(centering);
 
+            // When the pressure sub-BC fills every ghost (constant Dirichlet), step 2 set P on the
+            // non-interpolable ghosts too; rho/rhoV are likewise filled there (co-located, applied
+            // earlier by priority), so Etot1 can be reconstructed on those ghosts as well.
+            bool const fillAll = pressureBC_->fillsNonInterpolableGhosts();
+
             for (ghost_elem_data_type const& ghostElem : ghostElems)
             {
-                // No fluid-side sample: step 2 left this P ghost untouched, so skip (matches the
-                // "leave untouched" convention of every inner BC).
-                if (!ghostElem.interpValid)
+                // No fluid-side sample and a sub-BC that left this P ghost untouched: skip (matches
+                // the "leave untouched" convention of every inner BC).
+                if (!fillAll && !ghostElem.interpValid)
                     continue;
 
                 auto const idx = toMeshIndex_(ghostElem.index);

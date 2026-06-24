@@ -238,10 +238,12 @@ private:
                     vectorBCs[qty] = std::make_unique<None<vecfield_type>>();
                     break;
                 case PhysicalQuantityT::Vector::rhoV:
-                    vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>();
+                    vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>(
+                        0.0, Dirichlet<vecfield_type>::ExtrapolationType::Constant);
                     break;
                 case PhysicalQuantityT::Vector::E:
-                    vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>();
+                    vectorBCs[qty] = std::make_unique<Dirichlet<vecfield_type>>(
+                        0.0, Dirichlet<vecfield_type>::ExtrapolationType::Constant);
                     break;
                 default: vectorBCs[qty] = std::make_unique<Neumann<vecfield_type>>(); break;
             }

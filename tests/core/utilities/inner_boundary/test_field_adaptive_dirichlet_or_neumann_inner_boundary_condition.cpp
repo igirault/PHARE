@@ -75,12 +75,14 @@ struct MeshDataBuffers
                             elem_storages[i].shape()};
             tags.elemStatus[i].setBuffer(&tmp);
         }
-        tags.ghostElemsData._data = &ghost_array;
+        tags.ghostElemsData._data    = &ghost_array;
+        tags.degradedElemsData._data = &degraded_array;
     }
 
     NdArrayVector<2, double>                  phi_storage;
     std::vector<NdArrayVector<2, double>>     elem_storages;
     GhostElemPack<2>::ghost_elem_array_type   ghost_array{};
+    GhostElemPack<2>::ghost_elem_array_type   degraded_array{};
     MeshData                                  tags;
 };
 

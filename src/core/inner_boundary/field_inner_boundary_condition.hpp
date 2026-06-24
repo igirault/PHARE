@@ -94,6 +94,17 @@ public:
     virtual int priority() const { return 0; }
 
     /**
+     * @brief Whether this BC writes a value into ghost cells that have no interpolable
+     * fluid-side sample ("non-settable" ghosts).
+     *
+     * Most BCs need to interpolate at the symmetric point and so leave such ghosts untouched
+     * (default false). A 0th-order (constant) Dirichlet needs no interpolation and fills every
+     * ghost; BCs that reconstruct from another quantity's ghosts (e.g. total energy from
+     * pressure) query this to decide whether those ghosts are safe to reconstruct.
+     */
+    virtual bool fillsNonInterpolableGhosts() const { return false; }
+
+    /**
      * @brief Apply the boundary condition to @p scalarOrTensorField.
      *
      * Implementations fill ghost-cell values in @p scalarOrTensorField so that the
