@@ -635,21 +635,20 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger, ModelView
             ibm, state);
     }
 
-    // Refresh the moment ghosts so neighbouring coarse patches see the reflux-corrected
-    // conserved state. The moment inflow BCs (Dirichlet rho/rhoV, TotalEnergyFromPressure
-    // Etot1) refill the physical-boundary ghosts after the NaN sentinel, so this is safe.
-    // bc.fillMomentsGhosts(state, level, time, dt);
-
-    // NOTE: do NOT fillMagneticGhosts(state.B1) here. fillMagneticGhosts first stamps the NaN
-    // sentinel over every B1 ghost and then refills via the refiners; at a
-    // super-magnetofast inflow B1 carries the None condition (the field is driven through CT
-    // from the prescribed motional E, never pinned in the ghost), so the inflow B1 ghost is
-    // left at NaN. Unlike the per-substep Euler step — whose subsequent CT/Faraday pass and
-    // next-substep fills repair it — nothing recomputes B1 between reflux and the next coarse
-    // advance, whose first to_primitive reads the ghost box directly and floods
-    // "pressure floored: nan" from the inflow column. B1 on the coarse CF faces is refreshed
-    // by the next advance's own magnetic ghost fill, so skipping it here only defers the
-    // inter-patch B1-ghost sync by one substep.
+    // Reconcile B1 on coarse patch (process) seams after the CT magnetic reflux. The reflux
+    // corrects B1 on the coarse faces adjacent to the fine region; where such a face is also a
+    // seam, only the owning patch applies the correction, so the two patches disagree there and
+    // the coarse discrete divB picks up an O(reflux) seam error (manifest under nested
+    // refinement). refreshMagneticSharedGhosts runs the shared-face border reconciliation that
+    // equalizes them, bringing divB back to roundoff.
+    //
+    // It deliberately skips the NaN sentinel that plain fillMagneticGhosts stamps: at a physical
+    // / inner boundary B is governed by the electric-field boundary conditions (motional / None),
+    // never pinned directly in the ghost, so the stamp would leave those ghosts NaN with nothing
+    // to recompute them before the next coarse advance (the first to_primitive then floods
+    // "pressure floored: nan" from the inflow column). The seam reconcile is over interior domain
+    // overlaps and is unaffected by the stamp, so dropping it costs nothing here.
+    bc.refreshMagneticSharedGhosts(state.B1, level, time);
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger,

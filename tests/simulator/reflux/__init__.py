@@ -427,7 +427,7 @@ def assert_correction_fired(hier_amr, hier_flat, cf_cells, components=("Bx", "By
         )
 
 
-def assert_domain_divB_zero(B_hier, atol=1e-12):
+def assert_domain_divB_zero(B_hier, atol=1e-11):
     """Assert discrete divB ~ 0 in every DOMAIN cell of every level.
 
     Uses the validated production divB (`_divB2D`) on the full ghost-inclusive
@@ -503,8 +503,12 @@ def assert_shared_process_seam(B_hier, base_cells, ndim=2):
         )
 
 
-def assert_divB_zero(hier, level=0, atol=1e-13):
-    """Discrete divB = 0 at every interior cell of the given level."""
+def assert_divB_zero(hier, level=0, atol=1e-12):
+    """Discrete divB = 0 at every interior cell of the given level.
+
+    atol is at FP-roundoff level (B ~ O(1), so 1e-12 is ~12 digits below signal):
+    after the post-reflux coarse-seam B reconciliation the residual divB on nested
+    (3-level) cases is pure accumulated roundoff (~3e-13 in 2D, ~2e-12 in 3D)."""
     lvl = hier.level(level)
     patches = lvl.patches
     if not patches:

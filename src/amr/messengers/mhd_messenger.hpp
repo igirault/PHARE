@@ -502,6 +502,22 @@ namespace amr
             magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
 
+        // Like fillMagneticGhosts but without first stamping the NaN sentinel over the ghosts.
+        // Runs the same inter-patch ghost copy + shared-face border reconciliation, so a
+        // neighbouring patch sees a freshly corrected B on the faces it shares (needed after
+        // reflux to keep coarse-level discrete divB = 0 at patch seams). Physical- and
+        // inner-boundary B ghosts are left at their existing values: there B is governed by the
+        // electric-field boundary conditions (motional / None), never pinned directly, so the
+        // NaN stamp of fillMagneticGhosts would leave those ghosts poisoned with no later step
+        // recomputing them before the next coarse advance.
+        void refreshMagneticSharedGhosts(VecFieldT& B, level_t const& level, double const fillTime)
+        {
+            PHARE_LOG_SCOPE(3, "MHDMessenger::refreshMagneticSharedGhosts");
+
+            magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
+            magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
+        }
+
         void fillCurrentGhosts(VecFieldT& J, level_t const& level, double const fillTime)
         {
             setNaNsOnVecfieldGhosts(J, level);
