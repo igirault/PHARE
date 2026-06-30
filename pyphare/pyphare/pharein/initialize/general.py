@@ -131,6 +131,9 @@ def _add_inflow_magnetic_field(bc_path, data, ndim):
     coordinates and broadcast the scalar component over the face nodes.
     """
     B = data["B"]
+    # Explicit flag so C++ does not have to introspect the dict variant type (the pinned
+    # cppdict release has no Dict::is<T>()).
+    add_bool(f"{bc_path}/data/B_is_function", callable(B))
     if callable(B):
         for i, axis in enumerate("xyz"):
             # extract component i at time t (last positional arg); ignore spatial vectors

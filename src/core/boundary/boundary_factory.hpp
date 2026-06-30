@@ -181,13 +181,14 @@ private:
 
     using _time_function = initializer::TimeFunction<dimension>;
 
-    /** @brief Whether any x/y/z component of a vector data field is a space/time function
-     * (vs a constant). Used to drive a time-varying inflow (e.g. IMF turning). */
+    /** @brief Whether a vector data field is given as a space/time function (vs a constant).
+     * Used to drive a time-varying inflow (e.g. IMF turning). Reads the explicit boolean flag
+     * "<key>_is_function" written by the Python layer, avoiding any cppdict variant
+     * introspection (the pinned cppdict release has no Dict::is<T>()). */
     static bool isFunctionXYZ_(initializer::PHAREDict const& data, std::string const& key)
     {
-        return data[key]["x"].template is<_time_function>()
-               || data[key]["y"].template is<_time_function>()
-               || data[key]["z"].template is<_time_function>();
+        auto const flag = key + "_is_function";
+        return data.contains(flag) && data[flag].template to<bool>();
     }
 
     /** @brief Linear combination c1*f1 + c2*f2 of two time functions, evaluated node-wise at
