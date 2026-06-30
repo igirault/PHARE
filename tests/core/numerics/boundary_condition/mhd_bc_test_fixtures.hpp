@@ -38,14 +38,16 @@ struct MHDPatchFieldAccessorTest : IPatchFieldAccessor<FieldMHD<dim>, MHDQuantit
     GridMHD& Etot;
     UsableVecField& rhoV;
     UsableVecField& Bvec;
+    UsableVecField* B0vec; // optional background field, exposed as MHDQuantity::Vector::B0
 
-    MHDPatchFieldAccessorTest(GridMHD& rho_, GridMHD& P_, GridMHD& Etot_,
-                              UsableVecField& rhoV_, UsableVecField& Bvec_)
+    MHDPatchFieldAccessorTest(GridMHD& rho_, GridMHD& P_, GridMHD& Etot_, UsableVecField& rhoV_,
+                              UsableVecField& Bvec_, UsableVecField* B0vec_ = nullptr)
         : rho{rho_}
         , P{P_}
         , Etot{Etot_}
         , rhoV{rhoV_}
         , Bvec{Bvec_}
+        , B0vec{B0vec_}
     {
     }
 
@@ -66,6 +68,10 @@ struct MHDPatchFieldAccessorTest : IPatchFieldAccessor<FieldMHD<dim>, MHDQuantit
         {
             case MHDQuantity::Vector::rhoV: return rhoV.super();
             case MHDQuantity::Vector::B1: return Bvec.super();
+            case MHDQuantity::Vector::B0:
+                if (!B0vec)
+                    throw std::runtime_error("MHDPatchFieldAccessorTest: B0 not provided");
+                return B0vec->super();
             default: throw std::runtime_error("MHDPatchFieldAccessorTest: unsupported vector qty");
         }
     }

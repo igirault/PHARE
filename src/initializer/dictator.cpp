@@ -13,6 +13,7 @@
 
 
 using PHARE::initializer::InitFunction;
+using PHARE::initializer::TimeFunction;
 
 
 
@@ -54,6 +55,10 @@ PYBIND11_MODULE(dictator, m)
     m.def("addInitFunction1D", add<InitFunction<1>>, "add");
     m.def("addInitFunction2D", add<InitFunction<2>>, "add");
     m.def("addInitFunction3D", add<InitFunction<3>>, "add");
+
+    m.def("addTimeFunction1D", add<TimeFunction<1>>, "add");
+    m.def("addTimeFunction2D", add<TimeFunction<2>>, "add");
+    m.def("addTimeFunction3D", add<TimeFunction<3>>, "add");
 
     m.def("add_array_as_vector", add_array_as_vector<double>, "add_array_as_vector");
 

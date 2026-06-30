@@ -43,11 +43,12 @@ public:
     {
     }
 
-    template<typename Field, typename... Fluxes>
-    void operator()(Field const& U, Field& Unew, const Fluxes&... fluxes) const
+    template<typename Field, typename Pred, typename... Fluxes>
+    void operator()(Field const& U, Field& Unew, Pred const& shouldUpdate,
+                    const Fluxes&... fluxes) const
     {
         layout_.evalOnBox(Unew, [&](auto&... args) mutable {
-            finite_volume_euler_(U, Unew, {args...}, fluxes...);
+            finite_volume_euler_(U, Unew, shouldUpdate, {args...}, fluxes...);
         });
     }
 
@@ -55,10 +56,20 @@ private:
     GridLayout layout_;
     double dt_;
 
-    template<typename Field, typename... Fluxes>
-    void finite_volume_euler_(Field const& U, Field& Unew, MeshIndex<Field::dimension> index,
-                              const Fluxes&... fluxes) const
+    template<typename Field, typename Pred, typename... Fluxes>
+    void finite_volume_euler_(Field const& U, Field& Unew, Pred const& shouldUpdate,
+                              MeshIndex<Field::dimension> index, const Fluxes&... fluxes) const
     {
+        // Cells excluded by the predicate (e.g. inner-boundary Ghost / Inactive cells) are not
+        // evolved by the flux divergence: they are owned by the inner BC / safe-state. Copy the
+        // source value so the conserved field stays well-defined there instead of accumulating a
+        // meaningless flux update the BC may fail to reclaim.
+        if (!shouldUpdate(index))
+        {
+            Unew(index) = U(index);
+            return;
+        }
+
         auto&& flux_tuple = std::forward_as_tuple(fluxes...);
 
         auto&& F_x          = std::get<0>(flux_tuple);

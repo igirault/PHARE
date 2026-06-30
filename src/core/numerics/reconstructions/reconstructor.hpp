@@ -4,6 +4,7 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/reconstructions/constant.hpp"
 #include <type_traits>
 #include <utility>
 
@@ -24,30 +25,46 @@ public:
         auto [VzL, VzR] = Reconstruction::template reconstruct<direction>(S.V(Component::Z), index);
         auto [PL, PR]   = Reconstruction::template reconstruct<direction>(S.P, index);
 
+        // Positivity-preserving fallback: a high-order reconstruction (e.g. WENOZ) can
+        // overshoot density or pressure to <= 0 across steep gradients — e.g. the sharp
+        // density front at the inner-boundary stagnation point. A non-positive reconstructed
+        // rho or P makes the fast-magnetosonic speed sqrt(gamma P / rho) NaN, which then
+        // poisons the CT electric field and hence B1/Etot1. Where either reconstructed side
+        // is non-positive, revert that scalar to first-order (cell averages, always > 0 as
+        // long as the cell-centered state is positive). Only rho and P need this — they are
+        // the quantities that enter the square roots.
+        if (!(rhoL > 0.0) || !(rhoR > 0.0))
+        {
+            auto const fo
+                = ConstantReconstruction<GridLayout>::template reconstruct<direction>(S.rho, index);
+            rhoL = fo.first;
+            rhoR = fo.second;
+        }
+        if (!(PL > 0.0) || !(PR > 0.0))
+        {
+            auto const fo
+                = ConstantReconstruction<GridLayout>::template reconstruct<direction>(S.P, index);
+            PL = fo.first;
+            PR = fo.second;
+        }
+
         // auto [BL, BR] = center_reconstruct<direction>(S.B, GridLayout::faceXToCellCenter(),
         //                                               GridLayout::faceYToCellCenter(),
         //                                               GridLayout::faceZToCellCenter(), index);
 
         auto [B1L, B1R] = transverse_reconstruct<direction>(S.B1, index);
-        auto [B0L, B0R] = transverse_reconstruct<direction>(S.B0, index);
 
-        auto const [BxL, ByL, BzL]
-            = totalMagneticComponents(B1L.x, B1L.y, B1L.z, B0L.x, B0L.y, B0L.z);
-        auto const [BxR, ByR, BzR]
-            = totalMagneticComponents(B1R.x, B1R.y, B1R.z, B0R.x, B0R.y, B0R.z);
+        // B0 is not reconstructed: it is read once at the Riemann face (single value). It is
+        // stored alongside the reconstructed perturbation B1 (which PerIndex carries as its
+        // magnetic variable); the total field is formed by addition only, where needed. This
+        // keeps B0 out of the Riemann jump (B1R - B1L) and makes a static equilibrium
+        // well-balanced.
+        auto const B0f = B0_at_face<direction>(S.B0, index);
 
         using Float = std::decay_t<decltype(rhoL)>;
 
-        PerIndex<Float> uL{rhoL,
-                           PerIndexVector<Float>{VxL, VyL, VzL},
-                           PerIndexVector<Float>{BxL, ByL, BzL},
-                           PL,
-                           B0L};
-        PerIndex<Float> uR{rhoR,
-                           PerIndexVector<Float>{VxR, VyR, VzR},
-                           PerIndexVector<Float>{BxR, ByR, BzR},
-                           PR,
-                           B0R};
+        PerIndex<Float> uL{rhoL, PerIndexVector<Float>{VxL, VyL, VzL}, B1L, PL, B0f};
+        PerIndex<Float> uR{rhoR, PerIndexVector<Float>{VxR, VyR, VzR}, B1R, PR, B0f};
 
         return std::make_pair(uL, uR);
     }
@@ -112,6 +129,38 @@ public:
         BR(transverse[1]) = Bt1R;
 
         return std::make_pair(BL, BR);
+    }
+
+    // B0 is not reconstructed: read it once at the Riemann face. The normal component is
+    // naturally face-centered (read directly); the transverse components are linear-averaged
+    // from their native Yee location to the face location.
+    template<auto direction, typename VecField>
+    static auto B0_at_face(VecField const& B0, MeshIndex<VecField::dimension> index)
+    {
+        PerIndexVector<typename VecField::value_type> B0f;
+        B0f(direction) = B0(static_cast<Component>(direction))(index);
+        if constexpr (direction == Direction::X)
+        {
+            B0f(Component::Y)
+                = GridLayout::template project<GridLayout::B0yToFaceX>(B0(Component::Y), index);
+            B0f(Component::Z)
+                = GridLayout::template project<GridLayout::B0zToFaceX>(B0(Component::Z), index);
+        }
+        else if constexpr (direction == Direction::Y)
+        {
+            B0f(Component::X)
+                = GridLayout::template project<GridLayout::B0xToFaceY>(B0(Component::X), index);
+            B0f(Component::Z)
+                = GridLayout::template project<GridLayout::B0zToFaceY>(B0(Component::Z), index);
+        }
+        else // Direction::Z
+        {
+            B0f(Component::X)
+                = GridLayout::template project<GridLayout::B0xToFaceZ>(B0(Component::X), index);
+            B0f(Component::Y)
+                = GridLayout::template project<GridLayout::B0yToFaceZ>(B0(Component::Y), index);
+        }
+        return B0f;
     }
 
     template<auto direction, typename VecField>

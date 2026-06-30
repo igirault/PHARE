@@ -16,6 +16,7 @@ enum class BoundaryType {
     Open,
     FreePressureInflow,
     FixedPressureOutflow,
+    AdaptiveOutflow,
     NonReflectingHydroSubsonicOutflow,
     NonReflectingHydroSubsonicInflow
 };
@@ -212,6 +213,7 @@ inline BoundaryType getBoundaryTypeFromString(std::string const& name)
         {"super-magnetofast-outflow", BoundaryType::SuperMagnetofastOutflow},
         {"free-pressure-inflow", BoundaryType::FreePressureInflow},
         {"fixed-pressure-outflow", BoundaryType::FixedPressureOutflow},
+        {"adaptive-outflow", BoundaryType::AdaptiveOutflow},
         {"non-reflecting-hydro-subsonic-outflow",
          BoundaryType::NonReflectingHydroSubsonicOutflow},
         {"non-reflecting-hydro-subsonic-inflow", BoundaryType::NonReflectingHydroSubsonicInflow},

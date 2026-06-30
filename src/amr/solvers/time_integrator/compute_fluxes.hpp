@@ -1,17 +1,25 @@
 #ifndef PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 #define PHARE_CORE_NUMERICS_TIME_INTEGRATOR_COMPUTE_FLUXES_HPP
 
-#include "initializer/data_provider.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 #include "amr/solvers/solver_mhd_model_view.hpp"
+
+#include "core/inner_boundary/inner_bc_context.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
+
+#include "initializer/data_provider.hpp"
 
 namespace PHARE::solver
 {
 template<template<typename> typename FVMethodStrategy, typename MHDModel>
 class ComputeFluxes
 {
-    using level_t       = typename MHDModel::level_t;
-    using Layout        = typename MHDModel::gridlayout_type;
-    using Dispatchers_t = Dispatchers<Layout>;
+    using level_t                     = MHDModel::level_t;
+    using gridlayout_type             = MHDModel::gridlayout_type;
+    using state_type                  = MHDModel::state_type;
+    using resources_manager_type      = MHDModel::resources_manager_type;
+    using inner_boundary_manager_type = MHDModel::inner_boundary_manager_type;
+    using Dispatchers_t               = Dispatchers<gridlayout_type>;
 
     using Ampere_t = Dispatchers_t::Ampere_t;
 
@@ -67,7 +75,48 @@ public:
         //
         ct_(level, model, state, fluxes);
 
-        // bc.fillElectricGhosts(state.E, level, newTime);
+        bc.fillElectricGhosts(state.E, level, newTime);
+
+        if (model.hasInnerBoundary())
+        {
+            resources_manager_type& rm       = *model.resourcesManager;
+            inner_boundary_manager_type& ibm = *model.innerBoundaryManager;
+            core::InnerBCContext<state_type> ctx{state, state, newTime};
+            amr::visitLevel<gridlayout_type>(
+                level, rm,
+                [&](auto& layout, auto&&, auto&&) {
+                    ibm.applyBC(state.E, layout, ctx);
+
+                    // Pin E to 0 in inactive cells (deep inside the body) so the large CT
+                    // values there neither pollute diagnostics nor leak into the cut-cell
+                    // Faraday stencil that consumes E next. Done per component centering.
+                    auto& meshData = ibm.getMeshData();
+                    auto zeroE     = [&](auto component) {
+                        auto centering = layout.centering(state.E(component).physicalQuantity());
+                        auto& status   = meshData.getStatusFieldFromCentering(centering);
+                        layout.evalOnBox(state.E(component), [&](auto&... args) {
+                            auto idx = core::MeshIndex<gridlayout_type::dimension>{args...};
+                            if (status(idx) == core::toDouble(core::ElemStatus::Inactive))
+                                state.E(component)(idx) = 0.0;
+                        });
+                    };
+                    zeroE(core::Component::X);
+                    zeroE(core::Component::Y);
+                    zeroE(core::Component::Z);
+                },
+                ibm, state);
+
+            // applyBC / zeroE above write the corrected E into the body's ghost elements, but
+            // only on the patch that can interpolate the mirror (others skip them) and zeroE
+            // touches interior cells only. A patch holding one of those body-ghost cells merely
+            // as a *patch* ghost therefore keeps the pre-BC E filled by fillElectricGhosts above.
+            // Refill the electric ghosts so every patch copy reflects the post-BC value of its
+            // owning patch; without this the stale E feeds the cut-cell Faraday stencil (and the
+            // Poynting correction) and leaks an inconsistent B1 across patch boundaries at the
+            // body.
+            // bc.fillElectricGhosts(state.E, level, newTime);
+        }
+        fvm_.apply_poynting_correction(level, model, ct_.constrained_transport_, state, fluxes);
     }
 
     void registerResources(MHDModel& model)

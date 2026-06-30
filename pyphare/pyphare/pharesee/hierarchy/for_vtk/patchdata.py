@@ -18,8 +18,10 @@ class VtkFieldDatasetAccessor:
 
     def __getitem__(self, slice):
         # todo finish slice/box lookup
-        return self.dataset[:, self.cmp_idx][
-            self.offset : self.offset + self.box.size()
+        # read only this patch's hyperslab; indexing the column first would
+        # materialize the whole (all-times, all-patches) component array.
+        return self.dataset[
+            self.offset : self.offset + self.box.size(), self.cmp_idx
         ].reshape(self.box.shape, order="F")
 
     @property

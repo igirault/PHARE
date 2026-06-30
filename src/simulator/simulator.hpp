@@ -12,8 +12,9 @@
 #include "core/utilities/mpi_utils.hpp"
 #include "core/utilities/timestamps.hpp"
 
+#include "amr/samrai.hpp"
 #include "amr/wrappers/integrator.hpp"
-#include "amr/tagging/tagger_factory.hpp"
+#include "amr/tagging/concrete_tagger.hpp"
 #include "amr/load_balancing/load_balancer_details.hpp"
 #include "amr/load_balancing/load_balancer_manager.hpp"
 #include "amr/load_balancing/load_balancer_estimator_hybrid.hpp"
@@ -26,6 +27,8 @@
 #include <stdexcept>
 #include <vector>
 #include <string>
+#include <limits>
+#include <algorithm>
 
 
 
@@ -102,7 +105,20 @@ public:
 
     NO_DISCARD double startTime() override { return startTime_; }
     NO_DISCARD double endTime() override { return finalTime_; }
-    NO_DISCARD double timeStep() override { return dt_; }
+    NO_DISCARD double timeStep() override
+    {
+        if (timeStepType_ != "adaptive")
+            return dt_;
+
+        // recompute the CFL-stable dt once per coarse step (timeStep() is queried from several
+        // Python sites at the same currentTime_); clamp the final step to land on finalTime_.
+        if (cachedDtTime_ != currentTime_)
+        {
+            cachedDt_     = multiphysInteg_->computeStableDt(*hierarchy_, cfl_, fourier_);
+            cachedDtTime_ = currentTime_;
+        }
+        return std::min(cachedDt_, finalTime_ - currentTime_);
+    }
     NO_DISCARD double currentTime() override { return currentTime_; }
 
     void initialize() override;
@@ -182,10 +198,16 @@ private:
     int maxLevelNumber_;
     int maxMHDLevel_;
     double dt_;
-    int timeStepNbr_               = 0;
-    double startTime_              = 0;
-    double finalTime_              = 0;
-    double currentTime_            = 0;
+    std::string timeStepType_ = "constant";
+    double cfl_               = 0; // advective CFL coefficient (adaptive)
+    double fourier_           = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
+    int timeStepNbr_          = 0;
+    double startTime_         = 0;
+    double finalTime_         = 0;
+    double currentTime_       = 0;
+    // adaptive-dt memo: recompute the stable dt once per coarse step (per distinct currentTime_)
+    double cachedDt_               = 0;
+    double cachedDtTime_           = std::numeric_limits<double>::lowest();
     std::size_t fineDumpLvlMax     = 0;
     std::size_t summaryCadenceIdx_ = 0;
     bool isInitialized             = false;
@@ -299,7 +321,7 @@ void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
         if (dict["simulation"]["AMR"]["refinement"]["tagging"]["method"].template to<std::string>()
             != "none")
         {
-            auto hybridTagger_ = amr::TaggerFactory<HybridModel>::make(
+            auto hybridTagger_ = std::make_unique<amr::ConcreteTagger<HybridModel>>(
                 dict["simulation"]["AMR"]["refinement"]["tagging"]);
             multiphysInteg_->registerTagger(maxMHDLevel_, maxLevelNumber_ - 1,
                                             std::move(hybridTagger_));
@@ -367,7 +389,7 @@ void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
         if (dict["simulation"]["AMR"]["refinement"]["tagging"]["method"].template to<std::string>()
             != "none")
         {
-            auto mhdTagger_ = amr::TaggerFactory<MHDModel>::make(
+            auto mhdTagger_ = std::make_unique<amr::ConcreteTagger<MHDModel>>(
                 dict["simulation"]["AMR"]["refinement"]["tagging"]);
             multiphysInteg_->registerTagger(0, maxMHDLevel_ - 1, std::move(mhdTagger_));
         }
@@ -424,8 +446,12 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , messengerFactory_{descriptors_}
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
-    , dt_{dict["simulation"]["time_step"].template to<double>()}
-    , timeStepNbr_{dict["simulation"]["time_step_nbr"].template to<int>()}
+    // time_step/value and time_step_nbr are absent in the adaptive case (see ctor body for finalTime_)
+    , dt_{cppdict::get_value(dict, "simulation/time_step/value", 0.)}
+    , timeStepType_{cppdict::get_value(dict, "simulation/time_step/mode", std::string{"constant"})}
+    , cfl_{cppdict::get_value(dict, "simulation/time_step/cfl", 0.)}
+    , fourier_{cppdict::get_value(dict, "simulation/time_step/fourier", 0.)}
+    , timeStepNbr_{cppdict::get_value(dict, "simulation/time_step_nbr", 0)}
     , finalTime_{dt_ * timeStepNbr_}
     , functors_{functors_setup(dict)}
     , multiphysInteg_{std::make_shared<MultiPhysicsIntegrator>(dict["simulation"], functors_)}
@@ -434,7 +460,11 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
         throw std::runtime_error("NO HIERARCHY!");
 
     currentTime_ = restart_time(dict);
-    finalTime_ += currentTime_; // final time is from timestep * timestep_nbr!
+    if (timeStepType_ == "adaptive")
+        // dt is computed each step; the run is bounded by final_time directly
+        finalTime_ = currentTime_ + dict["simulation"]["final_time"].template to<double>();
+    else
+        finalTime_ += currentTime_; // final time is from timestep * timestep_nbr!
 
 
     // we would need a different restart manager for mhd and hybrid if both models are used
@@ -498,6 +528,15 @@ void Simulator<opts>::initialize()
             throw std::runtime_error("Error - Simulator has no integrator");
 
         integrator_->initialize();
+
+        // On restart, SAMRAI restores saved patch-data but the level initializer is NOT invoked for
+        // restored levels, so non-saved / derived state is missing: refresh the static background
+        // (B0 + edge B0x_Ez/B0y_Ez) and re-establish the inner-boundary classification + safe state
+        // per restored level. The restored conserved fields (rho/rhoV/B1/Etot1) are left untouched.
+        if (mhdModel_ and SamraiLifeCycle::getRestartManager()->isFromRestart())
+            for (int ilvl = 0; ilvl < hierarchy_->getNumberOfLevels(); ++ilvl)
+                mhdModel_->reinitializeAfterRestart(SAMRAITypes::getLevel(*hierarchy_, ilvl),
+                                                    currentTime_);
     }
     catch (core::DictionaryException const& ex)
     {
@@ -593,8 +632,11 @@ void Simulator<opts>::handle_dictionary_exception(core::DictionaryException cons
     if (this->allowEmergencyDumps)
         for (auto const& exception_id : dump_exceptions)
             if (ex.id() == exception_id)
-                for (int ilvl = 0; ilvl < hierarchy_->getMaxNumberOfLevels(); ++ilvl)
-                    this->dMan->dump_level(ilvl, currentTime_);
+                // single full-hierarchy dump: one VTKHDF step holding all levels.
+                // A per-level dump_level loop appends one step per level, breaking
+                // the OverlappingAMR "one step = all levels" invariant (ParaView
+                // then shows nothing for the multi-level emergency snapshot).
+                this->dMan->dump_all(currentTime_);
 }
 
 template<auto opts>

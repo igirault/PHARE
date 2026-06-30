@@ -140,11 +140,84 @@ def check_domain(**kwargs):
 # ------------------------------------------------------------------------------
 
 
+def normalize_time_step(**kwargs):
+    """
+    Resolve the public 'time_step' option into the internal time_step_type / time_step_cfl /
+    time_step_fourier attributes. 'time_step' may be:
+      - a scalar (or absent)                          -> constant step
+      - {'mode': 'constant', 'value': <dt>}           -> constant step (dict form, 'value' optional)
+      - {'mode': 'adaptive', 'cfl': <c>, 'fourier': <f>}  -> adaptive step ('fourier' defaults to 'cfl')
+    Mutates and returns kwargs so downstream check_time() sees the resolved internal keys.
+    """
+    ts = kwargs.get("time_step", None)
+
+    if not isinstance(ts, dict):  # scalar value or absent
+        kwargs["time_step_type"] = "constant"
+        return kwargs
+
+    valid_modes = ("constant", "adaptive")
+    mode = ts.get("mode")
+    if mode not in valid_modes:
+        raise ValueError(
+            f"Error: time_step dict requires 'mode' in {valid_modes}, got {mode!r}"
+        )
+
+    def _check_keys(allowed):
+        extra = set(ts) - allowed
+        if extra:
+            raise ValueError(
+                f"Error: invalid time_step keys for mode '{mode}': {sorted(extra)}, "
+                f"allowed {sorted(allowed)}"
+            )
+
+    if mode == "constant":
+        _check_keys({"mode", "value"})
+        kwargs["time_step_type"] = "constant"
+        if "value" in ts:
+            kwargs["time_step"] = ts["value"]
+        else:
+            del kwargs["time_step"]  # let final_time + time_step_nbr combo apply
+    else:  # adaptive
+        _check_keys({"mode", "cfl", "fourier"})
+        if "cfl" not in ts:
+            raise ValueError("Error: adaptive time_step requires 'cfl'")
+        kwargs["time_step_type"] = "adaptive"
+        kwargs["time_step_cfl"] = ts["cfl"]
+        kwargs["time_step_fourier"] = ts.get("fourier", ts["cfl"])
+        del kwargs["time_step"]
+
+    return kwargs
+
+
+def check_adaptive_time(**kwargs):
+    """
+    adaptive time stepping: dt is recomputed each step from a CFL constraint.
+    The user supplies 'final_time' and a 'cfl' (via the time_step dict); 'time_step_nbr' is not
+    allowed (imposing a step count with a variable dt is out of scope for now).
+    Returns (time_step_nbr, time_step, final_time) with the first two set to None.
+    """
+    if "final_time" not in kwargs:
+        raise ValueError("Error: adaptive time_step requires 'final_time'")
+    if "time_step" in kwargs or "time_step_nbr" in kwargs:
+        raise ValueError(
+            "Error: adaptive time_step is incompatible with a constant 'time_step' / 'time_step_nbr'"
+        )
+    if kwargs["time_step_cfl"] <= 0:
+        raise ValueError("Error: adaptive time_step 'cfl' must be > 0")
+
+    return None, None, kwargs["final_time"]
+
+
 def check_time(**kwargs):
     """
     check parameters relative to simulation duration and time resolution and raise exception if invalids
      return time_step_nbr and time_step
     """
+    time_step_type = kwargs.get("time_step_type", "constant")
+    assert time_step_type in ("constant", "adaptive")  # set by normalize_time_step
+    if time_step_type == "adaptive":
+        return check_adaptive_time(**kwargs)
+
     final_and_dt = (
         "final_time" in kwargs
         and "time_step" in kwargs
@@ -308,8 +381,32 @@ def _normalize_inflow_velocity(location, velocity):
     return v
 
 
-def _normalize_B(location, B):
-    """Return the magnetic field as a (Bx, By, Bz) tuple. Must be a 3-element sequence."""
+def _normalize_B(location, B, allow_time_function=False):
+    """Return the magnetic field as a (Bx, By, Bz) tuple, or, when allowed, a single time
+    function f(t) -> [Bx, By, Bz] (uniform in space, used for IMF turning).
+
+    A 3-element sequence is normalised to a tuple of floats. A callable is kept as-is when
+    ``allow_time_function`` is set; it is rejected otherwise.
+    """
+    if callable(B):
+        if not allow_time_function:
+            raise NotImplementedError(
+                f"'B' at boundary '{location}' may only be a time function f(t) for a "
+                f"super-magnetofast-inflow boundary; got a callable for an unsupported BC type."
+            )
+        try:
+            probe = B(0.0)
+        except Exception as e:
+            raise TypeError(
+                f"'B' time function at boundary '{location}' must be callable as f(t) with a "
+                f"scalar time; calling B(0.0) raised {e!r}"
+            )
+        if len(probe) != 3:
+            raise ValueError(
+                f"'B' time function at boundary '{location}' must return a 3-vector "
+                f"[Bx, By, Bz]; B(0.0) returned {probe!r}"
+            )
+        return B
     try:
         b = tuple(float(bi) for bi in B)
     except (TypeError, ValueError):
@@ -324,10 +421,35 @@ def _normalize_B(location, B):
     return b
 
 
+def _normalize_inflow_magnetic_field(location, data, allow_time_function=False):
+    """Validate and normalise the magnetic field of an inflow 'data' sub-dict.
+
+    The total field is prescribed via 'B' (= B0 + B1); it is normalised in place via
+    _normalize_B. The boundary magnetic field is driven through the constrained transport from
+    the motional electric field E = -v x B (full Dirichlet on E) on the C++ side, with B1 left
+    free in the ghosts. When ``allow_time_function`` is set, 'B' may be a single time function
+    f(t) -> [Bx, By, Bz] (uniform in space) to drive a rotating inflow field (IMF turning).
+
+    Prescribing the perturbation 'B1' is not supported yet: it needs an E = -v x (B0 + B1)
+    electric-field condition that is not implemented.
+    """
+    if "B1" in data:
+        raise NotImplementedError(
+            f"Inflow BC at '{location}': prescribing the magnetic perturbation 'B1' is not "
+            f"supported yet (it needs an E = -v x (B0 + B1) condition). Prescribe the total "
+            f"field 'B' instead."
+        )
+    if "B" not in data:
+        raise KeyError(
+            f"Inflow BC at '{location}' requires the total magnetic field 'B' inside 'data'"
+        )
+    data["B"] = _normalize_B(location, data["B"], allow_time_function=allow_time_function)
+
+
 def _check_inflow_data(location, bc):
     """Validate and normalise the 'data' sub-dict for a super-magnetofast-inflow BC."""
     data = bc.get("data", {})
-    for key in ("density", "pressure", "velocity", "B"):
+    for key in ("density", "pressure", "velocity"):
         if key not in data:
             raise KeyError(
                 f"Inflow BC at '{location}' requires '{key}' inside 'data'"
@@ -340,7 +462,7 @@ def _check_inflow_data(location, bc):
                 f"got {val!r}"
             )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"]        = _normalize_B(location, data["B"])
+    _normalize_inflow_magnetic_field(location, data, allow_time_function=True)
     bc["data"] = data
 
 
@@ -359,6 +481,27 @@ def _check_fixed_pressure_outflow_data(location, bc):
     if not isinstance(val, (int, float)) or val <= 0:
         raise ValueError(
             f"'pressure' at fixed-pressure outflow boundary '{location}' must be a positive "
+            f"scalar, got {val!r}"
+        )
+    bc["data"] = data
+
+
+def _check_adaptive_outflow_data(location, bc):
+    """Validate and normalise the 'data' sub-dict for an adaptive-outflow BC.
+
+    Only a target exit pressure is required (used on the sub-fast slices). All flow variables
+    (ρ, ρv, B) use a Neumann (zero-gradient) condition; on super-magnetofast slices the pressure
+    is itself zero-gradient and the target is not used.
+    """
+    data = bc.get("data", {})
+    if "pressure" not in data:
+        raise KeyError(
+            f"Adaptive outflow BC at '{location}' requires 'pressure' inside 'data'"
+        )
+    val = data["pressure"]
+    if not isinstance(val, (int, float)) or val <= 0:
+        raise ValueError(
+            f"'pressure' at adaptive outflow boundary '{location}' must be a positive "
             f"scalar, got {val!r}"
         )
     bc["data"] = data
@@ -412,23 +555,30 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
     """Validate and normalise the 'data' sub-dict for a HD non-reflecting subsonic
     inflow (LODI / Poinsot-Lele soft inflow).
 
+    This BC is hydro-only and carries no magnetic field (B1 and E are left free on the C++
+    side); it must not be used with a non-zero magnetic field, so no 'B'/'B1' key is accepted.
+
     Required:
         density           — target inflow density (positive scalar).
         velocity          — target inflow velocity (normalised via _normalize_inflow_velocity).
-        B                 — target inflow magnetic field (normalised via _normalize_B).
         relax_velocity_n  — relaxation coefficient on the normal velocity (≥ 0).
         relax_velocity_t  — relaxation coefficient on the tangential velocity components (≥ 0).
         relax_density     — relaxation coefficient on the density (≥ 0).
 
     """
     data = bc.get("data", {})
-    for key in ("density", "velocity", "B", "relax_velocity_n", "relax_velocity_t",
+    for key in ("density", "velocity", "relax_velocity_n", "relax_velocity_t",
                 "relax_density"):
         if key not in data:
             raise KeyError(
                 f"non-reflecting-hydro-subsonic-inflow BC at '{location}' requires '{key}' "
                 f"inside 'data'"
             )
+    if "B" in data or "B1" in data:
+        raise ValueError(
+            f"non-reflecting-hydro-subsonic-inflow BC at '{location}' is hydro-only and must "
+            f"not be given a magnetic field ('B'/'B1')"
+        )
     val = data["density"]
     if not isinstance(val, (int, float)) or val <= 0:
         raise ValueError(
@@ -436,7 +586,6 @@ def _check_non_reflecting_hydro_subsonic_inflow_data(location, bc, domain_extent
             f"positive scalar, got {val!r}"
         )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"]        = _normalize_B(location, data["B"])
 
     for key in ("relax_velocity_n", "relax_velocity_t", "relax_density"):
         v = data[key]
@@ -457,7 +606,7 @@ def _check_free_pressure_inflow_data(location, bc):
     pressure is obtained from a Neumann extrapolation at runtime.
     """
     data = bc.get("data", {})
-    for key in ("density", "velocity", "B"):
+    for key in ("density", "velocity"):
         if key not in data:
             raise KeyError(
                 f"Free-pressure inflow BC at '{location}' requires '{key}' inside 'data'"
@@ -469,14 +618,14 @@ def _check_free_pressure_inflow_data(location, bc):
             f"got {val!r}"
         )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"]        = _normalize_B(location, data["B"])
+    _normalize_inflow_magnetic_field(location, data)
     bc["data"] = data
 
 
 def check_boundary_conditions(ndim, **kwargs):
     valid_bc_types = ("open", "reflective", "none", "super-magnetofast-inflow",
                       "super-magnetofast-outflow", "free-pressure-inflow",
-                      "fixed-pressure-outflow",
+                      "fixed-pressure-outflow", "adaptive-outflow",
                       "non-reflecting-hydro-subsonic-outflow",
                       "non-reflecting-hydro-subsonic-inflow")
     all_directions = ["x", "y", "z"][:ndim]
@@ -537,6 +686,8 @@ def check_boundary_conditions(ndim, **kwargs):
             _check_free_pressure_inflow_data(location, boundary_conditions[location])
         elif bc_type == "fixed-pressure-outflow":
             _check_fixed_pressure_outflow_data(location, boundary_conditions[location])
+        elif bc_type == "adaptive-outflow":
+            _check_adaptive_outflow_data(location, boundary_conditions[location])
         elif bc_type == "non-reflecting-hydro-subsonic-outflow":
             _check_non_reflecting_hydro_subsonic_outflow_data(
                 location, boundary_conditions[location], domain_extents[location[0]]
@@ -547,6 +698,124 @@ def check_boundary_conditions(ndim, **kwargs):
             )
 
     return boundary_conditions
+
+
+# ------------------------------------------------------------------------------
+
+
+def check_inner_boundary(ndim, **kwargs):
+    inner_boundary = kwargs.get("inner_boundary", None)
+    if inner_boundary is None:
+        return None
+
+    if not isinstance(inner_boundary, dict):
+        raise ValueError("Error: inner_boundary must be a dictionary")
+
+    for key in ("shape", "name"):
+        if key not in inner_boundary:
+            raise ValueError(f"Error: inner_boundary requires a '{key}' key")
+
+    shape = inner_boundary["shape"]
+    valid_shapes = {"sphere", "plane"}
+    if shape not in valid_shapes:
+        raise ValueError(
+            f"Error: inner_boundary shape '{shape}' is invalid, valid shapes are {valid_shapes}"
+        )
+
+    valid_condition_types = {"reflective", "ionospheric-convection"}
+    condition_type = inner_boundary.get("condition_type", "reflective")
+    if condition_type not in valid_condition_types:
+        raise ValueError(
+            f"Error: inner_boundary condition_type '{condition_type}' is invalid, "
+            f"valid types are {valid_condition_types}"
+        )
+
+    # per-type extra keys (prescribed reservoir values the user must provide)
+    condition_keys = {
+        "ionospheric-convection": {"density", "pressure"},
+    }.get(condition_type, set())
+
+    common_keys = {"shape", "name", "condition_type", "inactive_safe_state"} | condition_keys
+    shape_keys = {"sphere": {"center", "radius"}, "plane": {"point", "normal"}}
+    unknown = set(inner_boundary.keys()) - (common_keys | shape_keys[shape])
+    if unknown:
+        raise ValueError(
+            f"Error: invalid inner_boundary keys for {shape}: {sorted(unknown)}"
+        )
+
+    result = {"shape": shape, "name": inner_boundary["name"], "condition_type": condition_type}
+
+    # safe state pinned into inactive (inside-body) cells. Optional; defaults reproduce the
+    # historical hardcoded reset. velocity is a 3-list; B0/B1 accept a scalar (broadcast) or 3-list.
+    safe_in = inner_boundary.get("inactive_safe_state", {})
+    if not isinstance(safe_in, dict):
+        raise ValueError("Error: inner_boundary 'inactive_safe_state' must be a dictionary")
+    safe_unknown = set(safe_in.keys()) - {"density", "pressure", "velocity", "B0", "B1"}
+    if safe_unknown:
+        raise ValueError(
+            f"Error: invalid inactive_safe_state keys: {sorted(safe_unknown)}"
+        )
+
+    def _vec3(v):
+        vv = phare_utilities.listify(v)
+        if len(vv) == 1:  # scalar broadcast
+            vv = [vv[0]] * 3
+        if len(vv) != 3:
+            raise ValueError("Error: inactive_safe_state vector must have length 1 or 3")
+        return [float(x) for x in vv]
+
+    safe_density = float(safe_in.get("density", 1.0))
+    safe_pressure = float(safe_in.get("pressure", 1.0))
+    if safe_density <= 0 or safe_pressure <= 0:
+        raise ValueError("Error: inactive_safe_state density and pressure must be > 0")
+    result["inactive_safe_state"] = {
+        "density": safe_density,
+        "pressure": safe_pressure,
+        "velocity": _vec3(safe_in.get("velocity", [0.0, 0.0, 0.0])),
+        "B0": _vec3(safe_in.get("B0", 0.0)),
+        "B1": _vec3(safe_in.get("B1", 0.0)),
+    }
+
+    if condition_type == "ionospheric-convection":
+        for key in ("density", "pressure"):
+            if key not in inner_boundary:
+                raise ValueError(
+                    "Error: inner_boundary condition_type 'ionospheric-convection' "
+                    f"requires '{key}'"
+                )
+            value = float(inner_boundary[key])
+            if value <= 0:
+                raise ValueError(f"Error: inner_boundary '{key}' must be > 0")
+            result[key] = value
+
+    if shape == "sphere":
+        if "center" not in inner_boundary or "radius" not in inner_boundary:
+            raise ValueError("Error: sphere inner_boundary requires both 'center' and 'radius'")
+        center = phare_utilities.listify(inner_boundary["center"])
+        if len(center) != ndim:
+            raise ValueError(
+                f"Error: sphere center must have length {ndim}, got {len(center)}"
+            )
+        radius = float(inner_boundary["radius"])
+        if radius <= 0:
+            raise ValueError("Error: sphere radius must be > 0")
+        result.update({"center": [float(v) for v in center], "radius": radius})
+
+    else:  # plane
+        if "point" not in inner_boundary or "normal" not in inner_boundary:
+            raise ValueError("Error: plane inner_boundary requires both 'point' and 'normal'")
+        point = phare_utilities.listify(inner_boundary["point"])
+        normal = phare_utilities.listify(inner_boundary["normal"])
+        if len(point) != ndim:
+            raise ValueError(f"Error: plane point must have length {ndim}, got {len(point)}")
+        if len(normal) != ndim:
+            raise ValueError(f"Error: plane normal must have length {ndim}, got {len(normal)}")
+        normal = [float(v) for v in normal]
+        if np.linalg.norm(np.asarray(normal)) == 0:
+            raise ValueError("Error: plane normal cannot be the zero vector")
+        result.update({"point": [float(v) for v in point], "normal": normal})
+
+    return result
 
 
 # ------------------------------------------------------------------------------
@@ -791,6 +1060,13 @@ def check_diag_options(**kwargs):
                 raise ValueError(
                     f"Invalid diagnostics mode {mode}, valid modes are {valid_modes}"
                 )
+        if "options" in diag_options:
+            valid_option_keys = {"dir", "mode", "allow_emergency_dumps", "fine_dump_lvl_max"}
+            unknown = set(diag_options["options"].keys()) - valid_option_keys
+            if unknown:
+                raise ValueError(
+                    f"Unknown diag_options keys: {unknown}. Valid keys: {valid_option_keys}"
+                )
         if (
             "options" in diag_options
             and "allow_emergency_dumps" in diag_options["options"]
@@ -810,6 +1086,8 @@ def check_restart_options(**kwargs):
         "dir",
         "elapsed_timestamps",
         "timestamps",
+        "time_period",  # write a restart every time_period (built into timestamps)
+        "niter_period",  # write a restart every niter_period coarse steps (C++ cadence)
         "mode",
         "restart_time",  # number or "auto"
         "keep_last",  # delete obsolete
@@ -855,6 +1133,59 @@ def validate_restart_options(sim):
 
 def check_refinement(**kwargs):
     return kwargs.get("refinement", "boxes")
+
+
+def check_tagging(**kwargs):
+    """Normalize tagging configuration into {"method", "quantities":[(name, thr)]}.
+
+    Returns None when refinement is not "tagging". Configuration is carried by the
+    optional `tagging` kwarg, e.g.
+
+        refinement="tagging",
+        tagging={"method": "default", "quantities": {"B": 0.1, "rho": 0.4}}
+
+    where `quantities` maps a field name to its own threshold (a cell is tagged if
+    ANY quantity's indicator exceeds its threshold). Both keys are optional:
+    `method` defaults to "default"; when `quantities` is omitted (or no `tagging`
+    dict is given at all) the criterion falls back to B at `tagging_threshold`
+    (kept for backward compatibility, default 0.1).
+
+    Quantity names are not restricted here: the C++ tagger resolves them against
+    the model's field tree and throws if a name matches nothing.
+    """
+    valid_methods = ("default", "lohner")
+
+    if kwargs.get("refinement", "boxes") != "tagging":
+        return None
+
+    threshold = kwargs.get("tagging_threshold", 0.1)
+    if threshold is None:
+        threshold = 0.1
+    threshold = float(threshold)
+
+    spec = kwargs.get("tagging", None)
+    if spec is None:
+        spec = {}
+    if not isinstance(spec, dict):
+        raise ValueError("Error: 'tagging' must be a dict {'method':..., 'quantities':...}")
+
+    method = spec.get("method", "default")
+    if method not in valid_methods:
+        raise ValueError(
+            f"Error: invalid tagging method '{method}', expected one of {valid_methods}"
+        )
+
+    quantities = spec.get("quantities", None)
+    if quantities:
+        # accept the {name: threshold} mapping (preferred) or an iterable of
+        # (name, threshold) pairs.
+        items = quantities.items() if isinstance(quantities, dict) else quantities
+        quantities = [(str(name), float(thr)) for name, thr in items]
+    else:
+        # no quantities specified -> criterion applies to B at tagging_threshold
+        quantities = [("B", threshold)]
+
+    return {"method": method, "quantities": quantities}
 
 
 def check_nesting_buffer(ndim, **kwargs):
@@ -1014,7 +1345,10 @@ def checker(func):
             "diag_export_format",
             "refinement_boxes",
             "refinement",
+            "tagging",
             "tagging_threshold",
+            "inner_boundary_no_refinement_halo",
+            "physical_boundary_no_refinement_halo",
             "clustering",
             "smallest_patch_size",
             "largest_patch_size",
@@ -1041,6 +1375,9 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "inner_boundary",
+            "pressure_floor",
+            "density_floor",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -1064,6 +1401,10 @@ def checker(func):
 
         kwargs["restart_options"] = check_restart_options(**kwargs)
 
+        # resolve the public 'time_step' (scalar or dict) into internal
+        # time_step_type / time_step_cfl / time_step_fourier keys.
+        # (adaptive Fourier coefficient defaults to the advective CFL, BATSRUS-style.)
+        kwargs = normalize_time_step(**kwargs)
         time_step_nbr, time_step, final_time = check_time(**kwargs)
         kwargs["time_step_nbr"] = time_step_nbr
         kwargs["time_step"] = time_step
@@ -1079,6 +1420,7 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
+        kwargs["inner_boundary"] = check_inner_boundary(ndim, **kwargs)
         kwargs["boundary_conditions"] = check_boundary_conditions(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
@@ -1093,6 +1435,7 @@ def checker(func):
 
         kwargs["tag_buffer"] = kwargs.get("tag_buffer", 1)
 
+        kwargs["tagging"] = check_tagging(**kwargs)
         kwargs["refinement"] = check_refinement(**kwargs)
         if kwargs["refinement"] == "boxes":
             (
@@ -1106,6 +1449,8 @@ def checker(func):
 
             kwargs["refinement_boxes"] = None
             kwargs["tagging_threshold"] = kwargs.get("tagging_threshold", 0.1)
+            kwargs["inner_boundary_no_refinement_halo"] = kwargs.get("inner_boundary_no_refinement_halo", None)
+            kwargs["physical_boundary_no_refinement_halo"] = kwargs.get("physical_boundary_no_refinement_halo", None)
 
         kwargs["resistivity"] = check_resistivity(**kwargs)
 
@@ -1204,6 +1549,11 @@ class Simulation(object):
         * **final_time** (``float``), final simulation time. Use with time_step OR time_step_nbr
         * **time_step** (``float``), simulation time step. Use with time_step_nbr OR final_time
         * **time_step_nbr** (``int``), number of time step to perform. Use with final_time OR time_step
+        * **time_step_type** (``str``), ``"constant"`` (default) or ``"adaptive"``. When ``"adaptive"``,
+          the time step is recomputed each step from a CFL constraint (MHD only); supply
+          ``final_time`` and ``time_step_cfl`` (not ``time_step``/``time_step_nbr``).
+        * **time_step_cfl** (``float``), advective CFL coefficient for adaptive time stepping. Normalized so 1 is the stability limit (sum-of-speeds form, dimension-independent); choose in (0, 1], typically ~0.3-0.5.
+        * **time_step_fourier** (``float``), resistive Fourier coefficient for adaptive time stepping. Normalized so 1 is the diffusion stability limit; choose in (0, 1]. Defaults to time_step_cfl. Only relevant when resistivity is non-zero.
 
 
         .. code-block:: python
@@ -1351,6 +1701,12 @@ class Simulation(object):
         * **resistivity** (``float``), resistivity value (default=0.0)
         * **hyper-resistivity** (``float``), hyper-resistivity value (default=0.0)
         * **boundary_types** (``str`` or ``tuple``) type of boundary conditions (default is "periodic" for each direction)
+        * **inner_boundary** (``dict``), optional embedded boundary definition.
+          Required keys: ``shape``, ``name``.
+          Optional key: ``condition_type`` (default: ``"reflective"``).
+          Supported shapes:
+            * sphere: ``{"shape": "sphere", "name": "...", "center": (...), "radius": r}``
+            * plane: ``{"shape": "plane", "name": "...", "point": (...), "normal": (...)}``
 
     """
 
@@ -1376,13 +1732,18 @@ class Simulation(object):
         self.stepDiff = 1 / self.nSubcycles
 
         levelNumbers = list(range(self.max_nbr_levels))
-        self.level_time_steps = [
-            self.time_step * (self.stepDiff ** (ilvl)) for ilvl in levelNumbers
-        ]
-        self.level_step_nbr = [
-            self.nSubcycles ** levelNumbers[ilvl] * self.time_step_nbr
-            for ilvl in levelNumbers
-        ]
+        # with adaptive dt, time_step/time_step_nbr are unknown ahead of the run
+        if self.time_step is None:
+            self.level_time_steps = None
+            self.level_step_nbr = None
+        else:
+            self.level_time_steps = [
+                self.time_step * (self.stepDiff ** (ilvl)) for ilvl in levelNumbers
+            ]
+            self.level_step_nbr = [
+                self.nSubcycles ** levelNumbers[ilvl] * self.time_step_nbr
+                for ilvl in levelNumbers
+            ]
         validate_restart_options(self)
 
     def simulation_domain(self):

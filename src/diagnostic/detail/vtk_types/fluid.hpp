@@ -161,6 +161,17 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
         return file_initializer.initFieldFileLevel(ilvl);
     if (isActiveDiag(diagnostic, tree, "V"))
         return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
+    if (isActiveDiag(diagnostic, tree, "divB"))
+        return file_initializer.initFieldFileLevel(ilvl);
+    if (isActiveDiag(diagnostic, tree, "IBCellStatus"))
+        return file_initializer.initFieldFileLevel(ilvl);
+    if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
+        return file_initializer.initFieldFileLevel(ilvl);
+    for (auto const& name : {"IBStatusE_x", "IBStatusE_y", "IBStatusE_z", "IBStatusB_x",
+                             "IBStatusB_y", "IBStatusB_z"})
+        if (isActiveDiag(diagnostic, tree, name))
+            return file_initializer.initFieldFileLevel(ilvl);
+
 
     return std::nullopt;
 }
@@ -247,11 +258,12 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
 {
     auto& modelView = writer->h5Writer_.modelView();
 
-    auto& rho  = modelView.getRho();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
-    auto& P    = modelView.getP();
-    auto& V    = modelView.getV();
+    auto& rho                   = modelView.getRho();
+    auto& rhoV                  = modelView.getRhoV();
+    auto& Etot                  = modelView.getEtot();
+    auto& P                     = modelView.getP();
+    auto& V                     = modelView.getV();
+    auto& innerBoundaryMeshData = modelView.getInnerBoundaryMeshData();
 
     std::string const tree{"/mhd/"};
 
@@ -265,6 +277,35 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
         file_writer.writeField(P, layout);
     else if (isActiveDiag(diagnostic, tree, "V"))
         file_writer.template writeTensorField<1>(V, layout);
+    else if (isActiveDiag(diagnostic, tree, "divB"))
+        file_writer.writeField(modelView.getDivB(), layout);
+    else if (isActiveDiag(diagnostic, tree, "IBCellStatus"))
+        file_writer.writeField(innerBoundaryMeshData.cellStatusField(), layout);
+    else if (isActiveDiag(diagnostic, tree, "IBSignedDistance"))
+        file_writer.writeField(innerBoundaryMeshData.signedDistanceAtNodes, layout);
+    else
+    {
+        // per-component element status for E (CT) and B (Faraday), to verify that
+        // locations adjacent to cut cells are classified Fluid/Cut (not Inactive).
+        auto& E  = modelView.getE();
+        auto& B1 = modelView.getB1();
+        auto statusOf = [&](auto const& component) -> auto& {
+            return innerBoundaryMeshData.getStatusFieldFromCentering(
+                GridLayout::centering(component));
+        };
+        if (isActiveDiag(diagnostic, tree, "IBStatusE_x"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::X)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusE_y"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::Y)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusE_z"))
+            file_writer.writeField(statusOf(E.getComponent(core::Component::Z)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_x"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::X)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_y"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::Y)), layout);
+        else if (isActiveDiag(diagnostic, tree, "IBStatusB_z"))
+            file_writer.writeField(statusOf(B1.getComponent(core::Component::Z)), layout);
+    }
 }
 
 
@@ -316,7 +357,9 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
     auto& rho      = modelView.getRho();
     auto& V        = modelView.getV();
     auto& P        = modelView.getP();
+    auto& divB     = modelView.getDivB();
     auto& rhoV     = modelView.getRhoV();
+    auto& Etot     = modelView.getEtot();
     auto const& B1 = modelView.getB1();
     auto const& B0 = modelView.getB0();
     auto const& E1 = modelView.getEtot1();
@@ -340,6 +383,55 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
                                        .template to<double>();
                 core::ToPrimitiveConverter_ref<GridLayout> toPrim{layout};
                 toPrim.eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, B0, E1, P);
+            },
+            minLvl, maxLvl);
+    }
+    else if (isActiveDiag(diagnostic, tree, "Etot"))
+    {
+        modelView.visitHierarchy(
+            [&](GridLayout& layout, std::string, std::size_t) {
+                auto const& B1x = B1.getComponent(core::Component::X);
+                auto const& B1y = B1.getComponent(core::Component::Y);
+                auto const& B1z = B1.getComponent(core::Component::Z);
+                auto const& B0x = B0.getComponent(core::Component::X);
+                auto const& B0y = B0.getComponent(core::Component::Y);
+                auto const& B0z = B0.getComponent(core::Component::Z);
+                layout.evalOnGhostBox(Etot, [&](auto&... args) mutable {
+                    Etot(args...) = core::etot1ToEtot(E1(args...), B1x(args...), B1y(args...),
+                                                     B1z(args...), B0x(args...), B0y(args...),
+                                                     B0z(args...));
+                });
+            },
+            minLvl, maxLvl);
+    }
+    else if (isActiveDiag(diagnostic, tree, "divB"))
+    {
+        // Cell-centered divergence of the total field B = B0 + B1. deriv is linear, so we sum the
+        // B0 and B1 contributions per direction; each deriv<dir> on a face-centered component lands
+        // on the cell centre where divB lives.
+        modelView.visitHierarchy(
+            [&](GridLayout& layout, std::string, std::size_t) {
+                auto const& B1x = B1.getComponent(core::Component::X);
+                auto const& B0x = B0.getComponent(core::Component::X);
+                layout.evalOnBox(divB, [&](auto&... args) mutable {
+                    auto d        = layout.template deriv<core::Direction::X>(B1x, {args...})
+                             + layout.template deriv<core::Direction::X>(B0x, {args...});
+                    if constexpr (GridLayout::dimension >= 2)
+                    {
+                        auto const& B1y = B1.getComponent(core::Component::Y);
+                        auto const& B0y = B0.getComponent(core::Component::Y);
+                        d += layout.template deriv<core::Direction::Y>(B1y, {args...})
+                             + layout.template deriv<core::Direction::Y>(B0y, {args...});
+                    }
+                    if constexpr (GridLayout::dimension == 3)
+                    {
+                        auto const& B1z = B1.getComponent(core::Component::Z);
+                        auto const& B0z = B0.getComponent(core::Component::Z);
+                        d += layout.template deriv<core::Direction::Z>(B1z, {args...})
+                             + layout.template deriv<core::Direction::Z>(B0z, {args...});
+                    }
+                    divB(args...) = d;
+                });
             },
             minLvl, maxLvl);
     }

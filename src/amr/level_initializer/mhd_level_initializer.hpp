@@ -4,21 +4,30 @@
 #include "amr/level_initializer/level_initializer.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 
+#include "core/inner_boundary/inner_bc_context.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/logger.hpp"
-
-#include "initializer/data_provider.hpp"
+#include "core/utilities/index/index.hpp"
 
 namespace PHARE::solver
 {
 template<typename MHDModel>
 class MHDLevelInitializer : public LevelInitializer<typename MHDModel::amr_types>
 {
-    using amr_types       = typename MHDModel::amr_types;
-    using hierarchy_t     = typename amr_types::hierarchy_t;
-    using level_t         = typename amr_types::level_t;
-    using patch_t         = typename amr_types::patch_t;
-    using IPhysicalModelT = IPhysicalModel<amr_types>;
+    using amr_types                    = MHDModel::amr_types;
+    using hierarchy_t                  = amr_types::hierarchy_t;
+    using level_t                      = amr_types::level_t;
+    using patch_t                      = amr_types::patch_t;
+    using IPhysicalModelT              = IPhysicalModel<amr_types>;
+    using IMessengerT                  = amr::IMessenger<IPhysicalModelT>;
+    using gridlayout_type              = MHDModel::gridlayout_type;
+    using state_type                   = MHDModel::state_type;
+    using resources_manager_type       = MHDModel::resources_manager_type;
+    using inner_boundary_manager_type  = MHDModel::inner_boundary_manager_type;
+    static constexpr auto dimension    = gridlayout_type::dimension;
+    static constexpr auto interp_order = gridlayout_type::interp_order;
 
     inline bool isRootLevel(int levelNumber) const { return levelNumber == 0; }
 
@@ -30,7 +39,8 @@ public:
                     amr::IMessenger<IPhysicalModelT>& messenger, double initDataTime,
                     bool isRegridding) override
     {
-        auto& level = amr_types::getLevel(*hierarchy, levelNumber);
+        auto& mhdModel = static_cast<MHDModel&>(model);
+        auto& level    = amr_types::getLevel(*hierarchy, levelNumber);
 
         if (isRegridding)
         {
@@ -51,12 +61,16 @@ public:
             }
             else
             {
-                PHARE_LOG_START(3, "mhdLevelInitializer::initialize : initlevel");
+                PHARE_LOG_START(3, "mhdLevel Initializer::initialize : initlevel");
                 messenger.initLevel(model, level, initDataTime);
                 model.updateExternalFields(level, initDataTime);
                 PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : initlevel");
             }
         }
+
+        // Inner-boundary setup (classify + safe state + moment BCs). Shared with the restart path
+        // (MHDModel::reinitializeAfterRestart) so both fresh and restored runs establish it.
+        mhdModel.setupInnerBoundaryState(level, initDataTime);
     }
 };
 

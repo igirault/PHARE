@@ -68,43 +68,46 @@ struct PerIndex
 {
     using Value = std::remove_cvref_t<Float>;
 
-    PerIndex(Float rho, PerIndexVector<Float> V, PerIndexVector<Float> B, Float P)
+    PerIndex(Float rho, PerIndexVector<Float> V, PerIndexVector<Float> B1, Float P)
         : rho{rho}
         , V{V}
-        , B{B}
+        , B1{B1}
         , B0{}
         , P{P}
     {
     }
 
-    PerIndex(Float rho, PerIndexVector<Float> V, PerIndexVector<Float> B, Float P,
+    PerIndex(Float rho, PerIndexVector<Float> V, PerIndexVector<Float> B1, Float P,
              PerIndexVector<Value> B0)
         : rho{rho}
         , V{V}
-        , B{B}
+        , B1{B1}
         , B0{B0}
         , P{P}
     {
     }
 
-    auto as_tuple() const { return std::make_tuple(rho, V.x, V.y, V.z, B.x, B.y, B.z, P); }
+    auto as_tuple() const { return std::make_tuple(rho, V.x, V.y, V.z, B1.x, B1.y, B1.z, P); }
 
+    // The conserved magnetic variable is the perturbation B1, stored directly (no B - B0).
     auto as_reduced_conservative_tuple() const
     {
-        auto const B1 = perturbationB();
         return std::make_tuple(rho, V.x, V.y, V.z, B1.x, B1.y, B1.z,
                                etotToEtot1(P, B1.x, B1.y, B1.z, B0.x, B0.y, B0.z));
     }
 
-    auto perturbationB() const
+    // Total field, formed only by addition. Used for wave speeds, the energy conversion,
+    // and the induction/Hall flux - never to recover B1 by subtraction.
+    auto totalB() const
     {
-        return PerIndexVector<Float>{B.x - B0.x, B.y - B0.y, B.z - B0.z};
+        return PerIndexVector<Value>{B1.x + B0.x, B1.y + B0.y, B1.z + B0.z};
     }
 
     void to_conservative(auto const& gamma)
     {
         auto const [rhoVx, rhoVy, rhoVz] = vToRhoV(rho, V.x, V.y, V.z);
-        Float Etot = eosPToEtot(gamma, rho, V.x, V.y, V.z, B.x, B.y, B.z, P);
+        auto const Bt = totalB();
+        Float Etot = eosPToEtot(gamma, rho, V.x, V.y, V.z, Bt.x, Bt.y, Bt.z, P);
 
         V.x = rhoVx;
         V.y = rhoVy;
@@ -119,9 +122,9 @@ struct PerIndex
         V.x = other.V.x;
         V.y = other.V.y;
         V.z = other.V.z;
-        B.x = other.B.x;
-        B.y = other.B.y;
-        B.z = other.B.z;
+        B1.x = other.B1.x;
+        B1.y = other.B1.y;
+        B1.z = other.B1.z;
         B0.x = other.B0.x;
         B0.y = other.B0.y;
         B0.z = other.B0.z;
@@ -139,7 +142,7 @@ struct PerIndex
 
     Float rho;
     PerIndexVector<Float> V;
-    PerIndexVector<Float> B;
+    PerIndexVector<Float> B1;
     PerIndexVector<Value> B0;
     Float P;
 

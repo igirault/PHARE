@@ -3,6 +3,8 @@
 
 #include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
+#include "amr/data/field/coarsening/magnetic_field_coarsener.hpp"
+#include "amr/data/field/coarsening/mhd_field_coarsener.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 #include "amr/data/field/refine/electric_field_refiner.hpp"
@@ -104,15 +106,21 @@ namespace amr
             std::unique_ptr<MHDMessengerInfo> mhdInfo{
                 dynamic_cast<MHDMessengerInfo*>(fromFinerInfo.release())};
 
-            auto b_id = resourcesManager_->getID(mhdInfo->modelB1);
+            auto b_id  = resourcesManager_->getID(mhdInfo->modelB1);
+            auto b0_id = resourcesManager_->getID(mhdInfo->modelB0);
 
-            if (!b_id)
+            if (!b_id || !b0_id)
             {
                 throw std::runtime_error(
                     "MHDMessengerStrategy: missing magnetic field variable IDs");
             }
 
-            magneticRefinePatchStrategy_.registerIDs(*b_id);
+            // Expose B1 (the field being filled) and B0 (background) to the magnetic ghost/regrid
+            // patch strategy so inflow B conditions (FieldB1FromBtot: B1 = B - B0) can read them.
+            // The total field B is never accessed — only the B1/B0 split.
+            magneticRefinePatchStrategy_.registerIDs(*b_id, {},
+                                                     {{core::MHDQuantity::Vector::B1, *b_id},
+                                                      {core::MHDQuantity::Vector::B0, *b0_id}});
 
             BalgoPatchGhost.registerRefine(*b_id, *b_id, *b_id, BfieldRefineOp_,
                                            nonOverwriteInteriorTFfillPattern);
@@ -136,16 +144,6 @@ namespace amr
 
             // refluxing
             // we first want to coarsen the flux sum onto the coarser level
-            auto rho_fx_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.rho_fx);
-            auto rhoV_fx_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fx);
-            auto Etot_fx_reflux_id = resourcesManager_->getID(mhdInfo->reflux.Etot_fx);
-
-            if (!rho_fx_reflux_id or !rhoV_fx_reflux_id or !Etot_fx_reflux_id)
-            {
-                throw std::runtime_error(
-                    "MHDMessenger: missing reflux variable IDs for fluxes in x direction");
-            }
-
             auto rho_fx_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.rho_fx);
             auto rhoV_fx_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fx);
             auto Etot_fx_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fx);
@@ -160,37 +158,27 @@ namespace amr
 
             // all of the fluxes fx are defined on the same faces no matter the component, so we
             // just need a different fill pattern per direction
-            HydroXrefluxAlgo.registerCoarsen(*rho_fx_reflux_id, *rho_fx_fluxsum_id,
+            HydroXrefluxAlgo.registerCoarsen(*rho_fx_fluxsum_id, *rho_fx_fluxsum_id,
                                              mhdFluxCoarseningOp_);
-            HydroXrefluxAlgo.registerCoarsen(*rhoV_fx_reflux_id, *rhoV_fx_fluxsum_id,
+            HydroXrefluxAlgo.registerCoarsen(*rhoV_fx_fluxsum_id, *rhoV_fx_fluxsum_id,
                                              mhdVecFluxCoarseningOp_);
-            HydroXrefluxAlgo.registerCoarsen(*Etot_fx_reflux_id, *Etot_fx_fluxsum_id,
+            HydroXrefluxAlgo.registerCoarsen(*Etot_fx_fluxsum_id, *Etot_fx_fluxsum_id,
                                              mhdFluxCoarseningOp_);
 
             // we then need to refill the ghosts so that they agree with the newly refluxed
             // cells
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*rho_fx_reflux_id, *rho_fx_reflux_id,
-                                                        *rho_fx_reflux_id, mhdFluxRefineOp_,
+            HydroXpatchGhostRefluxedAlgo.registerRefine(*rho_fx_fluxsum_id, *rho_fx_fluxsum_id,
+                                                        *rho_fx_fluxsum_id, mhdFluxRefineOp_,
                                                         nonOverwriteInteriorTFfillPattern);
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*rhoV_fx_reflux_id, *rhoV_fx_reflux_id,
-                                                        *rhoV_fx_reflux_id, mhdVecFluxRefineOp_,
+            HydroXpatchGhostRefluxedAlgo.registerRefine(*rhoV_fx_fluxsum_id, *rhoV_fx_fluxsum_id,
+                                                        *rhoV_fx_fluxsum_id, mhdVecFluxRefineOp_,
                                                         nonOverwriteInteriorTFfillPattern);
-            HydroXpatchGhostRefluxedAlgo.registerRefine(*Etot_fx_reflux_id, *Etot_fx_reflux_id,
-                                                        *Etot_fx_reflux_id, mhdFluxRefineOp_,
+            HydroXpatchGhostRefluxedAlgo.registerRefine(*Etot_fx_fluxsum_id, *Etot_fx_fluxsum_id,
+                                                        *Etot_fx_fluxsum_id, mhdFluxRefineOp_,
                                                         nonOverwriteInteriorTFfillPattern);
 
             if constexpr (dimension >= 2)
             {
-                auto rho_fy_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.rho_fy);
-                auto rhoV_fy_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fy);
-                auto Etot_fy_reflux_id = resourcesManager_->getID(mhdInfo->reflux.Etot_fy);
-
-                if (!rho_fy_reflux_id or !rhoV_fy_reflux_id or !Etot_fy_reflux_id)
-                {
-                    throw std::runtime_error(
-                        "MHDMessenger: missing reflux variable IDs for fluxes in y direction");
-                }
-
                 auto rho_fy_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.rho_fy);
                 auto rhoV_fy_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fy);
                 auto Etot_fy_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fy);
@@ -201,36 +189,25 @@ namespace amr
                         "MHDMessenger: missing flux sum variable IDs for fluxes in y direction");
                 }
 
-                HydroYrefluxAlgo.registerCoarsen(*rho_fy_reflux_id, *rho_fy_fluxsum_id,
+                HydroYrefluxAlgo.registerCoarsen(*rho_fy_fluxsum_id, *rho_fy_fluxsum_id,
                                                  mhdFluxCoarseningOp_);
-                HydroYrefluxAlgo.registerCoarsen(*rhoV_fy_reflux_id, *rhoV_fy_fluxsum_id,
+                HydroYrefluxAlgo.registerCoarsen(*rhoV_fy_fluxsum_id, *rhoV_fy_fluxsum_id,
                                                  mhdVecFluxCoarseningOp_);
-                HydroYrefluxAlgo.registerCoarsen(*Etot_fy_reflux_id, *Etot_fy_fluxsum_id,
+                HydroYrefluxAlgo.registerCoarsen(*Etot_fy_fluxsum_id, *Etot_fy_fluxsum_id,
                                                  mhdFluxCoarseningOp_);
 
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*rho_fy_reflux_id, *rho_fy_reflux_id,
-                                                            *rho_fy_reflux_id, mhdFluxRefineOp_,
+                HydroYpatchGhostRefluxedAlgo.registerRefine(*rho_fy_fluxsum_id, *rho_fy_fluxsum_id,
+                                                            *rho_fy_fluxsum_id, mhdFluxRefineOp_,
                                                             nonOverwriteInteriorTFfillPattern);
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*rhoV_fy_reflux_id, *rhoV_fy_reflux_id,
-                                                            *rhoV_fy_reflux_id, mhdVecFluxRefineOp_,
+                HydroYpatchGhostRefluxedAlgo.registerRefine(*rhoV_fy_fluxsum_id, *rhoV_fy_fluxsum_id,
+                                                            *rhoV_fy_fluxsum_id, mhdVecFluxRefineOp_,
                                                             nonOverwriteInteriorTFfillPattern);
-                HydroYpatchGhostRefluxedAlgo.registerRefine(*Etot_fy_reflux_id, *Etot_fy_reflux_id,
-                                                            *Etot_fy_reflux_id, mhdFluxRefineOp_,
+                HydroYpatchGhostRefluxedAlgo.registerRefine(*Etot_fy_fluxsum_id, *Etot_fy_fluxsum_id,
+                                                            *Etot_fy_fluxsum_id, mhdFluxRefineOp_,
                                                             nonOverwriteInteriorTFfillPattern);
 
                 if constexpr (dimension == 3)
                 {
-                    auto rho_fz_reflux_id  = resourcesManager_->getID(mhdInfo->reflux.rho_fz);
-                    auto rhoV_fz_reflux_id = resourcesManager_->getID(mhdInfo->reflux.rhoV_fz);
-                    auto Etot_fz_reflux_id = resourcesManager_->getID(mhdInfo->reflux.Etot_fz);
-
-
-                    if (!rho_fz_reflux_id or !rhoV_fz_reflux_id or !Etot_fz_reflux_id)
-                    {
-                        throw std::runtime_error(
-                            "MHDMessenger: missing reflux variable IDs for fluxes in z direction");
-                    }
-
                     auto rho_fz_fluxsum_id  = resourcesManager_->getID(mhdInfo->fluxSum.rho_fz);
                     auto rhoV_fz_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.rhoV_fz);
                     auto Etot_fz_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSum.Etot_fz);
@@ -241,44 +218,43 @@ namespace amr
                                                  "fluxes in z direction");
                     }
 
-                    HydroZrefluxAlgo.registerCoarsen(*rho_fz_reflux_id, *rho_fz_fluxsum_id,
+                    HydroZrefluxAlgo.registerCoarsen(*rho_fz_fluxsum_id, *rho_fz_fluxsum_id,
                                                      mhdFluxCoarseningOp_);
-                    HydroZrefluxAlgo.registerCoarsen(*rhoV_fz_reflux_id, *rhoV_fz_fluxsum_id,
+                    HydroZrefluxAlgo.registerCoarsen(*rhoV_fz_fluxsum_id, *rhoV_fz_fluxsum_id,
                                                      mhdVecFluxCoarseningOp_);
-                    HydroZrefluxAlgo.registerCoarsen(*Etot_fz_reflux_id, *Etot_fz_fluxsum_id,
+                    HydroZrefluxAlgo.registerCoarsen(*Etot_fz_fluxsum_id, *Etot_fz_fluxsum_id,
                                                      mhdFluxCoarseningOp_);
 
 
                     HydroZpatchGhostRefluxedAlgo.registerRefine(
-                        *rho_fz_reflux_id, *rho_fz_reflux_id, *rho_fz_reflux_id, mhdFluxRefineOp_,
+                        *rho_fz_fluxsum_id, *rho_fz_fluxsum_id, *rho_fz_fluxsum_id, mhdFluxRefineOp_,
                         nonOverwriteInteriorTFfillPattern);
                     HydroZpatchGhostRefluxedAlgo.registerRefine(
-                        *rhoV_fz_reflux_id, *rhoV_fz_reflux_id, *rhoV_fz_reflux_id,
+                        *rhoV_fz_fluxsum_id, *rhoV_fz_fluxsum_id, *rhoV_fz_fluxsum_id,
                         mhdVecFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
                     HydroZpatchGhostRefluxedAlgo.registerRefine(
-                        *Etot_fz_reflux_id, *Etot_fz_reflux_id, *Etot_fz_reflux_id,
+                        *Etot_fz_fluxsum_id, *Etot_fz_fluxsum_id, *Etot_fz_fluxsum_id,
                         mhdFluxRefineOp_, nonOverwriteInteriorTFfillPattern);
                 }
             }
 
-            auto e_reflux_id = resourcesManager_->getID(mhdInfo->refluxElectric);
-
             auto e_fluxsum_id = resourcesManager_->getID(mhdInfo->fluxSumElectric);
 
-            if (!e_reflux_id or !e_fluxsum_id)
+            if (!e_fluxsum_id)
             {
                 throw std::runtime_error(
                     "MHDMessenger: missing electric refluxing field variable IDs");
             }
 
-            ErefluxAlgo.registerCoarsen(*e_reflux_id, *e_fluxsum_id, electricFieldCoarseningOp_);
+            ErefluxAlgo.registerCoarsen(*e_fluxsum_id, *e_fluxsum_id, electricFieldCoarseningOp_);
 
-            EpatchGhostRefluxedAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id,
+            EpatchGhostRefluxedAlgo.registerRefine(*e_fluxsum_id, *e_fluxsum_id, *e_fluxsum_id,
                                                    EfieldRefineOp_,
                                                    nonOverwriteInteriorTFfillPattern);
             buildFieldIdMaps_(mhdInfo);
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
+            registerSyncComms_(mhdInfo);
         }
 
 
@@ -331,6 +307,11 @@ namespace amr
                     = HydroYrefluxAlgo.createSchedule(coarseLevel, level);
                 HydroZrefluxSchedules[levelNumber]
                     = HydroZrefluxAlgo.createSchedule(coarseLevel, level);
+
+                densitySynchronizers_.registerLevel(hierarchy, level);
+                momentumSynchronizers_.registerLevel(hierarchy, level);
+                magnetoSynchronizers_.registerLevel(hierarchy, level);
+                totalEnergySynchronizers_.registerLevel(hierarchy, level);
 
                 // refinement
                 magInitRefineSchedules[levelNumber] = BalgoInit.createSchedule(
@@ -435,20 +416,30 @@ namespace amr
         {
         }
 
-        void synchronize(SAMRAI::hier::PatchLevel& level) final {}
+        void synchronize(SAMRAI::hier::PatchLevel& level) final
+        {
+            auto const levelNumber = level.getLevelNumber();
+            densitySynchronizers_.sync(levelNumber);
+            momentumSynchronizers_.sync(levelNumber);
+            magnetoSynchronizers_.sync(levelNumber);
+            totalEnergySynchronizers_.sync(levelNumber);
+        }
 
-        void reflux(int const coarserLevelNumber, int const fineLevelNumber,
-                    double const syncTime) override
+        void reflux(int const /*coarserLevelNumber*/, int const fineLevelNumber,
+                    double const /*syncTime*/) override
         {
             ErefluxSchedules[fineLevelNumber]->coarsenData();
             HydroXrefluxSchedules[fineLevelNumber]->coarsenData();
             HydroYrefluxSchedules[fineLevelNumber]->coarsenData();
             HydroZrefluxSchedules[fineLevelNumber]->coarsenData();
 
-            EpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroXpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroYpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
-            HydroZpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // The coarse-side correction now happens in the solver's reflux() via in-place
+            // box-correction (textbook scheme); refilling the refluxed flux ghosts here would
+            // overwrite the accumulated fluxSum the solver still needs to read.
+            // EpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // HydroXpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // HydroYpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
+            // HydroZpatchGhostRefluxedSchedules[coarserLevelNumber]->fillData(syncTime);
         }
 
         void postSynchronize(IPhysicalModel& model, SAMRAI::hier::PatchLevel& level,
@@ -507,6 +498,22 @@ namespace amr
             PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
 
             setNaNsOnVecfieldGhosts(B, level);
+            magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
+            magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
+        }
+
+        // Like fillMagneticGhosts but without first stamping the NaN sentinel over the ghosts.
+        // Runs the same inter-patch ghost copy + shared-face border reconciliation, so a
+        // neighbouring patch sees a freshly corrected B on the faces it shares (needed after
+        // reflux to keep coarse-level discrete divB = 0 at patch seams). Physical- and
+        // inner-boundary B ghosts are left at their existing values: there B is governed by the
+        // electric-field boundary conditions (motional / None), never pinned directly, so the
+        // NaN stamp of fillMagneticGhosts would leave those ghosts poisoned with no later step
+        // recomputing them before the next coarse advance.
+        void refreshMagneticSharedGhosts(VecFieldT& B, level_t const& level, double const fillTime)
+        {
+            PHARE_LOG_SCOPE(3, "MHDMessenger::refreshMagneticSharedGhosts");
+
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
             magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
@@ -594,9 +601,9 @@ namespace amr
             // boundaries.
             registerGhostRefinePatchStrategies_(elecPatchStrats, info->ghostElectric);
             for (size_t i = 0; i < info->ghostElectric.size(); ++i)
-                elecGhostsRefiners_.addStaticRefiner(info->ghostElectric[i], nullptr,
-                                                     info->ghostElectric[i], nullptr,
-                                                     elecPatchStrats[i]);
+                elecGhostsRefiners_.addStaticRefiner(
+                    info->ghostElectric[i], EfieldRefineOp_, info->ghostElectric[i],
+                    nonOverwriteInteriorTFfillPattern, elecPatchStrats[i]);
         }
 
 
@@ -625,13 +632,17 @@ namespace amr
                     {core::MHDQuantity::Vector::B1, resolveID(info->ghostB1[i])},
                     {core::MHDQuantity::Vector::rhoV, resolveID(info->ghostMomentum[i])},
                     {core::MHDQuantity::Vector::E, resolveID(info->ghostElectric[i])},
+                    // background field B0 (single model instance), exposed so inflow BCs that
+                    // prescribe the total field can recover B1 = B - B0 at the ghost cells.
+                    {core::MHDQuantity::Vector::B0, resolveID(info->modelB0)},
                 };
             }
 
-            // Shadow id-map for the previous substage state. Only quantities for which the messenger
-            // keeps an `*Old_` buffer are exposed; other quantities will fall through to "not
-            // registered" in the accessor and throw on access. State-aware outer BCs that need only
-            // these primitive moments (NSCBC/LODI HD outlet) read from this map via `ctx.accessor_old`.
+            // Shadow id-map for the previous substage state. Only quantities for which the
+            // messenger keeps an `*Old_` buffer are exposed; other quantities will fall through to
+            // "not registered" in the accessor and throw on access. State-aware outer BCs that need
+            // only these primitive moments (NSCBC/LODI HD outlet) read from this map via
+            // `ctx.accessor_old`.
             oldScalarIdMap_ = {
                 {core::MHDQuantity::Scalar::rho, resolveID(rhoOld_.name())},
                 {core::MHDQuantity::Scalar::P, resolveID(Pold_.name())},
@@ -679,6 +690,18 @@ namespace amr
 
             totalEnergyInitRefiners_.addStaticRefiners(info->initTotalEnergy, mhdFieldRefineOp_,
                                                        info->initTotalEnergy);
+        }
+
+
+        void registerSyncComms_(std::unique_ptr<MHDMessengerInfo> const& info)
+        {
+            densitySynchronizers_.add(info->modelDensity, mhdFieldCoarseningOp_,
+                                      info->modelDensity);
+            momentumSynchronizers_.add(info->modelMomentum, mhdVecFieldCoarseningOp_,
+                                       info->modelMomentum);
+            magnetoSynchronizers_.add(info->modelB1, magneticFieldCoarseningOp_, info->modelB1);
+            totalEnergySynchronizers_.add(info->modelEtot1, mhdFieldCoarseningOp_,
+                                          info->modelEtot1);
         }
 
 
@@ -809,10 +832,10 @@ namespace amr
         InitRefinerPool momentumInitRefiners_{resourcesManager_};
         InitRefinerPool totalEnergyInitRefiners_{resourcesManager_};
 
-        // SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
-        // SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> densitySynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> momentumSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> magnetoSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> totalEnergySynchronizers_{resourcesManager_};
 
         using RefOp_ptr     = std::shared_ptr<SAMRAI::hier::RefineOperator>;
         using CoarsenOp_ptr = std::shared_ptr<SAMRAI::hier::CoarsenOperator>;
@@ -846,6 +869,9 @@ namespace amr
         using VecFieldCoarsenOp
             = VecFieldCoarsenOperator<GridLayoutT, GridT, Policy, core::MHDQuantity>;
 
+        using MHDFieldCoarsenOp      = FieldCoarseningOp<MHDFieldCoarsener<dimension>>;
+        using MHDVecFieldCoarsenOp   = VecFieldCoarsenOp<MHDFieldCoarsener<dimension>>;
+        using MagneticFieldCoarsenOp = VecFieldCoarsenOp<MagneticFieldCoarsener<dimension>>;
         using MHDFluxCoarsenOp       = FieldCoarseningOp<MHDFluxCoarsener<dimension>>;
         using MHDVecFluxCoarsenOp    = VecFieldCoarsenOp<MHDFluxCoarsener<dimension>>;
         using ElectricFieldCoarsenOp = VecFieldCoarsenOp<ElectricFieldCoarsener<dimension>>;
@@ -878,6 +904,9 @@ namespace amr
 
         CoarsenOp_ptr mhdFluxCoarseningOp_{std::make_shared<MHDFluxCoarsenOp>()};
         CoarsenOp_ptr mhdVecFluxCoarseningOp_{std::make_shared<MHDVecFluxCoarsenOp>()};
+        CoarsenOp_ptr mhdFieldCoarseningOp_{std::make_shared<MHDFieldCoarsenOp>()};
+        CoarsenOp_ptr mhdVecFieldCoarseningOp_{std::make_shared<MHDVecFieldCoarsenOp>()};
+        CoarsenOp_ptr magneticFieldCoarseningOp_{std::make_shared<MagneticFieldCoarsenOp>()};
         CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
 
         std::vector<scalar_id_map_type> allScalarIdMaps_;

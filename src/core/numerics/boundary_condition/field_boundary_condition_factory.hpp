@@ -8,12 +8,13 @@
 #include "core/numerics/boundary_condition/field_non_reflecting_hydro_subsonic_outflow_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_non_reflecting_hydro_subsonic_inflow_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_divergence_free_transverse_dirichlet_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_b1_from_btot_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_none_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_symmetric_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_total_energy_from_pressure_boundary_condition.hpp"
+#include "core/numerics/boundary_condition/field_adaptive_outflow_pressure_boundary_condition.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -91,32 +92,43 @@ public:
                                          "applies to vector fields.");
             }
         }
-        else if constexpr (type == FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet)
+        else if constexpr (type == FieldBoundaryConditionType::B1FromBtot)
         {
             if constexpr (IsVecField<ScalarOrTensorFieldT>)
             {
-                return std::make_unique<FieldDivergenceFreeTransverseDirichletBoundaryCondition<
-                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
+                return std::make_unique<
+                    FieldB1FromBtotBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+                    std::forward<Args>(args)...);
             }
             else
             {
-                throw std::runtime_error("Divergence-free transverse Dirichlet condition only "
-                                         "applies to vector fields.");
+                throw std::runtime_error("B1-from-Btot condition only applies to vector fields.");
             }
         }
         else if constexpr (type == FieldBoundaryConditionType::TotalEnergyFromPressure)
         {
             if constexpr (IsField<ScalarOrTensorFieldT>)
             {
-                return std::make_unique<
-                    FieldTotalEnergyFromPressureBoundaryCondition<ScalarOrTensorFieldT,
-                                                                  GridLayoutT>>(
-                    std::forward<Args>(args)...);
+                return std::make_unique<FieldTotalEnergyFromPressureBoundaryCondition<
+                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
             }
             else
             {
                 throw std::runtime_error(
                     "TotalEnergyFromPressure condition only applies to scalar fields.");
+            }
+        }
+        else if constexpr (type == FieldBoundaryConditionType::AdaptiveOutflowPressure)
+        {
+            if constexpr (IsField<ScalarOrTensorFieldT>)
+            {
+                return std::make_unique<FieldAdaptiveOutflowPressureBoundaryCondition<
+                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
+            }
+            else
+            {
+                throw std::runtime_error(
+                    "AdaptiveOutflowPressure condition only applies to scalar fields.");
             }
         }
         else if constexpr (type == FieldBoundaryConditionType::NonReflectingHydroSubsonicOutflow)
@@ -131,7 +143,8 @@ public:
         }
         else
         {
-            static_assert(false, "Unhandled FieldBoundaryConditionType");
+            // static_assert(false, "Unhandled FieldBoundaryConditionType");
+            throw std::runtime_error("Unhandled FieldBoundaryConditionType");
         };
     }
 };

@@ -18,6 +18,6 @@ function(_add_test test_name)
 
   add_no_mpi_phare_test(${test_name} ${CMAKE_CURRENT_BINARY_DIR})
 
-endfunction(_box_test)
+endfunction()
 
 _add_test(test_boundary_manager)

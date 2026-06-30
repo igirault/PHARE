@@ -105,9 +105,9 @@ private:
         auto const& B1x = B1(Component::X);
         auto const& B1y = B1(Component::Y);
         auto const& B1z = B1(Component::Z);
-        auto const b1x  = GridLayout::template project<GridLayout::faceXToCellCenter>(B1x, index);
-        auto const b1y  = GridLayout::template project<GridLayout::faceYToCellCenter>(B1y, index);
-        auto const b1z  = GridLayout::template project<GridLayout::faceZToCellCenter>(B1z, index);
+        auto const b1x = GridLayout::template project<GridLayout::faceXToCellCenter>(B1x, index);
+        auto const b1y = GridLayout::template project<GridLayout::faceYToCellCenter>(B1y, index);
+        auto const b1z = GridLayout::template project<GridLayout::faceZToCellCenter>(B1z, index);
         Etot1(index)
             = eosPToEtot1(gamma, rho(index), Vx(index), Vy(index), Vz(index), b1x, b1y, b1z,
                           P(index));

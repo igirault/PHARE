@@ -10,8 +10,12 @@
 
 #include <SAMRAI/hier/PatchLevel.h>
 #include <SAMRAI/hier/PatchHierarchy.h>
+#include <SAMRAI/hier/CoarseFineBoundary.h>
+#include <SAMRAI/hier/BoundaryBox.h>
 
+#include <limits>
 #include <string>
+#include <vector>
 
 namespace PHARE::solver
 {
@@ -96,7 +100,8 @@ namespace solver
          * refluxing later.
          */
         virtual void accumulateFluxSum(IPhysicalModel<AMR_Types>& model,
-                                       SAMRAI::hier::PatchLevel& level, double const coef)
+                                       SAMRAI::hier::PatchLevel& level, double const coef,
+                                       SAMRAI::hier::CoarseFineBoundary const& cfBoundary)
             = 0;
 
 
@@ -112,7 +117,9 @@ namespace solver
          */
         virtual void reflux(IPhysicalModel<AMR_Types>& model, SAMRAI::hier::PatchLevel& level,
                             amr::IMessenger<IPhysicalModel<AMR_Types>>& messenger,
-                            double const time)
+                            double const time,
+                            SAMRAI::hier::CoarseFineBoundary const& fineCfBdry,
+                            SAMRAI::hier::PatchLevel const& fineLevel)
             = 0;
 
         /**
@@ -135,6 +142,26 @@ namespace solver
                               double const allocateTime) const
             = 0;
 
+
+
+        /**
+         * @brief computeStableDt returns the level's GLOBAL stable time step, already reduced
+         * across every rank the level is distributed over (so the value is identical on all ranks).
+         *
+         * It combines two stability buckets, each scaled by its own coefficient (both normalized so
+         * that 1 is the stability limit independent of dimension; choose in (0, 1]):
+         *   - advective (hyperbolic, incl. Hall whistler when active), scaled by @p cfl
+         *   - resistive (parabolic diffusion), scaled by @p fourier (Fourier number Fo =
+         *     eta*dt/dx^2)
+         * and returns their min.
+         *
+         * If not overriden by the actual Solver implementation, returns a very big double.
+         */
+        virtual double computeStableDt(IPhysicalModel<AMR_Types>& model, level_t& level,
+                                       double const cfl, double const fourier)
+        {
+            return std::numeric_limits<double>::max();
+        }
 
 
         virtual void onRegrid() {} // do what you need to do on regrid

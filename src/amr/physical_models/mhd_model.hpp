@@ -1,9 +1,14 @@
 #ifndef PHARE_MHD_MODEL_HPP
 #define PHARE_MHD_MODEL_HPP
 
+#include "core/inner_boundary/inner_boundary_manager.hpp"
+
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/resources_manager/resources_manager.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
+
+#include "core/inner_boundary/inner_bc_context.hpp"
 
 #include "core/boundary/boundary_manager.hpp"
 #include "core/def.hpp"
@@ -13,6 +18,7 @@
 #include "core/numerics/thermo/thermo.hpp"
 #include "core/numerics/thermo/thermo_factory.hpp"
 
+#include <memory>
 #include <initializer_list>
 #include <string>
 #include <string_view>
@@ -31,13 +37,16 @@ public:
     using level_t   = amr_types::level_t;
     using Interface = IPhysicalModel<AMR_Types>;
 
-    using physical_quantity_type = core::MHDQuantity;
     using vecfield_type          = VecFieldT;
     using field_type             = vecfield_type::field_type;
     using state_type             = core::MHDState<vecfield_type>;
     using gridlayout_type        = GridLayoutT;
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
+    using physical_quantity_type = core::MHDQuantity;
+    using inner_boundary_manager_type
+        = core::InnerBoundaryManager<physical_quantity_type, field_type, gridlayout_type,
+                                     state_type>;
     using boundary_manager_type
         = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type>;
 
@@ -54,11 +63,14 @@ public:
     field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
     vecfield_type BTotal_{"diagnostics_B_", core::MHDQuantity::Vector::B};
     field_type EtotTotal_{"diagnostics_Etot_", core::MHDQuantity::Scalar::Etot};
+    field_type divB_diag_{"diagnostics_divB_", core::MHDQuantity::Scalar::divB};
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
-    field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
-    vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+    field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::NodeCentered};
+    vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::NodeCentered};
+
+    std::unique_ptr<inner_boundary_manager_type> innerBoundaryManager;
 
     void initialize(level_t& level) override;
 
@@ -71,8 +83,11 @@ public:
         resourcesManager->allocate(P_diag_, patch, allocateTime);
         resourcesManager->allocate(BTotal_, patch, allocateTime);
         resourcesManager->allocate(EtotTotal_, patch, allocateTime);
+        resourcesManager->allocate(divB_diag_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
+        if (innerBoundaryManager)
+            resourcesManager->allocate(*innerBoundaryManager, patch, allocateTime);
     }
 
 
@@ -94,6 +109,7 @@ public:
         resourcesManager->registerResources(P_diag_);
         resourcesManager->registerResources(BTotal_);
         resourcesManager->registerResources(EtotTotal_);
+        resourcesManager->registerResources(divB_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
 
@@ -105,6 +121,13 @@ public:
             core::MHDQuantity::Vector::E,
             core::MHDQuantity::Vector::rhoV,
         };
+
+        innerBoundaryManager
+            = inner_boundary_manager_type::create(dict, scalarQuantities, vectorQuantities, thermo);
+        if (innerBoundaryManager)
+            resourcesManager->registerResources(*innerBoundaryManager);
+
+
         boundaryManager = std::make_shared<boundary_manager_type>(
             dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities, thermo);
     }
@@ -118,6 +141,48 @@ public:
     auto get_B0() -> auto& { return state.B0; }
 
     auto get_B0() const -> auto& { return state.B0; }
+
+    bool hasInnerBoundary() const { return innerBoundaryManager != nullptr; }
+
+    // Inner-boundary setup: classify the mesh, pin inactive cells to the safe state, and apply the
+    // moment BCs. Factored out of MHDLevelInitializer so it can also be run on restart, where the
+    // level initializer is bypassed (the ghostElems classification is a computed, non-saved field).
+    void setupInnerBoundaryState(level_t& level, double time)
+    {
+        if (!hasInnerBoundary())
+            return;
+
+        auto& rm  = *resourcesManager;
+        auto& ibm = *innerBoundaryManager;
+
+        amr::visitLevel<gridlayout_type>(
+            level, rm, [&](auto& layout, auto&&, auto&&) { ibm.classify(layout); }, ibm);
+
+        amr::visitLevel<gridlayout_type>(
+            level, rm,
+            [&](auto& layout, auto&&, auto&&) {
+                ibm.setSafeState(state.B1, layout);
+                ibm.setSafeState(state.B0, layout);
+                ibm.setSafeState(state.rho, layout);
+                ibm.setSafeState(state.rhoV, layout);
+                ibm.setSafeState(state.Etot1, layout);
+            },
+            ibm, state);
+
+        core::InnerBCContext<state_type> ctx{state, state, time, 0.0};
+        amr::visitLevel<gridlayout_type>(
+            level, rm, [&](auto& layout, auto&&, auto&&) { ibm.applyToMoments(layout, ctx); }, ibm,
+            state);
+    }
+
+    // Restart entry point: refresh the static background field (B0, B0x_Ez, B0y_Ez) and re-establish
+    // the inner-boundary state, without touching the restored conserved fields. On restart the level
+    // initializer that normally does this is not invoked for restored levels.
+    void reinitializeAfterRestart(level_t& level, double time)
+    {
+        updateExternalFields(level, time);
+        setupInnerBoundaryState(level, time);
+    }
 
     //-------------------------------------------------------------------------
     //                  start the ResourcesUser interface
@@ -151,13 +216,16 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& le
 }
 
 template<typename GridLayoutT, typename VecFieldT, typename AMR_Types, typename Grid_t>
-void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::updateExternalFields(
-    level_t& level, double time)
+void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::updateExternalFields(level_t& level,
+                                                                               double time)
 {
+    // The background field is masked inside the body (inactive cells) via
+    // InnerBoundaryManager::setSafeState at the classified call sites (level initializer +
+    // euler substep), not here — at init this runs before classification.
     for (auto& patch : level)
     {
         auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-        auto _      = this->resourcesManager->setOnPatch(*patch, state.B0);
+        auto _ = this->resourcesManager->setOnPatch(*patch, state.B0, state.B0x_Ez, state.B0y_Ez);
         state.updateExternalMagneticField(layout, time);
     }
 }
@@ -168,19 +236,20 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
 {
     auto& MHDInfo = dynamic_cast<amr::MHDMessengerInfo&>(*info);
 
-    MHDInfo.modelDensity     = state.rho.name();
-    MHDInfo.modelVelocity    = state.V.name();
-    MHDInfo.modelB1          = state.B1.name();
-    MHDInfo.modelPressure    = state.P.name();
-    MHDInfo.modelMomentum    = state.rhoV.name();
-    MHDInfo.modelEtot1       = state.Etot1.name();
-    MHDInfo.modelElectric    = state.E.name();
-    MHDInfo.modelCurrent     = state.J.name();
+    MHDInfo.modelDensity  = state.rho.name();
+    MHDInfo.modelVelocity = state.V.name();
+    MHDInfo.modelB1       = state.B1.name();
+    MHDInfo.modelB0       = state.B0.name();
+    MHDInfo.modelPressure = state.P.name();
+    MHDInfo.modelMomentum = state.rhoV.name();
+    MHDInfo.modelEtot1    = state.Etot1.name();
+    MHDInfo.modelElectric = state.E.name();
+    MHDInfo.modelCurrent  = state.J.name();
 
     MHDInfo.initDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.initMomentum.push_back(MHDInfo.modelMomentum);
     MHDInfo.initMagnetic.push_back(MHDInfo.modelB1);
-    MHDInfo.initMagnetic.push_back(state.B0.name());
+    MHDInfo.initMagnetic.push_back(MHDInfo.modelB0);
     MHDInfo.initTotalEnergy.push_back(MHDInfo.modelEtot1);
 
     MHDInfo.ghostDensity.push_back(MHDInfo.modelDensity);

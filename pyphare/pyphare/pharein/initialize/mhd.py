@@ -1,6 +1,6 @@
 import pybindlibs.dictator as pp
 
-from .general import add_double, add_int, add_string, fn_wrapper
+from .general import add_bool, add_double, add_int, add_string, fn_wrapper
 
 
 def populateDict(sim):
@@ -8,15 +8,28 @@ def populateDict(sim):
 
     add_int("simulation/AMR/max_mhd_level", sim.max_mhd_level)
 
-    if sim.refinement == "tagging":
-        add_string("simulation/AMR/refinement/tagging/mhd_method", "default")
-
     add_double("simulation/algo/fv_method/resistivity", sim.eta)
     add_double("simulation/algo/fv_method/hyper_resistivity", sim.nu)
     add_double("simulation/algo/fv_method/heat_capacity_ratio", sim.gamma)
     add_string("simulation/algo/fv_method/hyper_mode", sim.hyper_mode)
     add_string("simulation/algo/time_integrator_type", sim.mhd_timestepper)
+    # runtime flag for the adaptive-dt whistler term (consistent with the compile-time Hall perm)
+    add_bool("simulation/algo/fv_method/hall", sim.hall)
     add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
+    # positivity floor on the recovered pressure (0 = disabled); when triggered the conserved
+    # Etot1 is rewritten consistently. See ToPrimitiveConverter.
+    # `or 0.0`: Simulation.__getattr__ returns None for unset attributes, which defeats the
+    # getattr default and would make float(None) throw in add_double.
+    add_double(
+        "simulation/algo/to_primitive/pressure_floor",
+        getattr(sim, "pressure_floor", 0.0) or 0.0,
+    )
+    # positivity floor on the conserved mass density (0 = disabled); clamps rho in place before
+    # V-recovery so an under-resolved-shock negative rho can't blow up V or the Riemann sqrt.
+    add_double(
+        "simulation/algo/to_primitive/density_floor",
+        getattr(sim, "density_floor", 0.0) or 0.0,
+    )
     add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     add_double("simulation/algo/constrained_transport/resistivity", sim.eta)
     add_double("simulation/algo/constrained_transport/hyper_resistivity", sim.nu)

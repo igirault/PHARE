@@ -16,6 +16,7 @@ namespace amr
         std::string modelDensity;
         std::string modelVelocity;
         std::string modelB1;
+        std::string modelB0;
         std::string modelPressure;
 
         std::string modelMomentum;
@@ -32,7 +33,7 @@ namespace amr
         std::vector<std::string> ghostDensity;
         std::vector<std::string> ghostVelocity;
         std::vector<std::string> ghostB1; // not actually to fill ghost cells but rather for
-                                                // amr operations, see hybrid
+                                          // amr operations, see hybrid
         std::vector<std::string> ghostPressure;
         std::vector<std::string> ghostMomentum;
         std::vector<std::string> ghostEtot1;

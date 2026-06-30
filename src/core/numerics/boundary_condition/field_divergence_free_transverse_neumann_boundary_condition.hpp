@@ -4,17 +4,24 @@
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 
 #include <cstddef>
 
 namespace PHARE::core
 {
 /**
- * @brief Boundary condition for vector fields that enforces zero normal derivative on tangential
- * components and sets the normal component so that numerical divergence is zero.
+ * @brief Boundary condition for the magnetic perturbation B1 that enforces zero normal derivative
+ * on the *total* field B = B0 + B1 (transverse components) and sets the normal component so that
+ * the numerical divergence of B1 is zero.
  *
- * @warning Only valid for vector fields with the same centering as the magnetic field.
+ * On the transverse components the ghost B1 value is written so that the total field mirrors the
+ * first interior value (zero normal gradient of B = B0 + B1):
+ *   B(index) = B(mirror)  =>  B1(index) = B1(mirror) + B0(mirror) - B0(index)
+ * with the spatially-varying background B0 read from the current-state accessor. The normal
+ * component is set so that div B1 = 0; since B0 is itself divergence-free, div B = 0 is preserved.
+ *
+ * @warning Only valid for vector fields with the same centering as the magnetic field (B0 is read
+ * at the same indices as B1).
  *
  * @tparam VecFieldT Type of the vector field.
  * @tparam GridLayoutT Grid layout configuration.
@@ -69,13 +76,28 @@ public:
 
         assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B1));
 
-        // handle transverse components with Neumann
+        // background field B0, read at the same indices as B1 (co-located, same centering)
+        auto B0vec    = ctx.accessor_new.getVecField(tensor_quantity_type::B0);
+        auto B0fields = B0vec.components();
+
+        // transverse components: zero normal gradient on the *total* field B = B0 + B1, written
+        // into the B1 ghost:  B(index) = B(mirror)  =>  B1(index) = B1(mirror) + B0(mirror) - B0(index)
         for_N<N>([&](auto iTransverse) {
             if (static_cast<size_t>(iTransverse) != iNormal)
             {
-                field_type& tField = std::get<iTransverse>(fields);
-                scalar_neumann_condition_.apply(tField, boundaryLocation, localGhostBox, gridLayout,
-                                                ctx);
+                field_type& B1c       = std::get<iTransverse>(fields);
+                field_type const& B0c = std::get<iTransverse>(B0fields);
+
+                QtyCentering const centering = GridLayoutT::centering(
+                    B1c.physicalQuantity())[static_cast<size_t>(direction)];
+                auto fieldBox = gridLayout.toFieldBox(localGhostBox, B1c.physicalQuantity());
+
+                for (_index const& index : fieldBox)
+                {
+                    _index const mirrorIndex
+                        = gridLayout.boundaryMirrored(direction, side, centering, index);
+                    B1c(index) = B1c(mirrorIndex) + B0c(mirrorIndex) - B0c(index);
+                }
             }
         });
 
@@ -126,11 +148,7 @@ public:
     }
 
 private:
-    using _scalar_neumann_boundary_condition_type
-        = FieldNeumannBoundaryCondition<field_type, GridLayoutT>;
     using _index = Point<std::uint32_t, dimension>;
-
-    _scalar_neumann_boundary_condition_type scalar_neumann_condition_;
 
 }; // class FieldDivergenceFreeTransverseNeumannBoundaryCondition
 

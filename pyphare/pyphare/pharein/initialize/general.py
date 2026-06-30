@@ -54,6 +54,26 @@ class fn_wrapper(py_fn_wrapper):
         return cpp_etc_lib().makePyArrayWrapper(super().__call__(*xyz))
 
 
+# Wrap user functions of space AND time: fn(x[, y[, z]], t).
+# C++ passes (*spatial_vectors, t) where spatial args are vectors (one value per node)
+# and t is a scalar float. A scalar-in-space return is broadcast to the node count.
+class time_fn_wrapper(py_fn_wrapper):
+    def __init__(self, fn):
+        super().__init__(fn)
+
+    def __call__(self, *args):
+        from pyphare.cpp import cpp_etc_lib
+
+        *xyz, t = args
+        xyz = [np.asarray(arg) for arg in xyz]
+        ret = self.fn(*xyz, float(t))
+        if isinstance(ret, list):
+            ret = np.asarray(ret)
+        if is_scalar(ret):
+            ret = np.full(len(xyz[-1]), ret)  # broadcast scalar-in-space to node count
+        return cpp_etc_lib().makePyArrayWrapper(ret)
+
+
 # pybind complains if receiving wrong type
 def add_int(path, val):
     pp.add_int(path, int(val))
@@ -79,6 +99,49 @@ def add_vector_int(path, val):
 
 
 add_string = pp.add_string
+
+
+def addTimeFunction(path, fn, ndim):
+    {
+        1: pp.addTimeFunction1D,
+        2: pp.addTimeFunction2D,
+        3: pp.addTimeFunction3D,
+    }[ndim](path, time_fn_wrapper(fn))
+
+
+# Route a boundary-condition data value: a callable becomes a space/time function,
+# anything else a constant double.
+def _add_bc_value(path, val, ndim):
+    if callable(val):
+        addTimeFunction(path, val, ndim)
+    else:
+        add_double(path, float(val))
+
+
+def _add_inflow_magnetic_field(bc_path, data, ndim):
+    """Serialise the inflow total magnetic field under 'data/B'.
+
+    Only the total field 'B' is accepted (enforced by simulation.py validation). The C++
+    BoundaryFactory drives the boundary field through the motional electric field E = -v x B
+    (full Dirichlet on E) and leaves B1 free in the ghosts.
+
+    'B' may be a constant vector ``[bx, by, bz]`` or a single time function
+    ``f(t) -> [bx, by, bz]`` (uniform in space, used for IMF turning). A vector-valued time
+    function is split into three per-component space/time functions that ignore the spatial
+    coordinates and broadcast the scalar component over the face nodes.
+    """
+    B = data["B"]
+    # Explicit flag so C++ does not have to introspect the dict variant type (the pinned
+    # cppdict release has no Dict::is<T>()).
+    add_bool(f"{bc_path}/data/B_is_function", callable(B))
+    if callable(B):
+        for i, axis in enumerate("xyz"):
+            # extract component i at time t (last positional arg); ignore spatial vectors
+            comp = lambda *args, i=i, f=B: f(args[-1])[i]
+            _add_bc_value(f"{bc_path}/data/B/{axis}", comp, ndim)
+    else:
+        for axis, val in zip("xyz", B):
+            _add_bc_value(f"{bc_path}/data/B/{axis}", val, ndim)
 
 
 def populateDict(sim):
@@ -121,10 +184,7 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B"]
-                add_double(f"{bc_path}/data/B/x", bx)
-                add_double(f"{bc_path}/data/B/y", by)
-                add_double(f"{bc_path}/data/B/z", bz)
+                _add_inflow_magnetic_field(bc_path, data, sim.ndim)
             elif bc["type"] == "free-pressure-inflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/density", data["density"])
@@ -132,11 +192,11 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B"]
-                add_double(f"{bc_path}/data/B/x", bx)
-                add_double(f"{bc_path}/data/B/y", by)
-                add_double(f"{bc_path}/data/B/z", bz)
+                _add_inflow_magnetic_field(bc_path, data, sim.ndim)
             elif bc["type"] == "fixed-pressure-outflow":
+                data = bc["data"]
+                add_double(f"{bc_path}/data/pressure", data["pressure"])
+            elif bc["type"] == "adaptive-outflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/pressure", data["pressure"])
             elif bc["type"] == "non-reflecting-hydro-subsonic-outflow":
@@ -151,18 +211,51 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                bx, by, bz = data["B"]
-                add_double(f"{bc_path}/data/B/x", bx)
-                add_double(f"{bc_path}/data/B/y", by)
-                add_double(f"{bc_path}/data/B/z", bz)
                 add_double(f"{bc_path}/data/relax_velocity_n", data["relax_velocity_n"])
                 add_double(f"{bc_path}/data/relax_velocity_t", data["relax_velocity_t"])
                 add_double(f"{bc_path}/data/relax_density",    data["relax_density"])
 
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)
-    add_double("simulation/time_step", sim.time_step)
-    add_int("simulation/time_step_nbr", sim.time_step_nbr)
+    # mirror the public `time_step` dict shape (mode + per-mode params) on the C++ side
+    add_string("simulation/time_step/mode", sim.time_step_type)
+    if sim.time_step_type == "adaptive":
+        # dt is computed each step on the C++ side; bound the run by final_time
+        add_double("simulation/time_step/cfl", sim.time_step_cfl)
+        add_double("simulation/time_step/fourier", sim.time_step_fourier)
+        add_double("simulation/final_time", sim.final_time)
+    else:
+        add_double("simulation/time_step/value", sim.time_step)
+        add_int("simulation/time_step_nbr", sim.time_step_nbr)
+
+    if sim.inner_boundary is not None:
+        inner_boundary = sim.inner_boundary
+        base = "simulation/inner_boundary"
+        add_string(f"{base}/name", inner_boundary["name"])
+        add_string(f"{base}/shape", inner_boundary["shape"])
+        add_string(f"{base}/condition_type", inner_boundary["condition_type"])
+        # prescribed reservoir values for types that impose Dirichlet moments
+        if "density" in inner_boundary:
+            add_double(f"{base}/density", inner_boundary["density"])
+        if "pressure" in inner_boundary:
+            add_double(f"{base}/pressure", inner_boundary["pressure"])
+        # safe state pinned into inactive (inside-body) cells
+        if "inactive_safe_state" in inner_boundary:
+            safe = inner_boundary["inactive_safe_state"]
+            sbase = f"{base}/inactive_safe_state"
+            add_double(f"{sbase}/density", safe["density"])
+            add_double(f"{sbase}/pressure", safe["pressure"])
+            for vec in ("velocity", "B0", "B1"):
+                vx, vy, vz = safe[vec]
+                add_double(f"{sbase}/{vec}/x", vx)
+                add_double(f"{sbase}/{vec}/y", vy)
+                add_double(f"{sbase}/{vec}/z", vz)
+        if inner_boundary["shape"] == "sphere":
+            pp.add_array_as_vector(f"{base}/center", np.asarray(inner_boundary["center"]))
+            add_double(f"{base}/radius", inner_boundary["radius"])
+        elif inner_boundary["shape"] == "plane":
+            pp.add_array_as_vector(f"{base}/point", np.asarray(inner_boundary["point"]))
+            pp.add_array_as_vector(f"{base}/normal", np.asarray(inner_boundary["normal"]))
 
     add_string("simulation/AMR/clustering", sim.clustering)
     add_vector_int("simulation/AMR/nesting_buffer", sim.nesting_buffer)
@@ -201,11 +294,31 @@ def populateDict(sim):
     if refinement_boxes is not None and sim.refinement == "boxes":
         as_paths(refinement_boxes)
     elif sim.refinement == "tagging":
-        add_string("simulation/AMR/refinement/tagging/method", "auto")
-        # the two following params are hard-coded for now
-        # they will become configurable when we have multi-models or several methods
-        # per model
-        add_double("simulation/AMR/refinement/tagging/threshold", sim.tagging_threshold)
+        tagging = sim.tagging
+        add_string("simulation/AMR/refinement/tagging/method", tagging["method"])
+        quantities = tagging["quantities"]
+        add_int("simulation/AMR/refinement/tagging/nbr_quantities", len(quantities))
+        for i, (name, threshold) in enumerate(quantities):
+            q_path = f"simulation/AMR/refinement/tagging/Q{i}/"
+            add_string(q_path + "name", name)
+            add_double(q_path + "threshold", threshold)
+        if sim.inner_boundary_no_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/inner_boundary_no_refinement_halo", sim.inner_boundary_no_refinement_halo)
+        if sim.physical_boundary_no_refinement_halo:
+            add_double("simulation/AMR/refinement/tagging/physical_boundary_no_refinement_halo", sim.physical_boundary_no_refinement_halo)
+            axes = ("x", "y", "z")[: sim.ndim]
+            for d, axis in enumerate(axes):
+                add_double(
+                    f"simulation/AMR/refinement/tagging/domain_lower_{axis}", 0.0
+                )
+                add_double(
+                    f"simulation/AMR/refinement/tagging/domain_upper_{axis}",
+                    sim.cells[d] * sim.dl[d],
+                )
+                add_bool(
+                    f"simulation/AMR/refinement/tagging/bdry_periodic_{axis}",
+                    sim.boundary_types[d] == "periodic",
+                )
     else:
         add_string(
             "simulation/AMR/refinement/tagging/method", "none"
@@ -245,6 +358,7 @@ def populateDict(sim):
         add_string(name_path + "/" + "type", diag.type)
         add_string(name_path + "/" + "quantity", diag.quantity)
         add_size_t(name_path + "/" + "flush_every", diag.flush_every)
+        add_size_t(name_path + "/" + "write_niter_period", diag.write_niter_period)
         pp.add_array_as_vector(
             name_path + "/" + "write_timestamps", diag.write_timestamps
         )
@@ -342,6 +456,11 @@ def populateDict(sim):
             pp.add_array_as_vector(
                 restarts_path + "write_timestamps", restart_options["timestamps"]
             )
+
+        add_size_t(
+            restarts_path + "write_niter_period",
+            restart_options.get("write_niter_period", 0),
+        )
 
         add_string(restarts_path + "serialized_simulation", serialized_sim)
     #### restarts added

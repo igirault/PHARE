@@ -133,6 +133,28 @@ namespace core
             std::array<QtyCentering, NBR_COMPO> const VecAllPrimalZ
                 = {{data.primal, data.primal, data.primal}};
 
+            std::array<QtyCentering, NBR_COMPO> const divB = {{data.dual, data.dual, data.dual}};
+
+            std::array<QtyCentering, NBR_COMPO> const FaceCenteredX
+                = {{data.primal, data.dual, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const FaceCenteredY
+                = {{data.dual, data.primal, data.dual}};
+            std::array<QtyCentering, NBR_COMPO> const FaceCenteredZ
+                = {{data.dual, data.dual, data.primal}};
+
+            std::array<QtyCentering, NBR_COMPO> const NodeCentered
+                = {{data.primal, data.primal, data.primal}};
+
+            std::array<QtyCentering, NBR_COMPO> const CellCentered
+                = {{data.dual, data.dual, data.dual}};
+
+            std::array<QtyCentering, NBR_COMPO> const EdgeCenteredX
+                = {{data.dual, data.primal, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const EdgeCenteredY
+                = {{data.primal, data.dual, data.primal}};
+            std::array<QtyCentering, NBR_COMPO> const EdgeCenteredZ
+                = {{data.primal, data.primal, data.dual}};
+
             std::array<std::array<QtyCentering, NBR_COMPO>,
                        static_cast<std::size_t>(MHDQuantity::Scalar::count)> const _QtyCentering{
                 Rho,
@@ -175,7 +197,16 @@ namespace core
                 ScalarAllPrimal,
                 VecAllPrimalX,
                 VecAllPrimalY,
-                VecAllPrimalZ};
+                VecAllPrimalZ,
+                divB,
+                FaceCenteredX,
+                FaceCenteredY,
+                FaceCenteredZ,
+                NodeCentered,
+                CellCentered,
+                EdgeCenteredX,
+                EdgeCenteredY,
+                EdgeCenteredZ};
 
             return _QtyCentering;
         }
@@ -265,6 +296,24 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVecAllPrimalY][gridData_.idirX]}};
                     case MHDQuantity::Scalar::VecAllPrimalZ:
                         return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::FaceCenteredX:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::FaceCenteredY:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::FaceCenteredZ:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::NodeCentered:
+                        return {{_QtyCentering_[gridData_.iNodeCentered][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::CellCentered:
+                        return {{_QtyCentering_[gridData_.iCellCentered][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::EdgeCenteredX:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::EdgeCenteredY:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirX]}};
+                    case MHDQuantity::Scalar::EdgeCenteredZ:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirX]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -384,6 +433,33 @@ namespace core
                     case MHDQuantity::Scalar::VecAllPrimalZ:
                         return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::FaceCenteredX:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::FaceCenteredY:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::FaceCenteredZ:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::NodeCentered:
+                        return {{_QtyCentering_[gridData_.iNodeCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iNodeCentered][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::CellCentered:
+                        return {{_QtyCentering_[gridData_.iCellCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iCellCentered][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::EdgeCenteredX:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::EdgeCenteredY:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirY]}};
+                    case MHDQuantity::Scalar::EdgeCenteredZ:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirY]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -556,6 +632,42 @@ namespace core
                         return {{_QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirX],
                                  _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirY],
                                  _QtyCentering_[gridData_.iVecAllPrimalZ][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::divB:
+                        return {{_QtyCentering_[gridData_.idivB][gridData_.idirX],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirY],
+                                 _QtyCentering_[gridData_.idivB][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::FaceCenteredX:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iFaceCenteredX][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::FaceCenteredY:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iFaceCenteredY][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::FaceCenteredZ:
+                        return {{_QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iFaceCenteredZ][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::NodeCentered:
+                        return {{_QtyCentering_[gridData_.iNodeCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iNodeCentered][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iNodeCentered][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::CellCentered:
+                        return {{_QtyCentering_[gridData_.iCellCentered][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iCellCentered][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iCellCentered][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::EdgeCenteredX:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iEdgeCenteredX][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::EdgeCenteredY:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iEdgeCenteredY][gridData_.idirZ]}};
+                    case MHDQuantity::Scalar::EdgeCenteredZ:
+                        return {{_QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirX],
+                                 _QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirY],
+                                 _QtyCentering_[gridData_.iEdgeCenteredZ][gridData_.idirZ]}};
                     default: throw std::runtime_error("Wrong MHDQuantity");
                 }
             }
@@ -615,6 +727,26 @@ namespace core
                     return {{centering(MHDQuantity::Scalar::VecAllPrimalX),
                              centering(MHDQuantity::Scalar::VecAllPrimalY),
                              centering(MHDQuantity::Scalar::VecAllPrimalZ)}};
+
+                case MHDQuantity::Vector::FaceCentered:
+                    return {{centering(MHDQuantity::Scalar::FaceCenteredX),
+                             centering(MHDQuantity::Scalar::FaceCenteredY),
+                             centering(MHDQuantity::Scalar::FaceCenteredZ)}};
+
+                case MHDQuantity::Vector::NodeCentered:
+                    return {{centering(MHDQuantity::Scalar::NodeCentered),
+                             centering(MHDQuantity::Scalar::NodeCentered),
+                             centering(MHDQuantity::Scalar::NodeCentered)}};
+
+                case MHDQuantity::Vector::CellCentered:
+                    return {{centering(MHDQuantity::Scalar::CellCentered),
+                             centering(MHDQuantity::Scalar::CellCentered),
+                             centering(MHDQuantity::Scalar::CellCentered)}};
+
+                case MHDQuantity::Vector::EdgeCentered:
+                    return {{centering(MHDQuantity::Scalar::EdgeCenteredX),
+                             centering(MHDQuantity::Scalar::EdgeCenteredY),
+                             centering(MHDQuantity::Scalar::EdgeCenteredZ)}};
 
                 default: throw std::runtime_error("Wrong MHDQuantity");
             }
@@ -928,6 +1060,94 @@ namespace core
             return directionalInterp<dirZ, InterpDir::PrimalToDual>();
         }
 
+        // B0 is not reconstructed: it is read once at each Riemann face. The normal
+        // component is naturally located on the face; the two transverse components must be
+        // linear-averaged (order-2, the closest values) from their native Yee location to
+        // the face location. B0 shares B1's centering: B0x=Pdd, B0y=Dpd, B0z=Ddp; the X/Y/Z
+        // faces are Pdd/Dpd/Ddp respectively.
+
+        NO_DISCARD auto static consteval B0yToFaceX()
+        {
+            // B0y is Dpd, the X face is Pdd: Dpd to Pdd, shift in X and Y
+            using PHARE::core::dirX;
+            using PHARE::core::dirY;
+
+            return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
+                                             directionalInterp<dirY, InterpDir::PrimalToDual>());
+        }
+
+        NO_DISCARD auto static consteval B0zToFaceX()
+        {
+            // B0z is Ddp, the X face is Pdd: Ddp to Pdd, shift in X and Z
+            using PHARE::core::dirX;
+            using PHARE::core::dirZ;
+
+            return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::DualToPrimal>(),
+                                             directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        }
+
+        NO_DISCARD auto static consteval B0xToFaceY()
+        {
+            // B0x is Pdd, the Y face is Dpd: Pdd to Dpd, shift in X and Y
+            using PHARE::core::dirX;
+            using PHARE::core::dirY;
+
+            return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
+                                             directionalInterp<dirY, InterpDir::DualToPrimal>());
+        }
+
+        NO_DISCARD auto static consteval B0zToFaceY()
+        {
+            // B0z is Ddp, the Y face is Dpd: Ddp to Dpd, shift in Y and Z
+            using PHARE::core::dirY;
+            using PHARE::core::dirZ;
+
+            return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::DualToPrimal>(),
+                                             directionalInterp<dirZ, InterpDir::PrimalToDual>());
+        }
+
+        NO_DISCARD auto static consteval B0xToFaceZ()
+        {
+            // B0x is Pdd, the Z face is Ddp: Pdd to Ddp, shift in X and Z
+            using PHARE::core::dirX;
+            using PHARE::core::dirZ;
+
+            return tensorProduct<dirX, dirZ>(directionalInterp<dirX, InterpDir::PrimalToDual>(),
+                                             directionalInterp<dirZ, InterpDir::DualToPrimal>());
+        }
+
+        NO_DISCARD auto static consteval B0yToFaceZ()
+        {
+            // B0y is Dpd, the Z face is Ddp: Dpd to Ddp, shift in Y and Z
+            using PHARE::core::dirY;
+            using PHARE::core::dirZ;
+
+            return tensorProduct<dirY, dirZ>(directionalInterp<dirY, InterpDir::PrimalToDual>(),
+                                             directionalInterp<dirZ, InterpDir::DualToPrimal>());
+        }
+
+        // Single B0 value at a constrained-transport EMF edge. The EMF reconstructs the
+        // transverse B component along `dir` (dual along dir) onto the primal-along-dir edge;
+        // these 2-point averages place B0 at the same idx-1/2 interface (offsets -1, 0), so a
+        // static B0 contributes no left/right jump to the EMF dissipation term.
+        NO_DISCARD auto static consteval B0ToEdgeX()
+        {
+            using PHARE::core::dirX;
+            return directionalInterp<dirX, InterpDir::DualToPrimal>();
+        }
+
+        NO_DISCARD auto static consteval B0ToEdgeY()
+        {
+            using PHARE::core::dirY;
+            return directionalInterp<dirY, InterpDir::DualToPrimal>();
+        }
+
+        NO_DISCARD auto static consteval B0ToEdgeZ()
+        {
+            using PHARE::core::dirZ;
+            return directionalInterp<dirZ, InterpDir::DualToPrimal>();
+        }
+
         NO_DISCARD auto static consteval edgeXToCellCenter()
         {
             // The X edge is dPP
@@ -1009,6 +1229,31 @@ namespace core
 
             return tensorProduct<dirX, dirY>(directionalInterp<dirX, InterpDir::DualToPrimal, 2>(),
                                              directionalInterp<dirY, InterpDir::DualToPrimal, 2>());
+        }
+
+        // Electric field is edge-centered (Ex=Dpp, Ey=pDp, Ez=ppD), dual in exactly one
+        // direction. Projecting to the primal output nodes (Ppp) is a single DualToPrimal shift
+        // in that direction. (cellCenterToFullPrimal, used for cell-centered MHD quantities, would
+        // wrongly shift in all directions.)
+        NO_DISCARD auto static consteval ExToMoments()
+        {
+            // Ex is Dpp, moments are Ppp -> DualToPrimal in X only
+            using PHARE::core::dirX;
+            return directionalInterp<dirX, InterpDir::DualToPrimal, 2>();
+        }
+
+        NO_DISCARD auto static consteval EyToMoments()
+        {
+            // Ey is pDp, moments are Ppp -> DualToPrimal in Y only
+            using PHARE::core::dirY;
+            return directionalInterp<dirY, InterpDir::DualToPrimal, 2>();
+        }
+
+        NO_DISCARD auto static consteval EzToMoments()
+        {
+            // Ez is ppD, moments are Ppp -> DualToPrimal in Z only (identity in 1D/2D)
+            using PHARE::core::dirZ;
+            return directionalInterp<dirZ, InterpDir::DualToPrimal, 2>();
         }
 
         // We might not want too high order of a stencil for all of the data we have. Also these

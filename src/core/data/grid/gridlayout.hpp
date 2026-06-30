@@ -677,10 +677,10 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto localToAMR(Point<T, dimension> const& localPoint) const
+        NO_DISCARD auto localToAMR(Point<T, dimension> localPoint) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
-            Point<int, dimension> pointAMR;
+            Point<T, dimension> pointAMR;
 
             // any direction, it's the same because we want cells
             auto localStart = physicalStartIndex(QtyCentering::dual, Direction::X);
@@ -698,10 +698,10 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto localToAMR(Box<T, dimension> const& localBox) const
+        NO_DISCARD auto localToAMR(Box<T, dimension> localBox) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
-            auto AMRBox = Box<int, dimension>{};
+            auto AMRBox = Box<T, dimension>{};
 
             AMRBox.lower = localToAMR(localBox.lower);
             AMRBox.upper = localToAMR(localBox.upper);
@@ -714,7 +714,7 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto AMRToLocal(Point<T, dimension> const& AMRPoint) const
+        NO_DISCARD auto AMRToLocal(Point<T, dimension> AMRPoint) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
             Point<std::uint32_t, dimension> localPoint;
@@ -737,7 +737,7 @@ namespace core
          * This method only deals with **cell** indexes.
          */
         template<typename T>
-        NO_DISCARD auto AMRToLocal(Box<T, dimension> const& AMRBox) const
+        NO_DISCARD auto AMRToLocal(Box<T, dimension> AMRBox) const
         {
             static_assert(std::is_integral_v<T>, "Error, must be MeshIndex (integral Point)");
             auto localBox = Box<std::uint32_t, dimension>{};
@@ -747,8 +747,6 @@ namespace core
 
             return localBox;
         }
-
-
 
         template<auto func, typename Field>
         NO_DISCARD static typename Field::type project(Field const& field,
@@ -850,9 +848,13 @@ namespace core
         {
             std::size_t const iDir = static_cast<std::size_t>(direction);
             auto mirroredPoint     = point;
-            mirroredPoint[iDir]    = boundaryMirrored(direction, side, centering, point[iDir]);
+            // iDir < dim always holds for a valid call; the guard lets the compiler drop the
+            // impossible out-of-bounds branch (avoids a GCC -Warray-bounds false positive in 1D).
+            if (iDir < dim)
+                mirroredPoint[iDir] = boundaryMirrored(direction, side, centering, point[iDir]);
             return mirroredPoint;
         }
+
 
         // ----------------------------------------------------------------------
         //                      LAYOUT SPECIFIC METHODS
@@ -1170,6 +1172,19 @@ namespace core
         {
             return GridLayoutImpl::faceZToCellCenter();
         }
+
+        // B0-to-Riemann-face projections (transverse B0 components linear-averaged to a face)
+        NO_DISCARD auto static constexpr B0yToFaceX() { return GridLayoutImpl::B0yToFaceX(); }
+        NO_DISCARD auto static constexpr B0zToFaceX() { return GridLayoutImpl::B0zToFaceX(); }
+        NO_DISCARD auto static constexpr B0xToFaceY() { return GridLayoutImpl::B0xToFaceY(); }
+        NO_DISCARD auto static constexpr B0zToFaceY() { return GridLayoutImpl::B0zToFaceY(); }
+        NO_DISCARD auto static constexpr B0xToFaceZ() { return GridLayoutImpl::B0xToFaceZ(); }
+        NO_DISCARD auto static constexpr B0yToFaceZ() { return GridLayoutImpl::B0yToFaceZ(); }
+
+        // B0 averaged to a CT EMF edge (single value, no left/right reconstruction)
+        NO_DISCARD auto static constexpr B0ToEdgeX() { return GridLayoutImpl::B0ToEdgeX(); }
+        NO_DISCARD auto static constexpr B0ToEdgeY() { return GridLayoutImpl::B0ToEdgeY(); }
+        NO_DISCARD auto static constexpr B0ToEdgeZ() { return GridLayoutImpl::B0ToEdgeZ(); }
 
         NO_DISCARD auto static constexpr edgeXToCellCenter()
         {
