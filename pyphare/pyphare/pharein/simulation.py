@@ -381,8 +381,32 @@ def _normalize_inflow_velocity(location, velocity):
     return v
 
 
-def _normalize_B(location, B):
-    """Return the magnetic field as a (Bx, By, Bz) tuple. Must be a 3-element sequence."""
+def _normalize_B(location, B, allow_time_function=False):
+    """Return the magnetic field as a (Bx, By, Bz) tuple, or, when allowed, a single time
+    function f(t) -> [Bx, By, Bz] (uniform in space, used for IMF turning).
+
+    A 3-element sequence is normalised to a tuple of floats. A callable is kept as-is when
+    ``allow_time_function`` is set; it is rejected otherwise.
+    """
+    if callable(B):
+        if not allow_time_function:
+            raise NotImplementedError(
+                f"'B' at boundary '{location}' may only be a time function f(t) for a "
+                f"super-magnetofast-inflow boundary; got a callable for an unsupported BC type."
+            )
+        try:
+            probe = B(0.0)
+        except Exception as e:
+            raise TypeError(
+                f"'B' time function at boundary '{location}' must be callable as f(t) with a "
+                f"scalar time; calling B(0.0) raised {e!r}"
+            )
+        if len(probe) != 3:
+            raise ValueError(
+                f"'B' time function at boundary '{location}' must return a 3-vector "
+                f"[Bx, By, Bz]; B(0.0) returned {probe!r}"
+            )
+        return B
     try:
         b = tuple(float(bi) for bi in B)
     except (TypeError, ValueError):
@@ -397,13 +421,14 @@ def _normalize_B(location, B):
     return b
 
 
-def _normalize_inflow_magnetic_field(location, data):
+def _normalize_inflow_magnetic_field(location, data, allow_time_function=False):
     """Validate and normalise the magnetic field of an inflow 'data' sub-dict.
 
     The total field is prescribed via 'B' (= B0 + B1); it is normalised in place via
     _normalize_B. The boundary magnetic field is driven through the constrained transport from
     the motional electric field E = -v x B (full Dirichlet on E) on the C++ side, with B1 left
-    free in the ghosts.
+    free in the ghosts. When ``allow_time_function`` is set, 'B' may be a single time function
+    f(t) -> [Bx, By, Bz] (uniform in space) to drive a rotating inflow field (IMF turning).
 
     Prescribing the perturbation 'B1' is not supported yet: it needs an E = -v x (B0 + B1)
     electric-field condition that is not implemented.
@@ -418,7 +443,7 @@ def _normalize_inflow_magnetic_field(location, data):
         raise KeyError(
             f"Inflow BC at '{location}' requires the total magnetic field 'B' inside 'data'"
         )
-    data["B"] = _normalize_B(location, data["B"])
+    data["B"] = _normalize_B(location, data["B"], allow_time_function=allow_time_function)
 
 
 def _check_inflow_data(location, bc):
@@ -437,7 +462,7 @@ def _check_inflow_data(location, bc):
                 f"got {val!r}"
             )
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    _normalize_inflow_magnetic_field(location, data)
+    _normalize_inflow_magnetic_field(location, data, allow_time_function=True)
     bc["data"] = data
 
 

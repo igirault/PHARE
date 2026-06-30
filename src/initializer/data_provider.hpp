@@ -49,10 +49,46 @@ namespace initializer
     using InitFunction = typename InitFunctionHelper<double, dim>::type;
 
 
+    // Like InitFunction but with a trailing scalar time argument: f(x[,y[,z]], t).
+    // Spatial args are vectorized (one value per node); time is a single double.
+    template<typename ReturnType, std::size_t dim>
+    struct TimeFunctionHelper
+    {
+    };
+
+    template<>
+    struct TimeFunctionHelper<double, 1>
+    {
+        using return_type = std::shared_ptr<core::Span<double>>;
+        using param_type  = std::vector<double> const&;
+        using type        = std::function<return_type(param_type, double)>;
+    };
+
+    template<>
+    struct TimeFunctionHelper<double, 2>
+    {
+        using return_type = std::shared_ptr<core::Span<double>>;
+        using param_type  = std::vector<double> const&;
+        using type        = std::function<return_type(param_type, param_type, double)>;
+    };
+
+    template<>
+    struct TimeFunctionHelper<double, 3>
+    {
+        using return_type = std::shared_ptr<core::Span<double>>;
+        using param_type  = std::vector<double> const&;
+        using type        = std::function<return_type(param_type, param_type, param_type, double)>;
+    };
+
+    template<std::size_t dim>
+    using TimeFunction = typename TimeFunctionHelper<double, dim>::type;
+
+
     using PHAREDict
         = cppdict::Dict<bool, int, std::vector<int>, double, std::vector<double>, std::size_t,
                         std::optional<std::size_t>, std::string, std::vector<std::string>,
-                        InitFunction<1>, InitFunction<2>, InitFunction<3>>;
+                        InitFunction<1>, InitFunction<2>, InitFunction<3>, TimeFunction<1>,
+                        TimeFunction<2>, TimeFunction<3>>;
 
 
     class PHAREDictHandler

@@ -52,6 +52,8 @@ public:
     using scalar_quantity_list_type = std::vector<typename PhysicalQuantityT::Scalar>;
     using vector_quantity_list_type = std::vector<typename PhysicalQuantityT::Vector>;
 
+    static constexpr std::size_t dimension = GridLayoutT::dimension;
+
     BoundaryFactory() = delete;
 
     /**
@@ -177,6 +179,43 @@ private:
                 -(v[0] * B[1] - v[1] * B[0])};
     }
 
+    using _time_function = initializer::TimeFunction<dimension>;
+
+    /** @brief Whether any x/y/z component of a vector data field is a space/time function
+     * (vs a constant). Used to drive a time-varying inflow (e.g. IMF turning). */
+    static bool isFunctionXYZ_(initializer::PHAREDict const& data, std::string const& key)
+    {
+        return data[key]["x"].template is<_time_function>()
+               || data[key]["y"].template is<_time_function>()
+               || data[key]["z"].template is<_time_function>();
+    }
+
+    /** @brief Linear combination c1*f1 + c2*f2 of two time functions, evaluated node-wise at
+     * the same spatial coordinates and time. */
+    static _time_function linComb2_(double c1, _time_function f1, double c2, _time_function f2)
+    {
+        return [c1, c2, f1 = std::move(f1), f2 = std::move(f2)](
+                   auto const&... args) -> std::shared_ptr<Span<double>> {
+            auto s1 = f1(args...);
+            auto s2 = f2(args...);
+            std::vector<double> out(s1->size());
+            for (std::size_t k = 0; k < out.size(); ++k)
+                out[k] = c1 * (*s1)[k] + c2 * (*s2)[k];
+            return std::make_shared<VectorSpan<double>>(std::move(out));
+        };
+    }
+
+    /** @brief Build the three time functions of the ideal motional electric field
+     * E = -v x B(t) from the (time-varying) total-field components B(t) and the constant
+     * inflow velocity v. Time-varying twin of @c inflow_motional_E_. */
+    static std::array<_time_function, 3>
+    motionalEFunction_(std::array<_time_function, 3> const& B, std::array<double, 3> const& v)
+    {
+        // E_x = -(v_y B_z - v_z B_y), E_y = -(v_z B_x - v_x B_z), E_z = -(v_x B_y - v_y B_x)
+        return {linComb2_(-v[1], B[2], v[2], B[1]), linComb2_(-v[2], B[0], v[0], B[2]),
+                linComb2_(-v[0], B[1], v[1], B[0])};
+    }
+
     /** @brief Build the shared B1 sub-BC used by compound conditions (e.g.
      * TotalEnergyFromPressure) to fill B1 = B - B0 from the prescribed total field
      * (@c FieldB1FromBtotBoundaryCondition). */
@@ -186,6 +225,17 @@ private:
         return std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::B1FromBtot,
                                                   VecFieldT, GridLayoutT>(B)};
+    }
+
+    /** @brief Time-varying overload: the prescribed total field B(t) is given as three time
+     * functions; @c FieldB1FromBtotBoundaryCondition evaluates them at @c ctx.time. */
+    template<typename VecFieldT, typename VectorBcType>
+    static std::shared_ptr<VectorBcType>
+    make_inflow_B_bc_(std::array<_time_function, 3> const& Bfns)
+    {
+        return std::shared_ptr<VectorBcType>{
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::B1FromBtot,
+                                                  VecFieldT, GridLayoutT>(Bfns)};
     }
 
     /** @brief Register boundary conditions to make a reflective boundary */
@@ -317,16 +367,34 @@ private:
                 "BoundaryFactory: SuperMagnetofastInflow requires the total magnetic field 'B'; "
                 "the 'B1' perturbation inflow is not supported yet (it needs an E = -v x (B0 + "
                 "B1) electric-field condition that is not implemented).");
-        auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
-        auto const E = inflow_motional_E_(v, B);
-
         // The boundary magnetic field is driven through the constrained transport from the
         // prescribed motional electric field E = -v x B (full Dirichlet on E), not by pinning
         // B1 in the ghosts (B1 = None). Etot1 is derived from the prescribed pressure via the
         // compound energy BC, which fills B1 = B - B0 internally for its magnetic term.
+        // The total field B may be a constant or a time function B(t) (IMF turning): in the
+        // latter case E and the energy term's B1 fill are recomputed from B(t) every substep.
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+
+        bool const BisFn = isFunctionXYZ_(data, "B");
+
+        std::array<double, 3> E{};                  // constant-B path
+        std::array<_time_function, 3> Efns{};       // time-varying-B path
+        std::shared_ptr<VectorBcType> B_bc;
+        if (BisFn)
+        {
+            auto const Bfns
+                = initializer::parseDimXYZType<_time_function, 3>(data, "B");
+            Efns  = motionalEFunction_(Bfns, v);
+            B_bc  = make_inflow_B_bc_<VecFieldT, VectorBcType>(Bfns);
+        }
+        else
+        {
+            auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
+            E            = inflow_motional_E_(v, B);
+            B_bc         = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
+        }
 
         auto rho_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
@@ -334,7 +402,6 @@ private:
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
                                                   GridLayoutT>(rhoV)};
-        auto B_bc = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
         auto P_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
                                                   GridLayoutT>(p)};
@@ -370,9 +437,12 @@ private:
                             quantity, rhoV);
                     break;
                 case (PhysicalQuantityT::Vector::E):
-                    boundary
-                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
-                            quantity, E);
+                    if (BisFn)
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, Efns);
+                    else
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, E);
                     break;
                 case (PhysicalQuantityT::Vector::B1):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(

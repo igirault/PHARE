@@ -4,9 +4,13 @@
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
+#include "initializer/data_provider.hpp"
 
 #include <array>
 #include <cstddef>
+#include <memory>
+#include <optional>
+#include <vector>
 
 namespace PHARE::core
 {
@@ -56,6 +60,15 @@ public:
     {
     }
 
+    // Time-varying total field B(t): one function per component, evaluated (uniform in space)
+    // at ctx.time on each apply. Used for a rotating inflow field (IMF turning).
+    FieldB1FromBtotBoundaryCondition(std::array<initializer::TimeFunction<dimension>, N> fns)
+        : hasFn_{true}
+    {
+        for (size_t i = 0; i < N; ++i)
+            fn_[i] = std::move(fns[i]);
+    }
+
     FieldB1FromBtotBoundaryCondition(FieldB1FromBtotBoundaryCondition const&)            = default;
     FieldB1FromBtotBoundaryCondition& operator=(FieldB1FromBtotBoundaryCondition const&) = default;
     FieldB1FromBtotBoundaryCondition(FieldB1FromBtotBoundaryCondition&&)                 = default;
@@ -80,6 +93,13 @@ public:
 
         assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B1));
 
+        // total field to impose: a constant, or a time function B(t) evaluated (uniform in
+        // space) at the current time.
+        std::array<value_type, N> Btot = Btot_;
+        if (hasFn_)
+            for (size_t i = 0; i < N; ++i)
+                Btot[i] = evalUniform_(i, ctx.time);
+
         // background field B0, read at the same indices as B1 (co-located, same centering)
         auto B0vec    = ctx.accessor_new.getVecField(tensor_quantity_type::B0);
         auto B0fields = B0vec.components();
@@ -90,7 +110,7 @@ public:
             {
                 field_type& B1c        = std::get<iTransverse>(B1fields);
                 field_type const& B0c  = std::get<iTransverse>(B0fields);
-                value_type const Btoti = Btot_[iTransverse];
+                value_type const Btoti = Btot[iTransverse];
 
                 QtyCentering const centering = GridLayoutT::centering(
                     B1c.physicalQuantity())[static_cast<size_t>(direction)];
@@ -163,7 +183,24 @@ public:
 private:
     using _index = Point<std::uint32_t, dimension>;
 
+    // Evaluate component i of the (space-uniform) time function at time t. Passes a single
+    // dummy coordinate per dimension and reads the first returned node value.
+    value_type evalUniform_(size_t i, double t) const
+    {
+        std::vector<double> const one(1, 0.0);
+        std::shared_ptr<Span<double>> s;
+        if constexpr (dimension == 1)
+            s = (*fn_[i])(one, t);
+        else if constexpr (dimension == 2)
+            s = (*fn_[i])(one, one, t);
+        else
+            s = (*fn_[i])(one, one, one, t);
+        return (*s)[0];
+    }
+
     std::array<value_type, N> Btot_{0};
+    std::array<std::optional<initializer::TimeFunction<dimension>>, N> fn_{};
+    bool hasFn_ = false;
 
 }; // class FieldB1FromBtotBoundaryCondition
 

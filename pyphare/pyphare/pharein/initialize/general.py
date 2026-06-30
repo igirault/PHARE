@@ -54,6 +54,26 @@ class fn_wrapper(py_fn_wrapper):
         return cpp_etc_lib().makePyArrayWrapper(super().__call__(*xyz))
 
 
+# Wrap user functions of space AND time: fn(x[, y[, z]], t).
+# C++ passes (*spatial_vectors, t) where spatial args are vectors (one value per node)
+# and t is a scalar float. A scalar-in-space return is broadcast to the node count.
+class time_fn_wrapper(py_fn_wrapper):
+    def __init__(self, fn):
+        super().__init__(fn)
+
+    def __call__(self, *args):
+        from pyphare.cpp import cpp_etc_lib
+
+        *xyz, t = args
+        xyz = [np.asarray(arg) for arg in xyz]
+        ret = self.fn(*xyz, float(t))
+        if isinstance(ret, list):
+            ret = np.asarray(ret)
+        if is_scalar(ret):
+            ret = np.full(len(xyz[-1]), ret)  # broadcast scalar-in-space to node count
+        return cpp_etc_lib().makePyArrayWrapper(ret)
+
+
 # pybind complains if receiving wrong type
 def add_int(path, val):
     pp.add_int(path, int(val))
@@ -81,17 +101,44 @@ def add_vector_int(path, val):
 add_string = pp.add_string
 
 
-def _add_inflow_magnetic_field(bc_path, data):
+def addTimeFunction(path, fn, ndim):
+    {
+        1: pp.addTimeFunction1D,
+        2: pp.addTimeFunction2D,
+        3: pp.addTimeFunction3D,
+    }[ndim](path, time_fn_wrapper(fn))
+
+
+# Route a boundary-condition data value: a callable becomes a space/time function,
+# anything else a constant double.
+def _add_bc_value(path, val, ndim):
+    if callable(val):
+        addTimeFunction(path, val, ndim)
+    else:
+        add_double(path, float(val))
+
+
+def _add_inflow_magnetic_field(bc_path, data, ndim):
     """Serialise the inflow total magnetic field under 'data/B'.
 
     Only the total field 'B' is accepted (enforced by simulation.py validation). The C++
     BoundaryFactory drives the boundary field through the motional electric field E = -v x B
     (full Dirichlet on E) and leaves B1 free in the ghosts.
+
+    'B' may be a constant vector ``[bx, by, bz]`` or a single time function
+    ``f(t) -> [bx, by, bz]`` (uniform in space, used for IMF turning). A vector-valued time
+    function is split into three per-component space/time functions that ignore the spatial
+    coordinates and broadcast the scalar component over the face nodes.
     """
-    bx, by, bz = data["B"]
-    add_double(f"{bc_path}/data/B/x", bx)
-    add_double(f"{bc_path}/data/B/y", by)
-    add_double(f"{bc_path}/data/B/z", bz)
+    B = data["B"]
+    if callable(B):
+        for i, axis in enumerate("xyz"):
+            # extract component i at time t (last positional arg); ignore spatial vectors
+            comp = lambda *args, i=i, f=B: f(args[-1])[i]
+            _add_bc_value(f"{bc_path}/data/B/{axis}", comp, ndim)
+    else:
+        for axis, val in zip("xyz", B):
+            _add_bc_value(f"{bc_path}/data/B/{axis}", val, ndim)
 
 
 def populateDict(sim):
@@ -134,7 +181,7 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                _add_inflow_magnetic_field(bc_path, data)
+                _add_inflow_magnetic_field(bc_path, data, sim.ndim)
             elif bc["type"] == "free-pressure-inflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/density", data["density"])
@@ -142,7 +189,7 @@ def populateDict(sim):
                 add_double(f"{bc_path}/data/velocity/x", vx)
                 add_double(f"{bc_path}/data/velocity/y", vy)
                 add_double(f"{bc_path}/data/velocity/z", vz)
-                _add_inflow_magnetic_field(bc_path, data)
+                _add_inflow_magnetic_field(bc_path, data, sim.ndim)
             elif bc["type"] == "fixed-pressure-outflow":
                 data = bc["data"]
                 add_double(f"{bc_path}/data/pressure", data["pressure"])
