@@ -20,6 +20,7 @@ add_no_mpi_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})
 
 foreach(suffix none neumann dirichlet symmetric antisymmetric
                div_free_transverse_neumann
+               div_free_transverse_dirichlet
                b1_from_btot
                total_energy_from_pressure adaptive_outflow)
   set(target test-field-bc-${suffix})

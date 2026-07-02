@@ -130,6 +130,7 @@ public:
         , old_scalar_ids_{}
         , old_vector_ids_{}
         , dt_{0.0}
+        , applyRegridFallback_{false}
     {
     }
 
@@ -167,6 +168,14 @@ public:
     void setDt(double const dt) { dt_ = dt; }
 
     /**
+     * @brief Toggle regrid-fallback mode. When set, @c setPhysicalBoundaryConditions applies each
+     * boundary's regrid fallback condition instead of its normal one (and skips quantities with no
+     * fallback). The messenger raises this only around the magnetic regrid fill, where the normal
+     * B condition cannot yet produce the outside-domain ghosts. Mirrors the @c setDt pattern.
+     */
+    void setRegridFallback(bool const on) { applyRegridFallback_ = on; }
+
+    /**
      * @brief Apply physical boundary conditions via SAMRAI callback.
      *
      * Iterate over patch boundaries that touch a physical domain boundary and apply the appropriate
@@ -187,8 +196,11 @@ public:
         // if (ghost_width_to_fill != gridLayout.nbrGhosts())
         //     throw std::runtime_error("Error - inconsistent ghost cell widths");
 
-        /// @todo Make SAMRAI call the current function with the correct number of ghost cells. With
-        /// only L0, the commented check above pass, but with more levels it fails.
+        /// @todo Make SAMRAI call the current function with the correct value for argument
+        /// `ghost_width_to_fill`? With only L0, the above commented check pass,
+        /// but with more levels it fails. To be valid, this would require correctly overriding
+        /// getRefineOpStencilWidth, but I do not want to break anything by changing current
+        /// implementation that always return 1.
         SAMRAI::hier::IntVector const ghost_width_to_fill{
             static_cast<SAMRAI::tbox::Dimension>(static_cast<int>(dimension)),
             static_cast<int>(gridLayout.nbrGhosts())};
@@ -249,9 +261,21 @@ public:
                 if (!masterBoundary)
                     throw std::runtime_error("Boundary not found.");
 
-                // get the boundary condition for the current physical quantity
+                // get the boundary condition for the current physical quantity. While a fine level
+                // is being (re)filled at regrid, apply the regrid fallback instead of the normal
+                // condition: for B at inflow the normal condition is None (driven by the Dirichlet
+                // E through constrained transport, which has not run yet), so the outside-domain
+                // ghosts would otherwise be left at the NaN sentinel.
                 std::shared_ptr<boundary_condition_type> bc
-                    = masterBoundary->getFieldCondition(scalarOrTensorField.physicalQuantity());
+                    = applyRegridFallback_
+                          ? masterBoundary->getRegridFallbackCondition(
+                                scalarOrTensorField.physicalQuantity())
+                          : masterBoundary->getFieldCondition(
+                                scalarOrTensorField.physicalQuantity());
+                if (applyRegridFallback_ && !bc)
+                    // no regrid fallback for this quantity (e.g. outflow B): leave the ghosts to
+                    // the correct condition enforced by the normal post-regrid ghost fill.
+                    continue;
                 if (!bc)
                     throw std::runtime_error("Field boundary condition not found.");
 
@@ -276,15 +300,13 @@ public:
                 {
                     PHARE_LOG_LINE_SS(
                         "Neumann fallback triggered in setPhysicalBoundaryConditions"
-                        << " | field=" << scalarOrTensorField.name()
-                        << " | quantity=" << static_cast<int>(scalarOrTensorField.physicalQuantity())
-                        << " | codim=" << static_cast<int>(codim)
-                        << " | currentBoundaryLocation="
+                        << " | field=" << scalarOrTensorField.name() << " | quantity="
+                        << static_cast<int>(scalarOrTensorField.physicalQuantity())
+                        << " | codim=" << static_cast<int>(codim) << " | currentBoundaryLocation="
                         << static_cast<int>(currentBoundaryLocation)
-                        << " | masterBoundaryLocation="
-                        << static_cast<int>(masterBoundaryLocation) << " | fill_time=" << fill_time
-                        << " | patch_box=" << patch_box << " | localBox=" << localBox
-                        << " | reason=" << e.what());
+                        << " | masterBoundaryLocation=" << static_cast<int>(masterBoundaryLocation)
+                        << " | fill_time=" << fill_time << " | patch_box=" << patch_box
+                        << " | localBox=" << localBox << " | reason=" << e.what());
                     core::FieldNeumannBoundaryCondition<scalar_or_tensor_field_type,
                                                         gridlayout_type>
                         neumannFallback;
@@ -330,6 +352,7 @@ protected:
     scalar_id_map_type old_scalar_ids_;
     vector_id_map_type old_vector_ids_;
     double dt_;
+    bool applyRegridFallback_;
 };
 
 } // namespace PHARE::amr
