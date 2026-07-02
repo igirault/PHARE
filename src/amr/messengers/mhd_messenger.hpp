@@ -463,15 +463,8 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
-        // resetGhosts stamps every ghost with NaN before refilling, so the refine operators can
-        // tell touched from untouched nodes. That is required during the time loop, but must be
-        // skipped when (re)filling a freshly created level's moment ghosts at init/regrid time:
-        // there the interior and coarse-fine ghosts have just been set by the init refiners and the
-        // outermost ghost layers (not reached by the boundary fill) must keep their allocated
-        // values rather than be poisoned with NaN. The physical-boundary and coarse-fine ghosts are
-        // still (re)filled by the refiners below.
         void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime,
-                               double const dt, bool const resetGhosts = true)
+                               double const dt)
         {
             // state-aware BCs (NSCBC/LODI) need dt; the field-refine patch strategies own it.
             for (auto& s : rhoPatchStrats)
@@ -481,12 +474,9 @@ namespace amr
             for (auto& s : totalEnergyPatchStrats)
                 s->setDt(dt);
 
-            if (resetGhosts)
-            {
-                setNaNsOnFieldGhosts(state.rho, level);
-                setNaNsOnVecfieldGhosts(state.rhoV, level);
-                setNaNsOnFieldGhosts(state.Etot1, level);
-            }
+            setNaNsOnFieldGhosts(state.rho, level);
+            setNaNsOnVecfieldGhosts(state.rhoV, level);
+            setNaNsOnFieldGhosts(state.Etot1, level);
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot1, level.getLevelNumber(), fillTime);
@@ -705,14 +695,31 @@ namespace amr
         // Maybe mhd_init
         void registerInitComms_(std::unique_ptr<MHDMessengerInfo> const& info)
         {
+            // Give the init refiners the model-state moment patch strategies (index 0 of each
+            // ghost-strategy list: ghostX[0] == modelX == initX, carrying the full sibling id-maps
+            // the coupled TotalEnergyFromPressure condition needs). The InitField schedule already
+            // fills interior + coarse-fine from the coarser level via createSchedule(level, nullptr,
+            // coarser, hierarchy, patchStrat) — the same call B1 uses in BalgoInit — and with a
+            // patch strategy it now also fills the physical-boundary ghosts. So a freshly created /
+            // regridded refined level touching a physical boundary carries valid moment ghosts
+            // before the first flux. Default (non-overwrite) fill pattern is kept: overwrite is a
+            // B1/face-centered concern and corrupts the cell-centered moment interior fill.
+            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> rhoInitStrat
+                = rhoPatchStrats.empty() ? nullptr : rhoPatchStrats[0];
+            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> momentumInitStrat
+                = momentumPatchStrats.empty() ? nullptr : momentumPatchStrats[0];
+            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> totalEnergyInitStrat
+                = totalEnergyPatchStrats.empty() ? nullptr : totalEnergyPatchStrats[0];
+
             densityInitRefiners_.addStaticRefiners(info->initDensity, mhdFieldRefineOp_,
-                                                   info->initDensity);
+                                                   info->initDensity, nullptr, rhoInitStrat);
 
             momentumInitRefiners_.addStaticRefiners(info->initMomentum, mhdVecFieldRefineOp_,
-                                                    info->initMomentum);
+                                                    info->initMomentum, nullptr, momentumInitStrat);
 
             totalEnergyInitRefiners_.addStaticRefiners(info->initTotalEnergy, mhdFieldRefineOp_,
-                                                       info->initTotalEnergy);
+                                                       info->initTotalEnergy, nullptr,
+                                                       totalEnergyInitStrat);
         }
 
 
