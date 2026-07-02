@@ -712,6 +712,19 @@ namespace amr
                 level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
                 &magneticRefinePatchStrategy_);
 
+            // Regrid fills the new fine level from the old level plus coarse interpolation, but the
+            // outside-domain B ghosts of patches touching a physical boundary cannot be produced
+            // that way (SAMRAI shears them off; the coarse boundary-ghost B is not communicable).
+            // Raise regrid-fallback mode so setPhysicalBoundaryConditions applies each boundary's
+            // regrid fallback B condition instead of the normal one. Guarded so an exception in
+            // fillData still clears the flag (the same instance is reused for the init fill).
+            magneticRefinePatchStrategy_.setRegridFallback(true);
+            struct RegridFallbackGuard
+            {
+                MagneticRefinePatchStrategyT& strat;
+                ~RegridFallbackGuard() { strat.setRegridFallback(false); }
+            } regridFallbackGuard{magneticRefinePatchStrategy_};
+
             magSchedule->fillData(initDataTime);
         }
 

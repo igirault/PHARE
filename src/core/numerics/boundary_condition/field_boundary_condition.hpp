@@ -23,6 +23,7 @@ enum class FieldBoundaryConditionType : int {
     Symmetric,
     Neumann,
     DivergenceFreeTransverseNeumann,
+    DivergenceFreeTransverseDirichlet,
     TotalEnergyFromPressure,
     AdaptiveOutflowPressure
 };

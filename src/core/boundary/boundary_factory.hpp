@@ -238,6 +238,11 @@ private:
                 case (PhysicalQuantityT::Vector::B):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                    // regrid fallback: same divergence-free transverse Neumann extrapolation from
+                    // the freshly-refined fine interior fills the outside-domain B ghosts that the
+                    // regrid schedule leaves at the NaN sentinel.
+                    boundary->template registerRegridFallbackCondition<
+                        FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
                     break;
                 case (PhysicalQuantityT::Vector::J):
                     boundary->template registerFieldCondition<
@@ -366,12 +371,22 @@ private:
                 = initializer::parseDimXYZType<_space_time_function, 3>(data, "B");
             Efns  = motionalEFunction_(Bfns, v);
             B_bc  = make_inflow_B_bc_<VecFieldT, VectorBcType>(Bfns);
+            // regrid fallback: B is None here (driven by the Dirichlet E through constrained
+            // transport), so at regrid the outside-domain B ghosts are unfilled. Impose the
+            // prescribed (time-varying) inflow field on the tangential faces with the normal
+            // face kept divergence-free.
+            boundary->template registerRegridFallbackCondition<
+                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
+                PhysicalQuantityT::Vector::B, Bfns);
         }
         else
         {
             auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
             E            = inflow_motional_E_(v, B);
             B_bc         = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
+            boundary->template registerRegridFallbackCondition<
+                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
+                PhysicalQuantityT::Vector::B, B);
         }
 
         auto rho_bc = std::shared_ptr<ScalarBcType>{
@@ -468,6 +483,13 @@ private:
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+
+        // regrid fallback: B is None here (driven by the Dirichlet E through constrained
+        // transport), so at regrid the outside-domain B ghosts are unfilled. Impose the
+        // prescribed inflow field on the tangential faces with the normal face divergence-free.
+        boundary->template registerRegridFallbackCondition<
+            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
+            PhysicalQuantityT::Vector::B, B);
 
         // Build sub-BCs shared by the energy compound BC
         auto rho_bc = std::shared_ptr<ScalarBcType>{

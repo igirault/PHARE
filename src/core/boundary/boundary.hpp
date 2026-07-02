@@ -116,6 +116,66 @@ public:
     }
 
     /**
+     * @brief Retrieve the *regrid fallback* field boundary condition for a physical quantity.
+     *
+     * A regrid fallback is applied in place of the normal condition only while a fine level is
+     * being (re)filled at regrid time, when the outside-domain ghosts cannot yet be produced by
+     * the usual mechanism (e.g. an inflow B is normally driven by the constrained transport from
+     * the Dirichlet E, which has not run yet). In practice only the magnetic field registers one;
+     * every other quantity returns nullptr, and the caller then leaves the ghosts to the normal
+     * post-regrid fill.
+     *
+     * @return The registered regrid fallback, or nullptr if none was registered for the quantity.
+     */
+    template<typename TensorPhysicalQuantityT>
+    auto getRegridFallbackCondition(TensorPhysicalQuantityT quantity) const
+    {
+        if constexpr (std::same_as<TensorPhysicalQuantityT, typename PhysicalQuantityT::Scalar>)
+        {
+            auto it = regrid_fallback_scalar_conditions_.find(quantity);
+            return (it != regrid_fallback_scalar_conditions_.end()) ? it->second : nullptr;
+        }
+        else if constexpr (std::same_as<TensorPhysicalQuantityT,
+                                        typename PhysicalQuantityT::Vector>)
+        {
+            auto it = regrid_fallback_vector_conditions_.find(quantity);
+            return (it != regrid_fallback_vector_conditions_.end()) ? it->second : nullptr;
+        }
+        else
+        {
+            static_assert(dependant_false_<TensorPhysicalQuantityT>,
+                          "Tensoriality of the physical quantity not supported.");
+        }
+    }
+
+    /**
+     * @brief Register a *regrid fallback* field boundary condition for a quantity. Mirrors
+     * @c registerFieldCondition but writes into the regrid fallback maps. See
+     * @c getRegridFallbackCondition for when it is applied.
+     */
+    template<FieldBoundaryConditionType type, typename TensorPhysicalQuantityT, typename... Args>
+    void registerRegridFallbackCondition(TensorPhysicalQuantityT quantity, Args&&... args)
+    {
+        if constexpr (std::same_as<TensorPhysicalQuantityT, scalar_quantity_type>)
+        {
+            regrid_fallback_scalar_conditions_[quantity]
+                = FieldBoundaryConditionFactory::create<type, FieldT, GridLayoutT>(
+                    std::forward<Args>(args)...);
+        }
+        else if constexpr (std::same_as<TensorPhysicalQuantityT, vector_quantity_type>)
+        {
+            regrid_fallback_vector_conditions_[quantity]
+                = FieldBoundaryConditionFactory::create<type, vector_field_type, GridLayoutT>(
+                    std::forward<Args>(args)...);
+        }
+        else
+        {
+            static_assert(dependant_false_<TensorPhysicalQuantityT>,
+                          "Tensoriality of the physical quantity not supported.");
+        }
+    }
+
+    /**
      * @brief Define comparison of boundaries based on the enum @c BoundaryType .
      */
     std::strong_ordering operator<=>(This const& other) const
@@ -141,6 +201,10 @@ private:
     _scalar_field_condition_map_type scalar_field_conditions_;
     /** The list of registered vector field boundary conditions on the boundary */
     _vector_field_condition_map_type vector_field_conditions_;
+    /** Regrid-time fallback conditions, applied instead of the normal ones only while a fine
+     * level is (re)filled at regrid. Mostly empty; only the magnetic field registers one. */
+    _scalar_field_condition_map_type regrid_fallback_scalar_conditions_;
+    _vector_field_condition_map_type regrid_fallback_vector_conditions_;
 };
 
 } // namespace PHARE::core
