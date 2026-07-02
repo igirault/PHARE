@@ -3,6 +3,7 @@
 
 #include "amr/level_initializer/level_initializer.hpp"
 #include "amr/messengers/messenger.hpp"
+#include "amr/messengers/mhd_messenger.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/resources_manager/amr_utils.hpp"
 
@@ -66,6 +67,19 @@ public:
                 model.updateExternalFields(level, initDataTime);
                 PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : initlevel");
             }
+        }
+
+        // Fill the moment ghosts (rho/rhoV/Etot1) of a freshly (re)created refined level so its
+        // physical-boundary ghosts carry their boundary-condition values before the first advance's
+        // flux consumes them. resetGhosts=false: do NOT NaN-stamp first, so the interior/coarse-fine
+        // ghosts just set by the init refiners (and the outermost layers the boundary fill does not
+        // reach) keep their values instead of being poisoned with NaN. B is handled by the magnetic
+        // (re)grid fill.
+        if (!isRootLevel(levelNumber))
+        {
+            auto& mhdMessenger = static_cast<amr::MHDMessenger<MHDModel>&>(messenger);
+            mhdMessenger.fillMomentsGhosts(mhdModel.state, level, initDataTime, 0.0,
+                                           /*resetGhosts=*/false);
         }
 
         // Inner-boundary setup (classify + safe state + moment BCs). Shared with the restart path

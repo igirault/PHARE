@@ -31,6 +31,7 @@
 #include "SAMRAI/hier/PatchLevel.h"
 #include "SAMRAI/hier/RefineOperator.h"
 
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -367,6 +368,18 @@ namespace amr
 
             auto& mhdModel = static_cast<MHDModel&>(model);
 
+            // Creating a new fine level touching a physical boundary has the same outside-domain B
+            // ghost problem as regrid (an inflow B is None, driven by the Dirichlet E via CT, which
+            // has not run yet). Raise regrid-fallback mode around the magnetic init fill so those
+            // ghosts get the fallback (e.g. the prescribed inflow field) instead of the NaN
+            // sentinel; boundaries without a fallback keep their normal condition.
+            magneticRefinePatchStrategy_.setRegridFallback(true);
+            struct RegridFallbackGuard
+            {
+                MagneticRefinePatchStrategyT& strat;
+                ~RegridFallbackGuard() { strat.setRegridFallback(false); }
+            } regridFallbackGuard{magneticRefinePatchStrategy_};
+
             magInitRefineSchedules[levelNumber]->fillData(initDataTime);
             densityInitRefiners_.fill(levelNumber, initDataTime);
             momentumInitRefiners_.fill(levelNumber, initDataTime);
@@ -450,8 +463,15 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
+        // resetGhosts stamps every ghost with NaN before refilling, so the refine operators can
+        // tell touched from untouched nodes. That is required during the time loop, but must be
+        // skipped when (re)filling a freshly created level's moment ghosts at init/regrid time:
+        // there the interior and coarse-fine ghosts have just been set by the init refiners and the
+        // outermost ghost layers (not reached by the boundary fill) must keep their allocated
+        // values rather than be poisoned with NaN. The physical-boundary and coarse-fine ghosts are
+        // still (re)filled by the refiners below.
         void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime,
-                               double const dt)
+                               double const dt, bool const resetGhosts = true)
         {
             // state-aware BCs (NSCBC/LODI) need dt; the field-refine patch strategies own it.
             for (auto& s : rhoPatchStrats)
@@ -461,9 +481,12 @@ namespace amr
             for (auto& s : totalEnergyPatchStrats)
                 s->setDt(dt);
 
-            setNaNsOnFieldGhosts(state.rho, level);
-            setNaNsOnVecfieldGhosts(state.rhoV, level);
-            setNaNsOnFieldGhosts(state.Etot1, level);
+            if (resetGhosts)
+            {
+                setNaNsOnFieldGhosts(state.rho, level);
+                setNaNsOnVecfieldGhosts(state.rhoV, level);
+                setNaNsOnFieldGhosts(state.Etot1, level);
+            }
             rhoGhostsRefiners_.fill(state.rho, level.getLevelNumber(), fillTime);
             momentumGhostsRefiners_.fill(state.rhoV, level.getLevelNumber(), fillTime);
             totalEnergyGhostsRefiners_.fill(state.Etot1, level.getLevelNumber(), fillTime);
