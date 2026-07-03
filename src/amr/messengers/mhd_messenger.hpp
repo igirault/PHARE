@@ -629,14 +629,9 @@ namespace amr
                 return *id;
             };
 
-            // The conserved fields (rho, momentum, B, total energy) are pushed once per
-            // integrator sub-state, so their ghost-name vectors share the same length. Pressure
-            // is a single derived field (one grid) and the electric field carries an extra
-            // reflux entry, so those vectors have different lengths; index them defensively.
+            // Every ghost-name vector is pushed once per integrator sub-state (model state
+            // included), so they all share the same length and are indexed in lockstep.
             auto const nStates = info->ghostDensity.size();
-            auto at = [](auto const& vec, std::size_t i) -> std::string const& {
-                return vec[std::min(i, vec.size() - 1)];
-            };
             allScalarIdMaps_.resize(nStates);
             allVectorIdMaps_.resize(nStates);
 
@@ -645,14 +640,13 @@ namespace amr
                 allScalarIdMaps_[i] = {
                     {core::MHDQuantity::Scalar::rho, resolveID(info->ghostDensity[i])},
                     {core::MHDQuantity::Scalar::Etot, resolveID(info->ghostTotalEnergy[i])},
-                    // single shared pressure field, same id for every sub-state
-                    {core::MHDQuantity::Scalar::P, resolveID(at(info->ghostPressure, i))},
+                    {core::MHDQuantity::Scalar::P, resolveID(info->ghostPressure[i])},
                 };
 
                 allVectorIdMaps_[i] = {
                     {core::MHDQuantity::Vector::B, resolveID(info->ghostMagnetic[i])},
                     {core::MHDQuantity::Vector::rhoV, resolveID(info->ghostMomentum[i])},
-                    {core::MHDQuantity::Vector::E, resolveID(at(info->ghostElectric, i))},
+                    {core::MHDQuantity::Vector::E, resolveID(info->ghostElectric[i])},
                 };
             }
 
