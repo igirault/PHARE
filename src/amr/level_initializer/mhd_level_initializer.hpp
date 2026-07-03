@@ -46,8 +46,10 @@ public:
         {
             PHARE_LOG_LINE_STR("regriding level " + std::to_string(levelNumber));
             PHARE_LOG_START(3, "mhdLevelInitializer::initialize : regriding block");
-            messenger.regrid(hierarchy, levelNumber, oldLevel, model, initDataTime);
+            // B0 must exist on the new level before the messenger fills: the regrid-fallback
+            // and compound-energy boundary conditions read B0 in the ghost cells.
             model.updateExternalFields(level, initDataTime);
+            messenger.regrid(hierarchy, levelNumber, oldLevel, model, initDataTime);
             PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : regriding block");
         }
         else
@@ -62,8 +64,8 @@ public:
             else
             {
                 PHARE_LOG_START(3, "mhdLevel Initializer::initialize : initlevel");
-                messenger.initLevel(model, level, initDataTime);
                 model.updateExternalFields(level, initDataTime);
+                messenger.initLevel(model, level, initDataTime);
                 PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : initlevel");
             }
         }

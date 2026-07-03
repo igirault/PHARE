@@ -93,6 +93,51 @@ TEST_F(B1FromBtotBC1D, TransverseTotalFieldEqualsPrescribedAtXBoundaries)
 }
 
 
+TEST_F(B1FromBtotBC1D, TransverseTotalFieldFollowsTimeVaryingPrescription)
+{
+    auto uniformFn = [](double amplitude, double rate) {
+        return PHARE::initializer::TimeFunction<1>{
+            [=](std::vector<double> const& x, double t) {
+                std::vector<double> out(x.size(), amplitude + rate * t);
+                return std::shared_ptr<Span<double>>{
+                    std::make_shared<VectorSpan<double>>(std::move(out))};
+            }};
+    };
+    std::array<PHARE::initializer::TimeFunction<1>, 3> fns{
+        uniformFn(Btot[0], 2.0), uniformFn(Btot[1], -0.5), uniformFn(Btot[2], 1.0)};
+
+    double const t1 = 3.0;
+    std::array<double, 3> const BtotAtT1{Btot[0] + 2.0 * t1, Btot[1] - 0.5 * t1, Btot[2] + t1};
+
+    auto B = Bvec.super();
+    FieldB1FromBtotBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D> bc{fns};
+    bc.apply(B, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, makeCtx(acc, t1));
+
+    Side const side = getSide(BoundaryLocation::XLower);
+    for (std::size_t comp : {1u, 2u}) // transverse components for an x-boundary
+    {
+        auto qty       = MHDQuantity::componentsQuantities(MHDQuantity::Vector::B1)[comp];
+        auto centering = layout.centering(qty)[static_cast<std::size_t>(Direction::X)];
+        auto& b1       = Bvec[comp];
+        auto& b0       = B0vec[comp];
+        for (auto const& index : layout.toFieldBox(mhdLowerGhostCellBox(), qty))
+        {
+            auto mirror        = layout.boundaryMirrored(Direction::X, side, centering, index);
+            double total_index = b1(index[0]) + b0(index[0]);
+            if (mirror[0] == index[0])
+                EXPECT_NEAR(total_index, BtotAtT1[comp], 1e-12) << "boundary node comp=" << comp;
+            else
+            {
+                double total_mirror   = b1(mirror[0]) + b0(mirror[0]);
+                double expected_total = 2.0 * BtotAtT1[comp] - total_mirror;
+                EXPECT_NEAR(total_index, expected_total, 1e-12)
+                    << "ghost comp=" << comp << " index=" << index[0];
+            }
+        }
+    }
+}
+
+
 // ─── 2D: normal component keeps the perturbation divergence zero ─────────────
 
 struct B1FromBtotBC2D : testing::Test
