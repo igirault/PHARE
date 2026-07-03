@@ -377,6 +377,13 @@ auto patchHierarchyDatabase(PHARE::initializer::PHAREDict const& amr)
     std::vector<int> nesting_buffer = amr["nesting_buffer"].template to<std::vector<int>>();
     hierDB->putIntegerVector("proper_nesting_buffer", nesting_buffer);
 
+    // Keep clustered boxes as they are instead of growing undersized ones to
+    // smallest_patch_size: SAMRAI's growth step (growBoxesWithinNestingDomain) is bounded only
+    // by the nesting complement, which excludes the domain exterior, so a thin cluster along a
+    // physical boundary is grown across it, yielding a patch with interior cells outside the
+    // domain that no fill ever writes (NaN). The same growth also produces overlapping patches.
+    hierDB->putBool("allow_patches_smaller_than_minimum_size_to_prevent_overlaps", true);
+
     auto ratioToCoarserDB = hierDB->putDatabase("ratio_to_coarser");
 
     std::vector<int> smallestPatchSize, largestPatchSize;
