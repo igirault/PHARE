@@ -390,6 +390,18 @@ namespace amr
 
             auto& mhdModel = static_cast<MHDModel&>(model);
 
+            // Creating a new fine level touching a physical boundary has the same outside-domain B
+            // ghost problem as regrid (an inflow B is None, driven by the Dirichlet E via CT, which
+            // has not run yet). Raise regrid-fallback mode around the magnetic init fill so those
+            // ghosts get the fallback (e.g. the prescribed inflow field) instead of the NaN
+            // sentinel; boundaries without a fallback keep their normal condition.
+            magneticRefinePatchStrategy_.setRegridFallback(true);
+            struct RegridFallbackGuard
+            {
+                MagneticRefinePatchStrategyT& strat;
+                ~RegridFallbackGuard() { strat.setRegridFallback(false); }
+            } regridFallbackGuard{magneticRefinePatchStrategy_};
+
             magInitRefineSchedules[levelNumber]->fillData(initDataTime);
             densityInitRefiners_.fill(levelNumber, initDataTime);
             momentumInitRefiners_.fill(levelNumber, initDataTime);
@@ -693,14 +705,31 @@ namespace amr
         // Maybe mhd_init
         void registerInitComms_(std::unique_ptr<MHDMessengerInfo> const& info)
         {
+            // Give the init refiners the model-state moment patch strategies (index 0 of each
+            // ghost-strategy list: ghostX[0] == modelX == initX, carrying the full sibling id-maps
+            // the coupled TotalEnergyFromPressure condition needs). The InitField schedule already
+            // fills interior + coarse-fine from the coarser level via createSchedule(level, nullptr,
+            // coarser, hierarchy, patchStrat) — the same call B uses in BalgoInit — and with a
+            // patch strategy it now also fills the physical-boundary ghosts. So a freshly created /
+            // regridded refined level touching a physical boundary carries valid moment ghosts
+            // before the first flux. Default (non-overwrite) fill pattern is kept: overwrite is a
+            // B/face-centered concern and corrupts the cell-centered moment interior fill.
+            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> rhoInitStrat
+                = rhoPatchStrats.empty() ? nullptr : rhoPatchStrats[0];
+            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> momentumInitStrat
+                = momentumPatchStrats.empty() ? nullptr : momentumPatchStrats[0];
+            std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> totalEnergyInitStrat
+                = totalEnergyPatchStrats.empty() ? nullptr : totalEnergyPatchStrats[0];
+
             densityInitRefiners_.addStaticRefiners(info->initDensity, mhdFieldRefineOp_,
-                                                   info->initDensity);
+                                                   info->initDensity, nullptr, rhoInitStrat);
 
             momentumInitRefiners_.addStaticRefiners(info->initMomentum, mhdVecFieldRefineOp_,
-                                                    info->initMomentum);
+                                                    info->initMomentum, nullptr, momentumInitStrat);
 
             totalEnergyInitRefiners_.addStaticRefiners(info->initTotalEnergy, mhdFieldRefineOp_,
-                                                       info->initTotalEnergy);
+                                                       info->initTotalEnergy, nullptr,
+                                                       totalEnergyInitStrat);
         }
 
 

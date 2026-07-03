@@ -262,20 +262,20 @@ public:
                     throw std::runtime_error("Boundary not found.");
 
                 // get the boundary condition for the current physical quantity. While a fine level
-                // is being (re)filled at regrid, apply the regrid fallback instead of the normal
-                // condition: for B at inflow the normal condition is None (driven by the Dirichlet
+                // is being (re)filled at regrid or init, prefer the regrid fallback where one is
+                // registered: for B at inflow the normal condition is None (driven by the Dirichlet
                 // E through constrained transport, which has not run yet), so the outside-domain
-                // ghosts would otherwise be left at the NaN sentinel.
-                std::shared_ptr<boundary_condition_type> bc
-                    = applyRegridFallback_
-                          ? masterBoundary->getRegridFallbackCondition(
-                                scalarOrTensorField.physicalQuantity())
-                          : masterBoundary->getFieldCondition(
-                                scalarOrTensorField.physicalQuantity());
-                if (applyRegridFallback_ && !bc)
-                    // no regrid fallback for this quantity (e.g. outflow B): leave the ghosts to
-                    // the correct condition enforced by the normal post-regrid ghost fill.
-                    continue;
+                // ghosts would otherwise be left at the NaN sentinel. Where no fallback is
+                // registered (e.g. open/outflow B) fall back to the normal condition, which for
+                // those is a divergence-free transverse Neumann extrapolation from the freshly
+                // (re)filled fine interior.
+                std::shared_ptr<boundary_condition_type> bc;
+                if (applyRegridFallback_)
+                    bc = masterBoundary->getRegridFallbackCondition(
+                        scalarOrTensorField.physicalQuantity());
+                if (!bc)
+                    bc = masterBoundary->getFieldCondition(
+                        scalarOrTensorField.physicalQuantity());
                 if (!bc)
                     throw std::runtime_error("Field boundary condition not found.");
 
