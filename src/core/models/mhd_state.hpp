@@ -115,6 +115,8 @@ namespace core
                                            // store conservative quantities on the grid
         }
 
+        NO_DISCARD double gamma() const { return gamma_; }
+
         field_type rho;
         VecFieldT V;
         VecFieldT B;
