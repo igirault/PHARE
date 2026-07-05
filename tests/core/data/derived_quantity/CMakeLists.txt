@@ -18,3 +18,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${GTEST_LIBS})
 
 add_no_mpi_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})
+
+
+project(test-derived-quantity-interface)
+add_executable(${PROJECT_NAME} test_derived_quantity.cpp)
+target_include_directories(${PROJECT_NAME} PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/src>
+  $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+  ${GTEST_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} PRIVATE phare_core phare_initializer ${GTEST_LIBS})
+add_no_mpi_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})
