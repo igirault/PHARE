@@ -13,7 +13,12 @@ namespace PHARE::core
 /** Transient scratch memory for derived-quantity outputs. One raw block, grown
  *  lazily to the most demanding request; Field/VecField views are built per
  *  patch over it. Deliberately NOT a SAMRAI resource: values never survive the
- *  patch visit, so ResourcesManager/setOnPatch machinery is unnecessary. */
+ *  patch visit, so ResourcesManager/setOnPatch machinery is unnecessary.
+ *
+ *  Usage contract: all views share this single memory block, so at most one
+ *  view may be written at a time. Requesting a new view does not preserve
+ *  previous ones - by design, callers compute and consume/write one derived
+ *  quantity at a time before requesting the next view. */
 template<typename VecField_t, typename PhysicalQuantity>
 class DerivedScratch
 {

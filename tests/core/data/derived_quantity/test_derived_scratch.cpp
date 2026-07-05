@@ -59,6 +59,24 @@ TEST(DerivedScratch, memoryIsReusedAcrossCalls)
     EXPECT_DOUBLE_EQ(b.data()[0], 42.0);
 }
 
+TEST(DerivedScratch, viewDispatchesToScalarAndVector)
+{
+    GridLayout_t layout{10};
+    Scratch_t scratch;
+
+    auto f = scratch.template view<0>(ScalarCentering::cell, layout);
+    EXPECT_TRUE(f.isUsable());
+    EXPECT_EQ(f.shape(), layout.allocSize(MHDQuantity::Scalar::ScalarCellCentered));
+
+    auto vf         = scratch.template view<1>(VectorCentering::Blike, layout);
+    auto const qtys = MHDQuantity::componentsQuantities(MHDQuantity::Vector::VecBlike);
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        EXPECT_TRUE(vf[i].isUsable());
+        EXPECT_EQ(vf[i].shape(), layout.allocSize(qtys[i]));
+    }
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
