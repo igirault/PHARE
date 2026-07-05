@@ -53,9 +53,28 @@ public:
         VecAllPrimalY,
         VecAllPrimalZ,
 
-        count
+        count,
+
+        // centering-only aliases for derived-quantity scratch fields (share values
+        // with existing quantities of the same centering; see ScalarAllPrimal)
+        ScalarCellCentered = P,
+        ScalarNodeCentered = ScalarAllPrimal
     };
-    enum class Vector { V, B, rhoV, E, J, VecFlux_x, VecFlux_y, VecFlux_z, VecAllPrimal };
+    enum class Vector {
+        V,
+        B,
+        rhoV,
+        E,
+        J,
+        VecFlux_x,
+        VecFlux_y,
+        VecFlux_z,
+        VecAllPrimal,
+        // centering-only aliases for derived-quantity scratch fields
+        VecCellCentered = V,
+        VecElike        = E,
+        VecBlike        = B
+    };
     enum class Tensor { count };
 
     static constexpr auto all_primal_field = Scalar::ScalarAllPrimal;

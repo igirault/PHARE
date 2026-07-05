@@ -34,9 +34,12 @@ public:
         Myy,
         Myz,
         Mzz,
-        count
+        count,
+
+        // centering-only alias for derived-quantity scratch fields (moments are all-primal)
+        ScalarNodeCentered = rho
     };
-    enum class Vector { B, E, J, V };
+    enum class Vector { B, E, J, V, VecElike = E, VecBlike = B };
     enum class Tensor { M, count };
 
     static constexpr auto all_primal_field = Scalar::rho;
