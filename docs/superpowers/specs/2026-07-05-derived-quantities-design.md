@@ -98,12 +98,13 @@ struct DerivedQuantityRegistry
 };
 ```
 
-A per-model factory `makeDerivedQuantities<Model>(requested_names, dict)`
-constructs instances at init for the requested quantity names only. A requested
-name that is neither a raw state field nor a known derived quantity throws at
-init (fail fast, not at dump time). The registry lives in `ModelView`
+A per-model factory (`makeMhdDerivedQuantities<State, GridLayout>(gamma)`)
+constructs all known derived quantities at `ModelView` construction. Since the
+registry holds only small virtual objects (no buffers — scratch is shared),
+registering everything is free and avoids plumbing the requested-name list into
+the ModelView. The registry lives in `ModelView`
 (`src/diagnostic/diagnostic_model_view.hpp`), which is already the model-to-writer
-bridge; writers query it.
+bridge; writers query it by name.
 
 ### Scratch buffers
 
@@ -117,11 +118,13 @@ public:
 };
 ```
 
-Sizing uses `layout.allocSize(qty)` on the ghost box. Requires generic
-centering-only entries in the physical-quantity enum (cell/node scalar;
-cell/E-like/B-like vector), wired into the `GridLayout` centering maps, because
-`evalOnGhostBox`, `allocSize`, and writer re-centering all query centering via
-`field.physicalQuantity()`.
+Sizing uses `layout.allocSize(qty)` on the ghost box. Generic centering-only
+quantities are provided as enum-value aliases of existing quantities with the
+right centering (e.g. `MHDQuantity::Scalar::ScalarCellCentered = P`,
+`Vector::VecBlike = B`), following the existing `ScalarAllPrimal` precedent.
+Aliases share the underlying enum value, so no `GridLayout` centering-map or
+switch changes are needed; `evalOnGhostBox`, `allocSize`, and writer
+re-centering keep working off `field.physicalQuantity()`.
 
 ### Writer integration
 
@@ -133,10 +136,12 @@ For each requested quantity, in both writer stacks:
 The `compute(diag)` phase of `DiagnosticsManager::dump` becomes a no-op for these
 writers; work moves into the per-patch write visit.
 
-Deleted once `V`/`P` are ported: `V_diag_`, `P_diag_`, `tmpField_`, `tmpVec_` in
-`MHDModel` and `ModelView` (including their `registerResources`/`allocate`
-plumbing), `MHDDiagnosticWriter::compute` (phareh5), and the `MhdFluidComputer`
-compute logic (vtkhdf).
+Deleted once `V`/`P` are ported: `V_diag_`, `P_diag_` in `MHDModel` and
+`ModelView` (including their `registerResources`/`allocate` plumbing),
+`MHDDiagnosticWriter::compute` (phareh5), and the `MhdFluidComputer` compute
+logic (vtkhdf). `tmpField_`/`tmpVec_` stay: they are the all-primal conversion
+buffers used by the vtkhdf writer (`convert_to_fortran_primal`), unrelated to
+derived quantities.
 
 ### Python
 
@@ -147,8 +152,9 @@ today, same file paths (`/mhd/V`, `/mhd/P`), so pharesee getters are untouched.
 
 ## Error handling
 
-- Unknown quantity name: rejected by the python whitelist first; if it reaches
-  C++, the registry factory throws at init.
+- Unknown quantity name: rejected by the python whitelist at configuration
+  time; if it reaches C++ anyway, the writer's existing "Unknown Diagnostic
+  Quantity" path throws at the first dump (no file was created for it).
 - Scratch view requested for a (rank, centering) not in the v1 set: compile-time
   error where possible, otherwise throw at registry construction.
 
