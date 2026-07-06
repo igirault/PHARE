@@ -16,6 +16,22 @@ constant or a callable `f(x[,y[,z]], t)`, for both inflow BC types:
 `free-pressure-inflow` prescribes ρ, v, B (not pressure — pressure stays Neumann), so
 "all quantities" there means ρ, v, B.
 
+### Callable convention (decided)
+
+Every prescribable inflow value is either a constant or a **space-time callable
+`f(x[, y[, z]], t)`** returning a per-node scalar (or a scalar broadcast over the node
+count), matching PHARE's `space_time_fn_wrapper` idiom
+(`initialize/general.py:57-74`). Vector quantities (velocity, B) are 3-sequences whose
+components are each independently float-or-callable — one `SpaceTimeFunction` per
+component.
+
+This is a **breaking change** to the existing inflow B form: today B may be a single
+time-only callable `f(t) -> [Bx, By, Bz]` (uniform in space, `simulation.py:311-346`,
+`general.py:136-140`). That single-vector time-callable form is removed; existing
+IMF-turning cases must rewrite B as three per-component `f(x, y, z, t)` callables (which
+may ignore the spatial args to stay uniform). This drops the `f(args[-1])[i]` adapter and
+makes B uniform with the other quantities.
+
 ### Non-goals
 
 - No change to outflow / reflective / open boundaries.
