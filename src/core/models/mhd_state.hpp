@@ -5,6 +5,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
+#include "core/numerics/ohm/ohm.hpp"
 #include "core/data/field/initializers/field_user_initializer.hpp"
 #include "core/data/vecfield/vecfield_initializer.hpp"
 #include "core/mhd/mhd_quantities.hpp"
@@ -81,6 +82,7 @@ namespace core
             , Pinit_{dict["pressure"]["initializer"]
                          .template to<initializer::InitFunction<dimension>>()}
             , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
+            , ohmInfo_{core::OhmInfo::FROM(dict)}
         {
         }
 
@@ -99,6 +101,7 @@ namespace core
             , J{name + "_" + "J", MHDQuantity::Vector::J}
 
             , gamma_{}
+            , ohmInfo_{0.0, 0.0, HyperMode::constant}
         {
         }
 
@@ -116,6 +119,9 @@ namespace core
         }
 
         NO_DISCARD double gamma() const { return gamma_; }
+        NO_DISCARD double eta() const { return ohmInfo_.eta; }
+        NO_DISCARD double nu() const { return ohmInfo_.nu; }
+        NO_DISCARD HyperMode hyperMode() const { return ohmInfo_.hyper_mode; }
 
         field_type rho;
         VecFieldT V;
@@ -135,6 +141,7 @@ namespace core
         initializer::InitFunction<dimension> Pinit_;
 
         double const gamma_;
+        core::OhmInfo const ohmInfo_;
     };
 } // namespace core
 } // namespace PHARE

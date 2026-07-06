@@ -26,6 +26,9 @@ def populateDict(sim):
     add_double(
         "simulation/mhd_state/to_conservative_init/heat_capacity_ratio", sim.gamma
     )
+    add_double("simulation/mhd_state/resistivity", sim.eta)
+    add_double("simulation/mhd_state/hyper_resistivity", sim.nu)
+    add_string("simulation/mhd_state/hyper_mode", sim.hyper_mode)
 
     init_model = sim.model
     modelDict = init_model.model_dict
