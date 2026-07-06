@@ -14,7 +14,6 @@ namespace PHARE::diagnostic::h5
  * /t#/pl#/p#/mhd/pressure
  * /t#/pl#/p#/mhd/rhoV/(x,y,z)
  * /t#/pl#/p#/mhd/Etot
- * /t#/pl#/p#/mhd/divB
  */
 template<typename H5Writer>
 class MHDDiagnosticWriter : public H5TypeWriter<H5Writer>
@@ -70,7 +69,7 @@ template<typename H5Writer>
 void MHDDiagnosticWriter<H5Writer>::createFiles(DiagnosticProperties& diagnostic)
 {
     std::string tree{"/mhd/"};
-    checkCreateFileFor_(diagnostic, fileData_, tree, "rho", "V", "P", "rhoV", "Etot", "divB");
+    checkCreateFileFor_(diagnostic, fileData_, tree, "rho", "V", "P", "rhoV", "Etot");
 }
 
 template<typename H5Writer>
