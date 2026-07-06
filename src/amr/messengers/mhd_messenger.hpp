@@ -475,17 +475,8 @@ namespace amr
             // quantities, the ghosts are filled in the end of the euler step anyways.
         }
 
-        void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime,
-                               double const dt)
+        void fillMomentsGhosts(MHDStateT& state, level_t const& level, double const fillTime)
         {
-            // state-aware BCs need dt; the field-refine patch strategies own it.
-            for (auto& strat : rhoPatchStrats)
-                strat->setDt(dt);
-            for (auto& strat : momentumPatchStrats)
-                strat->setDt(dt);
-            for (auto& strat : totalEnergyPatchStrats)
-                strat->setDt(dt);
-
             setNaNsOnFieldGhosts(state.rho, level);
             setNaNsOnVecfieldGhosts(state.rhoV, level);
             setNaNsOnFieldGhosts(state.Etot, level);

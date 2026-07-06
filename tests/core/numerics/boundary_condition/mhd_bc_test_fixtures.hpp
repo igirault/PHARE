@@ -73,11 +73,11 @@ struct MHDPatchFieldAccessorTest : IPatchFieldAccessor<FieldMHD<dim>, MHDQuantit
 
 
 // Build a BC context bound to a single accessor; tests that don't care about the previous
-// substage state pass the same accessor for both new and old. time=0, dt=0 by default.
+// substage state pass the same accessor for both new and old. time=0 by default.
 template<std::size_t dim>
-auto makeCtx(MHDPatchFieldAccessorTest<dim> const& acc, double time = 0.0, double dt = 0.0)
+auto makeCtx(MHDPatchFieldAccessorTest<dim> const& acc, double time = 0.0)
 {
-    return BoundaryConditionContext<FieldMHD<dim>, MHDQuantity>{acc, acc, time, dt};
+    return BoundaryConditionContext<FieldMHD<dim>, MHDQuantity>{acc, acc, time};
 }
 
 

@@ -11,10 +11,7 @@ namespace PHARE::core
  *
  * Mirrors InnerBCContext for inner boundaries: exposes both the current substage state
  * (`accessor_new`) and the previous substage state (`accessor_old`) plus the simulation
- * time and the substage time step. State-aware BCs (e.g. NSCBC/LODI characteristic
- * outflow) read from `accessor_old`, evaluate one-sided spatial derivatives in time
- * with the flux divergence, integrate over `dt`, and write the result into ghost cells
- * accessible through `accessor_new`.
+ * time.
  *
  * @tparam FieldT             Scalar field type.
  * @tparam PhysicalQuantityT  Quantity traits (e.g. MHDQuantity, HybridQuantity).
@@ -27,7 +24,6 @@ struct BoundaryConditionContext
     accessor_type const& accessor_new;
     accessor_type const& accessor_old;
     double time;
-    double dt;
 };
 
 } // namespace PHARE::core

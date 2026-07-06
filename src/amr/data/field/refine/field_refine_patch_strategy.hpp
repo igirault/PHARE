@@ -129,7 +129,6 @@ public:
         , all_vector_ids_{}
         , old_scalar_ids_{}
         , old_vector_ids_{}
-        , dt_{0.0}
         , applyRegridFallback_{false}
     {
     }
@@ -162,16 +161,10 @@ public:
     }
 
     /**
-     * @brief Set the substage time step used by state-aware boundary conditions.
-     *        Called by the messenger before each fillMomentsGhosts pass.
-     */
-    void setDt(double const dt) { dt_ = dt; }
-
-    /**
      * @brief Toggle regrid-fallback mode. When set, @c setPhysicalBoundaryConditions applies each
      * boundary's regrid fallback condition instead of its normal one (and skips quantities with no
      * fallback). The messenger raises this only around the magnetic regrid fill, where the normal
-     * B condition cannot yet produce the outside-domain ghosts. Mirrors the @c setDt pattern.
+     * B condition cannot yet produce the outside-domain ghosts.
      */
     void setRegridFallback(bool const on) { applyRegridFallback_ = on; }
 
@@ -226,7 +219,7 @@ public:
         patch_field_accessor_type fieldAccessor{patch, all_scalar_ids_, all_vector_ids_};
         patch_field_accessor_type fieldAccessorOld{patch, old_scalar_ids_, old_vector_ids_};
         core::BoundaryConditionContext<field_type, physical_quantity_type> const ctx{
-            fieldAccessor, fieldAccessorOld, fill_time, dt_};
+            fieldAccessor, fieldAccessorOld, fill_time};
 
         // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
         SAMRAI::hier::Box const& patch_box = patch.getBox();
@@ -351,7 +344,6 @@ protected:
     vector_id_map_type all_vector_ids_;
     scalar_id_map_type old_scalar_ids_;
     vector_id_map_type old_vector_ids_;
-    double dt_;
     bool applyRegridFallback_;
 };
 

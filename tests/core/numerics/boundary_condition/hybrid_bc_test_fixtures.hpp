@@ -71,11 +71,11 @@ using NullFieldAccessor = NullFieldAccessorT<Field1D>;
 
 
 // Build a BC context bound to a single accessor; tests that don't care about the previous
-// substage state pass the same accessor for both new and old. time=0, dt=0 by default.
+// substage state pass the same accessor for both new and old. time=0 by default.
 template<typename FieldT>
-auto makeCtx(NullFieldAccessorT<FieldT> const& acc, double time = 0.0, double dt = 0.0)
+auto makeCtx(NullFieldAccessorT<FieldT> const& acc, double time = 0.0)
 {
-    return PHARE::core::BoundaryConditionContext<FieldT, HybridQuantity>{acc, acc, time, dt};
+    return PHARE::core::BoundaryConditionContext<FieldT, HybridQuantity>{acc, acc, time};
 }
 
 
