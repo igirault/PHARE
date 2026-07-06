@@ -124,6 +124,32 @@ class TimeStepValidation(unittest.TestCase):
                 **baseArgs,
             )
 
+    def test_adaptive_fourier_rejects_non_positive(self):
+        with self.assertRaises(ValueError):
+            ph.Simulation(
+                time_step={"mode": "adaptive", "cfl": 0.4, "fourier": 0.0},
+                final_time=1.0,
+                **baseArgs,
+            )
+
+    def test_adaptive_rejects_final_time_before_restart_time(self):
+        with self.assertRaises(RuntimeError):
+            ph.Simulation(
+                time_step={"mode": "adaptive", "cfl": 0.4},
+                final_time=1.0,
+                restart_options={"mode": "overwrite", "restart_time": 2.0},
+                **baseArgs,
+            )
+
+    def test_adaptive_accepts_final_time_after_restart_time(self):
+        sim = ph.Simulation(
+            time_step={"mode": "adaptive", "cfl": 0.4},
+            final_time=5.0,
+            restart_options={"mode": "overwrite", "restart_time": 2.0},
+            **baseArgs,
+        )
+        self.assertEqual(sim.final_time, 5.0)
+
     # ---- unknown mode ----------------------------------------------------------------------
 
     def test_unknown_mode_raises(self):

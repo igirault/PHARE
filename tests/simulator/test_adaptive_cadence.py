@@ -1,0 +1,175 @@
+#
+# Runtime coverage for the period-based / adaptive-dt cadence options added alongside
+# adaptive time stepping: write_niter_period (diagnostics), niter_period (restarts), and the
+# catch-up scheduler that keeps a time-based cadence from freezing when dt > period.
+#
+# test_time_step.py only checks config-level validation (never runs the simulator); the tests
+# here actually run a few coarse steps and inspect the dumped h5 files.
+#
+
+import os
+import unittest
+import numpy as np
+import h5py
+
+from pathlib import Path
+
+import pyphare.pharein as ph
+from pyphare.pharesee.hierarchy.fromh5 import h5_filename_from, h5_time_grp_key
+from pyphare.simulator.simulator import Simulator, startMPI
+
+from tests.simulator import SimulatorTest
+
+
+def setup_model(sim, ppc=10):
+    def density(x):
+        return 1.0
+
+    def bx(x):
+        return 1.0
+
+    def by(x):
+        return 0.0
+
+    def bz(x):
+        return 0.0
+
+    def v(x):
+        return 0.0
+
+    def vth(x):
+        return 0.1
+
+    vvv = dict(vbulkx=v, vbulky=v, vbulkz=v, vthx=vth, vthy=vth, vthz=vth)
+
+    ph.MaxwellianFluidModel(
+        bx=bx,
+        by=by,
+        bz=bz,
+        protons={
+            "charge": 1,
+            "density": density,
+            **vvv,
+            "nbr_part_per_cell": ppc,
+            "init": {"seed": 1337},
+        },
+    )
+    ph.ElectronModel(closure="isothermal", Te=0.12)
+
+
+out = "phare_outputs/adaptive_cadence"
+
+
+def base_args(diagdir, **extra):
+    args = dict(
+        interp_order=1,
+        time_step={"mode": "adaptive", "cfl": 0.8},
+        final_time=100.0,  # generous: we control the number of steps manually
+        boundary_types="periodic",
+        cells=20,
+        dl=0.3,
+        diag_options=dict(
+            format="phareh5", options=dict(dir=diagdir, mode="overwrite")
+        ),
+    )
+    args.update(extra)
+    return args
+
+
+class AdaptiveCadenceTest(SimulatorTest):
+    def __init__(self, *args, **kwargs):
+        super(AdaptiveCadenceTest, self).__init__(*args, **kwargs)
+        self.simulator = None
+
+    def tearDown(self):
+        super().tearDown()
+        if self.simulator is not None:
+            self.simulator.reset()
+        self.simulator = None
+        ph.global_vars.sim = None
+
+    def test_write_niter_period_under_adaptive_dt(self):
+        """write_niter_period must fire on a fixed coarse-step cadence, independent of the
+        (varying, unknown ahead of time) adaptive dt."""
+        n_advances = 4
+        period = 2
+
+        sim = self.simulation(**base_args(out + "/niter_period"))
+        setup_model(sim)
+        ph.ElectromagDiagnostics(quantity="B", write_niter_period=period)
+
+        self.simulator = Simulator(sim).initialize()
+        for _ in range(n_advances):
+            self.simulator.advance()
+        self.simulator.reset()
+
+        # dump() is called once at init (iteration 0) and once per advance(): iterations
+        # 0..n_advances. A dump fires whenever iteration % period == 0.
+        expected_dumps = n_advances // period + 1
+
+        diag_dir = sim.diag_options["options"]["dir"]
+        diagInfo = next(iter(sim.diagnostics.values()))
+        h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
+        self.assertTrue(Path(h5_filepath).exists())
+        with h5py.File(h5_filepath, "r") as h5_file:
+            self.assertEqual(len(h5_file[h5_time_grp_key].keys()), expected_dumps)
+
+    def test_restart_niter_period_under_adaptive_dt(self):
+        """restart_options niter_period must fire on the same fixed coarse-step cadence."""
+        n_advances = 4
+        period = 2
+
+        sim = self.simulation(
+            **base_args(
+                out + "/restart_niter_period",
+                restart_options=dict(mode="overwrite", niter_period=period),
+            )
+        )
+        setup_model(sim)
+
+        self.simulator = Simulator(sim).initialize()
+        for _ in range(n_advances):
+            self.simulator.advance()
+        self.simulator.reset()
+
+        expected_restarts = n_advances // period + 1
+        restart_dir = sim.restart_options["dir"]
+        restart_dirs = []
+        for path_object in Path(restart_dir).iterdir():
+            if path_object.is_dir():
+                try:
+                    restart_dirs.append(float(path_object.name))
+                except ValueError:
+                    ...  # not a time-stamped restart directory, skip
+        self.assertEqual(len(restart_dirs), expected_restarts)
+
+    def test_write_time_period_does_not_freeze_when_period_lt_dt(self):
+        """Regression test for the dump-cadence-freeze bug: a time-based cadence finer than
+        the coarse step must keep dumping every step (catch-up), not stop after the first."""
+        n_advances = 4
+        # write_time_period expands into an explicit np.arange(final_time / period) timestamps
+        # array, so final_time must stay large enough that n_advances steps don't reach it
+        # (~0.04 per step here) while period stays tiny enough to force catch-up every step.
+        sim = self.simulation(**base_args(out + "/time_period_catchup", final_time=1.0))
+        setup_model(sim)
+        # a period far smaller than any plausible adaptive dt forces the catch-up loop to
+        # consume several scheduled times per step
+        ph.ElectromagDiagnostics(quantity="B", write_time_period=1e-4)
+
+        self.simulator = Simulator(sim).initialize()
+        for _ in range(n_advances):
+            self.simulator.advance()
+        self.simulator.reset()
+
+        diag_dir = sim.diag_options["options"]["dir"]
+        diagInfo = next(iter(sim.diagnostics.values()))
+        h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
+        with h5py.File(h5_filepath, "r") as h5_file:
+            # one dump per step (init + each advance): if the cadence had frozen after the
+            # first step, this would be 1 instead of n_advances + 1
+            self.assertEqual(len(h5_file[h5_time_grp_key].keys()), n_advances + 1)
+
+
+if __name__ == "__main__":
+    startMPI()
+    unittest.main()
