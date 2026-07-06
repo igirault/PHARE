@@ -346,14 +346,20 @@ private:
         bool const vIsFn   = isFunctionXYZ_(data, "velocity");
         bool const bIsFn   = isFunctionXYZ_(data, "B");
 
+        // density read once; reused by rho_bc, the momentum composite, and the direct rho
+        // condition. rhoFn is always a valid function (the prescribed one, or the constant
+        // lifted) so the composite path never re-reads the dict.
+        double const rhoDbl = rhoIsFn ? 0.0 : data["density"].template to<double>();
+        STF const rhoFn     = rhoIsFn ? data["density"].template to<STF>()
+                                      : inflow_compose::constFunction<dimension>(rhoDbl);
+
         // --- scalar Dirichlet sub/main BC: rho ---
         auto rho_bc = rhoIsFn
                           ? std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
-                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
-                                data["density"].template to<STF>())}
+                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(rhoFn)}
                           : std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
                                 FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
-                                data["density"].template to<double>())};
+                                rhoDbl)};
 
         // --- pressure P_bc: constant or function ---
         auto P_bc = pIsFn
@@ -370,18 +376,14 @@ private:
         std::shared_ptr<VectorBcType> rhoV_bc;
         if (!rhoIsFn && !vIsFn)
         {
-            double const rho = data["density"].template to<double>();
-            auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
-            rhoV             = vToRhoV(rho, v);
-            rhoV_bc          = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+            auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            rhoV         = vToRhoV(rhoDbl, v);
+            rhoV_bc      = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
                 FieldBoundaryConditionType::Dirichlet, VecFieldT, GridLayoutT>(rhoV)};
         }
         else
         {
-            auto const rhoFn = rhoIsFn ? data["density"].template to<STF>()
-                                       : inflow_compose::constFunction<dimension>(
-                                             data["density"].template to<double>());
-            auto const vFns  = vecAsFunctions_(data, "velocity");
+            auto const vFns = vecAsFunctions_(data, "velocity");
             rhoVfns          = {inflow_compose::mulFunction<dimension>(rhoFn, vFns[0]),
                                 inflow_compose::mulFunction<dimension>(rhoFn, vFns[1]),
                                 inflow_compose::mulFunction<dimension>(rhoFn, vFns[2])};
@@ -426,12 +428,10 @@ private:
                 case (PhysicalQuantityT::Scalar::rho):
                     if (rhoIsFn)
                         boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::Dirichlet>(
-                            quantity, data["density"].template to<STF>());
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoFn);
                     else
                         boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::Dirichlet>(
-                            quantity, data["density"].template to<double>());
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoDbl);
                     break;
                 case (PhysicalQuantityT::Scalar::Etot):
                     boundary->template registerFieldCondition<
@@ -511,14 +511,20 @@ private:
         bool const vIsFn   = isFunctionXYZ_(data, "velocity");
         bool const bIsFn   = isFunctionXYZ_(data, "B");
 
+        // density read once; reused by rho_bc, the momentum composite, and the direct rho
+        // condition. rhoFn is always a valid function (the prescribed one, or the constant
+        // lifted) so the composite path never re-reads the dict.
+        double const rhoDbl = rhoIsFn ? 0.0 : data["density"].template to<double>();
+        STF const rhoFn     = rhoIsFn ? data["density"].template to<STF>()
+                                      : inflow_compose::constFunction<dimension>(rhoDbl);
+
         // --- scalar Dirichlet sub/main BC: rho ---
         auto rho_bc = rhoIsFn
                           ? std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
-                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
-                                data["density"].template to<STF>())}
+                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(rhoFn)}
                           : std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
                                 FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
-                                data["density"].template to<double>())};
+                                rhoDbl)};
 
         // pressure is not prescribed at a free-pressure inflow: stays Neumann.
         auto P_bc = std::shared_ptr<ScalarBcType>{
@@ -531,18 +537,14 @@ private:
         std::shared_ptr<VectorBcType> rhoV_bc;
         if (!rhoIsFn && !vIsFn)
         {
-            double const rho = data["density"].template to<double>();
-            auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
-            rhoV             = vToRhoV(rho, v);
-            rhoV_bc          = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+            auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            rhoV         = vToRhoV(rhoDbl, v);
+            rhoV_bc      = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
                 FieldBoundaryConditionType::Dirichlet, VecFieldT, GridLayoutT>(rhoV)};
         }
         else
         {
-            auto const rhoFn = rhoIsFn ? data["density"].template to<STF>()
-                                       : inflow_compose::constFunction<dimension>(
-                                             data["density"].template to<double>());
-            auto const vFns  = vecAsFunctions_(data, "velocity");
+            auto const vFns = vecAsFunctions_(data, "velocity");
             rhoVfns          = {inflow_compose::mulFunction<dimension>(rhoFn, vFns[0]),
                                 inflow_compose::mulFunction<dimension>(rhoFn, vFns[1]),
                                 inflow_compose::mulFunction<dimension>(rhoFn, vFns[2])};
@@ -587,12 +589,10 @@ private:
                 case (PhysicalQuantityT::Scalar::rho):
                     if (rhoIsFn)
                         boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::Dirichlet>(
-                            quantity, data["density"].template to<STF>());
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoFn);
                     else
                         boundary->template registerFieldCondition<
-                            FieldBoundaryConditionType::Dirichlet>(
-                            quantity, data["density"].template to<double>());
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoDbl);
                     break;
                 case (PhysicalQuantityT::Scalar::Etot):
                     boundary->template registerFieldCondition<

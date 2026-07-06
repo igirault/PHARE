@@ -13,7 +13,7 @@ namespace PHARE::core::inflow_compose
 {
 // All helpers preserve the batch-evaluation invariant: each input function is invoked
 // exactly once over the whole coordinate batch, then combined element-wise. They mirror
-// the shape of BoundaryFactory::linComb2_.
+// the shape of the earlier BoundaryFactory constant-B motional-E composition.
 
 /** @brief A constant lifted into a space-time function: returns c at every node. Sized to
  * the first spatial coordinate span (the node count). Time is ignored. */
@@ -64,7 +64,7 @@ prodComb2(double const a, initializer::SpaceTimeFunction<dim> f1,
 }
 
 /** @brief The three components of the ideal motional field E = -V x B from two
- * function-vectors. Generalizes BoundaryFactory::motionalEFunction_ to a time-varying V.
+ * function-vectors. Generalizes the constant-V motional field to a time-varying V.
  *   E_x = -(V_y B_z - V_z B_y) = -V_y B_z + V_z B_y
  *   E_y = -(V_z B_x - V_x B_z) = -V_z B_x + V_x B_z
  *   E_z = -(V_x B_y - V_y B_x) = -V_x B_y + V_y B_x */
