@@ -101,7 +101,7 @@ public:
 
         auto fields = vecField.components();
 
-        assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B1));
+        assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B));
 
         // handle transverse components with Dirichlet
         for_N<N>([&](auto iTransverse) {
