@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <numeric>
+#include <stdexcept>
 
 namespace PHARE::core
 {
@@ -31,7 +32,10 @@ Field_t derived_scalar_view(Field_t& backing, ScalarCentering const centering,
     auto const qty   = scalar_qty<PhysicalQuantity>(centering);
     auto const shape = layout.allocSize(qty);
     assert(backing.isUsable());
-    assert(detail::product<GridLayout::dimension>(shape) <= backing.size());
+    // always-on: an over-sized quantity would alias past the all-primal backing
+    if (detail::product<GridLayout::dimension>(shape) > backing.size())
+        throw std::runtime_error("derived scalar scratch overflow: quantity exceeds all-primal "
+                                 "backing allocation");
     return Field_t{backing.name(), qty, backing.data(), shape};
 }
 
@@ -51,7 +55,11 @@ VecField_t derived_vector_view(VecField_t& backing, VectorCentering const center
     {
         auto const shape = layout.allocSize(qtys[i]);
         assert(backing[i].isUsable());
-        assert(detail::product<GridLayout::dimension>(shape) <= backing[i].size());
+        // always-on: an over-sized component would alias past the all-primal backing
+        if (detail::product<GridLayout::dimension>(shape) > backing[i].size())
+            throw std::runtime_error(
+                "derived vector scratch overflow: component exceeds all-primal "
+                "backing allocation");
         Field_t component{vf[i].name(), qtys[i], backing[i].data(), shape};
         vf[i].setBuffer(&component);
     }
