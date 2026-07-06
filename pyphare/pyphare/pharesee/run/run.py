@@ -26,6 +26,8 @@ logger = getLogger(__name__)
 quantities_per_file = {
     "EM_B": "B",
     "EM_E": "E",
+    "EM_J": "J",
+    "EM_divB": "divB",
     "ions_bulkVelocity": "Vi",
     "ions_charge_density": "Ni",
     "particle_count": "nppc",
@@ -34,7 +36,6 @@ quantities_per_file = {
     "mhd_P": "mhd_P",
     "mhd_rhoV": "mhd_rhoV",
     "mhd_Etot": "mhd_Etot",
-    "mhd_divB": "mhd_divB",
 }
 
 
