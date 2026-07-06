@@ -294,7 +294,8 @@ public:
 
     ModelView(Hierarchy& hierarchy, Model& model)
         : Super{hierarchy, model}
-        , derived_{core::makeMhdDerivedQuantities<State_t, GridLayout>(model.state.gamma())}
+        , derived_{core::makeMhdDerivedQuantities<State_t, GridLayout>(
+              model.state.gamma(), model.state.eta(), model.state.nu(), model.state.hyperMode())}
     {
     }
 
