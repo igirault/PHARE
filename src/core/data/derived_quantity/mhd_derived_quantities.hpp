@@ -267,10 +267,10 @@ private:
                MeshIndex<dimension> const index) const
     {
         auto const& B = state.B;
-        auto const rhoE
-            = GridLayout::template project<GridLayout::cellCenterToEdgeX>(state.rho, index);
         if constexpr (component == Component::X)
         {
+            auto const rhoE
+                = GridLayout::template project<GridLayout::cellCenterToEdgeX>(state.rho, index);
             auto const by
                 = GridLayout::template project<GridLayout::ByToEx>(B(Component::Y), index);
             auto const bz
@@ -279,6 +279,8 @@ private:
         }
         if constexpr (component == Component::Y)
         {
+            auto const rhoE
+                = GridLayout::template project<GridLayout::cellCenterToEdgeY>(state.rho, index);
             auto const bx
                 = GridLayout::template project<GridLayout::BxToEy>(B(Component::X), index);
             auto const bz
@@ -287,6 +289,8 @@ private:
         }
         if constexpr (component == Component::Z)
         {
+            auto const rhoE
+                = GridLayout::template project<GridLayout::cellCenterToEdgeZ>(state.rho, index);
             auto const bx
                 = GridLayout::template project<GridLayout::BxToEz>(B(Component::X), index);
             auto const by
@@ -303,13 +307,45 @@ private:
             return -nu_ * layout.laplacian(Jc, index);
 
         auto const& B = state.B;
-        auto const bx = GridLayout::template project<GridLayout::BxToEx>(B(Component::X), index);
-        auto const by = GridLayout::template project<GridLayout::ByToEx>(B(Component::Y), index);
-        auto const bz = GridLayout::template project<GridLayout::BzToEx>(B(Component::Z), index);
-        auto const rho
-            = GridLayout::template project<GridLayout::cellCenterToEdgeX>(state.rho, index);
-        auto const b = std::sqrt(bx * bx + by * by + bz * bz);
-        return -nu_ * (b / rho + 1.0) * layout.laplacian(Jc, index);
+        if constexpr (component == Component::X)
+        {
+            auto const bx
+                = GridLayout::template project<GridLayout::BxToEx>(B(Component::X), index);
+            auto const by
+                = GridLayout::template project<GridLayout::ByToEx>(B(Component::Y), index);
+            auto const bz
+                = GridLayout::template project<GridLayout::BzToEx>(B(Component::Z), index);
+            auto const rho
+                = GridLayout::template project<GridLayout::cellCenterToEdgeX>(state.rho, index);
+            auto const b = std::sqrt(bx * bx + by * by + bz * bz);
+            return -nu_ * (b / rho + 1.0) * layout.laplacian(Jc, index);
+        }
+        if constexpr (component == Component::Y)
+        {
+            auto const bx
+                = GridLayout::template project<GridLayout::BxToEy>(B(Component::X), index);
+            auto const by
+                = GridLayout::template project<GridLayout::ByToEy>(B(Component::Y), index);
+            auto const bz
+                = GridLayout::template project<GridLayout::BzToEy>(B(Component::Z), index);
+            auto const rho
+                = GridLayout::template project<GridLayout::cellCenterToEdgeY>(state.rho, index);
+            auto const b = std::sqrt(bx * bx + by * by + bz * bz);
+            return -nu_ * (b / rho + 1.0) * layout.laplacian(Jc, index);
+        }
+        if constexpr (component == Component::Z)
+        {
+            auto const bx
+                = GridLayout::template project<GridLayout::BxToEz>(B(Component::X), index);
+            auto const by
+                = GridLayout::template project<GridLayout::ByToEz>(B(Component::Y), index);
+            auto const bz
+                = GridLayout::template project<GridLayout::BzToEz>(B(Component::Z), index);
+            auto const rho
+                = GridLayout::template project<GridLayout::cellCenterToEdgeZ>(state.rho, index);
+            auto const b = std::sqrt(bx * bx + by * by + bz * bz);
+            return -nu_ * (b / rho + 1.0) * layout.laplacian(Jc, index);
+        }
     }
 
     double const eta_;

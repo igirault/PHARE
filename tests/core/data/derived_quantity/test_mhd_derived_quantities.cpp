@@ -210,6 +210,77 @@ TEST_F(MhdDerived, electricFieldIdealOnlyMatchesMinusVCrossB)
         E[2], shrink, [&](auto const&... args) { EXPECT_NEAR(E[2](args...), 0.0, 1e-10); });
 }
 
+TEST_F(MhdDerived, electricFieldHallTermUsesPerComponentRhoProjection)
+{
+    // Regression test for a bug where the Hall term's density projection
+    // (rhoE) in hall_() was always computed with cellCenterToEdgeX,
+    // regardless of the requested E component. Here we exercise the Y
+    // component: with V=0 the ideal term vanishes, so E_y reduces exactly to
+    // the Hall term (Jz*bx - Jx*bz)/rhoE, where rhoE must be projected with
+    // cellCenterToEdgeY (shift in X), not cellCenterToEdgeX (shift in Y).
+    //
+    // rho varies quadratically with the local y-index and is uniform in x,
+    // so cellCenterToEdgeY (which only averages in x) reproduces rho's exact
+    // pointwise value in y, while cellCenterToEdgeX (which averages in y)
+    // does not -- making the two projections numerically distinguishable.
+    auto& rho = state.rho;
+    for (std::uint32_t i = 0; i < rho.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < rho.shape()[1]; ++j)
+            rho(i, j) = static_cast<double>(j * j) + 1.0; // +1 to keep it away from 0
+
+    for (std::size_t c = 0; c < 3; ++c)
+        fill(state.rhoV[c], 0.0); // V = 0 => ideal term vanishes, only Hall term remains
+
+    auto& Bx = state.B[0];
+    auto& By = state.B[1];
+    auto& Bz = state.B[2];
+    for (std::uint32_t i = 0; i < Bx.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < Bx.shape()[1]; ++j)
+            Bx(i, j) = 2.0 * static_cast<double>(j);
+    for (std::uint32_t i = 0; i < By.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < By.shape()[1]; ++j)
+            By(i, j) = static_cast<double>(i);
+    for (std::uint32_t i = 0; i < Bz.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < Bz.shape()[1]; ++j)
+            Bz(i, j) = static_cast<double>(j);
+
+    UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
+    MhdElectricField<State_t, YeeLayout_t>{0.0, 0.0, HyperMode::constant}.compute(*state, layout,
+                                                                                  out, 0.0);
+
+    UsableVecFieldMHD<dim> J{"J", layout, MHDQuantity::Vector::VecElike};
+    Ampere<YeeLayout_t>{layout}(static_cast<VecFieldMHD<dim> const&>(state.B),
+                                static_cast<VecFieldMHD<dim>&>(J));
+
+    auto& E        = static_cast<VecFieldMHD<dim>&>(out);
+    auto& Jvec     = static_cast<VecFieldMHD<dim>&>(J);
+    auto const& Bx_ = static_cast<VecFieldMHD<dim> const&>(state.B)[0];
+    auto const& Bz_ = static_cast<VecFieldMHD<dim> const&>(state.B)[2];
+
+    Point<std::uint32_t, dim> shrink;
+    for (std::size_t i = 0; i < dim; ++i)
+        shrink[i] = 2;
+
+    layout.evalOnShrinkedGhostBox(E[1], shrink, [&](auto const&... args) {
+        MeshIndex<dim> const index{args...};
+
+        auto const bx = YeeLayout_t::template project<YeeLayout_t::BxToEy>(Bx_, index);
+        auto const bz = YeeLayout_t::template project<YeeLayout_t::BzToEy>(Bz_, index);
+        auto const rhoE_correct
+            = YeeLayout_t::template project<YeeLayout_t::cellCenterToEdgeY>(rho, index);
+        auto const rhoE_wrong
+            = YeeLayout_t::template project<YeeLayout_t::cellCenterToEdgeX>(rho, index);
+
+        // Sanity check: the two projections must actually differ here, or this
+        // test wouldn't be able to distinguish the fix from the bug.
+        ASSERT_NE(rhoE_correct, rhoE_wrong);
+
+        auto const expected
+            = (Jvec[2](args...) * bx - Jvec[0](args...) * bz) / rhoE_correct;
+        EXPECT_NEAR(E[1](args...), expected, 1e-10 * std::abs(expected) + 1e-12);
+    });
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
