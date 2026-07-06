@@ -52,6 +52,10 @@ public:
     core::HybridState<Electromag, Ions, Electrons> state;
     std::shared_ptr<resources_manager_type> resourcesManager;
 
+    // generic scratch backing for derived-quantity diagnostics (e.g. J). Elike is the
+    // natural, exactly-sized centering here since Hybrid's derived quantities are Elike.
+    vecfield_type derivedVecScratch_{"PHARE_derived_vec", core::HybridQuantity::Vector::VecElike};
+
 
     void initialize(level_t& level) override;
 
@@ -63,6 +67,7 @@ public:
     virtual void allocate(patch_t& patch, double const allocateTime) override
     {
         resourcesManager->allocate(state, patch, allocateTime);
+        resourcesManager->allocate(derivedVecScratch_, patch, allocateTime);
     }
 
 
@@ -87,6 +92,7 @@ public:
         , state{dict}
         , resourcesManager{std::move(_resourcesManager)}
     {
+        resourcesManager->registerResources(derivedVecScratch_);
     }
 
 

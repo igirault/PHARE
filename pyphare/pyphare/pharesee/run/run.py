@@ -259,7 +259,7 @@ class Run:
         if not all_primal:
             return self._get(hier, time, merged, interp)
 
-        h = compute_hier_from(_compute_to_primal, hier, x="mhdJx", y="mhdJy", z="mhdJz")
+        h = compute_hier_from(_compute_to_primal, hier, x="Jx", y="Jy", z="Jz")
         return VectorField(h)
 
     def GetMHDE(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):
