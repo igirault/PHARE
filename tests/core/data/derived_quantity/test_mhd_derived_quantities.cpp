@@ -126,7 +126,8 @@ TEST_F(MhdDerived, divBOfDiscreteCurlIsZero)
 
 TEST_F(MhdDerived, factoryRegistersVPandDivB)
 {
-    auto registry = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3.);
+    auto registry
+        = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3., 0.0, 0.0, HyperMode::constant);
     EXPECT_NE(registry.find<1>("V"), nullptr);
     EXPECT_NE(registry.find<0>("P"), nullptr);
     EXPECT_NE(registry.find<0>("divB"), nullptr);
@@ -153,25 +154,60 @@ TEST_F(MhdDerived, currentDensityMatchesAmpereDirectly)
 
     UsableVecFieldMHD<dim> expected{"expected", layout, MHDQuantity::Vector::VecElike};
     Ampere<YeeLayout_t>{layout}(static_cast<VecFieldMHD<dim> const&>(state.B),
-                                 static_cast<VecFieldMHD<dim>&>(expected));
+                                static_cast<VecFieldMHD<dim>&>(expected));
 
-    auto& J        = static_cast<VecFieldMHD<dim>&>(out);
+    auto& J         = static_cast<VecFieldMHD<dim>&>(out);
     auto& expectedJ = static_cast<VecFieldMHD<dim>&>(expected);
-    layout.evalOnGhostBox(J[0], [&](auto const&... args) {
-        EXPECT_DOUBLE_EQ(J[0](args...), expectedJ[0](args...));
-    });
-    layout.evalOnGhostBox(J[1], [&](auto const&... args) {
-        EXPECT_DOUBLE_EQ(J[1](args...), expectedJ[1](args...));
-    });
-    layout.evalOnGhostBox(J[2], [&](auto const&... args) {
-        EXPECT_DOUBLE_EQ(J[2](args...), expectedJ[2](args...));
-    });
+    layout.evalOnGhostBox(
+        J[0], [&](auto const&... args) { EXPECT_DOUBLE_EQ(J[0](args...), expectedJ[0](args...)); });
+    layout.evalOnGhostBox(
+        J[1], [&](auto const&... args) { EXPECT_DOUBLE_EQ(J[1](args...), expectedJ[1](args...)); });
+    layout.evalOnGhostBox(
+        J[2], [&](auto const&... args) { EXPECT_DOUBLE_EQ(J[2](args...), expectedJ[2](args...)); });
 }
 
 TEST_F(MhdDerived, factoryRegistersJ)
 {
-    auto registry = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3.);
+    auto registry
+        = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3., 0.0, 0.0, HyperMode::constant);
     EXPECT_NE(registry.find<1>("J"), nullptr);
+    EXPECT_NE(registry.find<1>("E"), nullptr);
+}
+
+TEST_F(MhdDerived, electricFieldIdealOnlyMatchesMinusVCrossB)
+{
+    // eta = nu = 0 => E should reduce to -V x B + Hall term. Zero out J (B
+    // uniform => curl(B) = 0) so only the ideal term (-V x B) survives, and
+    // check it against a hand-computed cross product at a single point.
+    fill(state.rho, 2.0);
+    fill(state.rhoV[0], 2.0); // Vx = 1
+    fill(state.rhoV[1], 4.0); // Vy = 2
+    fill(state.rhoV[2], 0.0); // Vz = 0
+    fill(state.B[0], 0.0);
+    fill(state.B[1], 0.0);
+    fill(state.B[2], 3.0); // uniform B => J = curl(B) = 0, Hall term vanishes too
+
+    UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
+    MhdElectricField<State_t, YeeLayout_t>{0.0, 0.0, HyperMode::constant}.compute(*state, layout,
+                                                                                  out, 0.0);
+
+    // -V x B with V=(1,2,0), B=(0,0,3): (-V x B) = (-(2*3-0*0), -(0*0-1*3), -(1*0-2*0))
+    //                                            = (-6, 3, 0)
+    // MhdElectricField only fills 2 cells in from the edge of the ghost box (Ampere
+    // itself shrinks J by 1, and the hyper-resistive laplacian needs one more J
+    // neighbor beyond that), so check over that same shrunk region rather than the
+    // full ghost box. Each component has a different (edge) centering, so each
+    // must be checked over its own shrunk ghost box rather than reusing E[0]'s.
+    auto& E = static_cast<VecFieldMHD<dim>&>(out);
+    Point<std::uint32_t, dim> shrink;
+    for (std::size_t i = 0; i < dim; ++i)
+        shrink[i] = 2;
+    layout.evalOnShrinkedGhostBox(
+        E[0], shrink, [&](auto const&... args) { EXPECT_NEAR(E[0](args...), -6.0, 1e-10); });
+    layout.evalOnShrinkedGhostBox(
+        E[1], shrink, [&](auto const&... args) { EXPECT_NEAR(E[1](args...), 3.0, 1e-10); });
+    layout.evalOnShrinkedGhostBox(
+        E[2], shrink, [&](auto const&... args) { EXPECT_NEAR(E[2](args...), 0.0, 1e-10); });
 }
 
 int main(int argc, char** argv)
