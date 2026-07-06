@@ -3,9 +3,13 @@
 
 #include "diagnostic/detail/vtkh5_type_writer.hpp"
 
+#include "amr/physical_models/mhd_model.hpp"
+#include "amr/physical_models/hybrid_model.hpp"
+
 #include <string>
 #include <vector>
 #include <optional>
+#include <type_traits>
 #include <unordered_map>
 
 namespace PHARE::diagnostic::vtkh5
@@ -17,6 +21,9 @@ class ElectromagDiagnosticWriter : public H5TypeWriter<H5Writer>
     using Super              = H5TypeWriter<H5Writer>;
     using VTKFileWriter      = Super::VTKFileWriter;
     using VTKFileInitializer = Super::VTKFileInitializer;
+
+    using ModelView_t = std::decay_t<decltype(std::declval<H5Writer&>().modelView())>;
+    using Model_t     = typename ModelView_t::Model_t;
 
 public:
     ElectromagDiagnosticWriter(H5Writer& h5Writer)
@@ -99,10 +106,13 @@ void ElectromagDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnosti
                     auto& B = this->h5Writer_.modelView().getB();
                     writer.template writeTensorField<1>(B, layout);
                 }
-                if (isActiveDiag(diagnostic, "/", "EM_E"))
+                if constexpr (solver::is_hybrid_model_v<Model_t>)
                 {
-                    auto& E = this->h5Writer_.modelView().getE();
-                    writer.template writeTensorField<1>(E, layout);
+                    if (isActiveDiag(diagnostic, "/", "EM_E"))
+                    {
+                        auto& E = this->h5Writer_.modelView().getE();
+                        writer.template writeTensorField<1>(E, layout);
+                    }
                 }
             };
 

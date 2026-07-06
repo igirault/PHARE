@@ -312,11 +312,6 @@ public:
 
     NO_DISCARD const Field& getEtot() const { return this->model_.state.Etot; }
 
-    NO_DISCARD const VecField& getE() const
-    {
-        throw std::runtime_error("E not currently available in MHD diagnostics");
-    }
-
     // for setBuffer function in visitHierarchy
     NO_DISCARD Field& getRho() { return this->model_.state.rho; }
 
@@ -325,11 +320,6 @@ public:
     NO_DISCARD VecField& getB() { return this->model_.state.B; }
 
     NO_DISCARD Field& getEtot() { return this->model_.state.Etot; }
-
-    NO_DISCARD VecField& getE()
-    {
-        throw std::runtime_error("E not currently available in MHD diagnostics");
-    }
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
