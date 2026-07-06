@@ -325,23 +325,14 @@ public:
         throw std::runtime_error("E not currently available in MHD diagnostics");
     }
 
-    // diag only
-    NO_DISCARD VecField& getV() { return V_diag_; }
-
-    NO_DISCARD const VecField& getV() const { return V_diag_; }
-
-    NO_DISCARD Field& getP() { return P_diag_; }
-
-    NO_DISCARD const Field& getP() const { return P_diag_; }
-
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
+        return std::forward_as_tuple(tmpField_, tmpVec_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(V_diag_, P_diag_, tmpField_, tmpVec_);
+        return std::forward_as_tuple(tmpField_, tmpVec_);
     }
 
     auto& tmpField() { return tmpField_; }
@@ -356,12 +347,6 @@ public:
     }
 
 protected:
-    // these quantities are not always up to date in the calculations but we can compute them from
-    // the conservative variables when needed their registration and allocation are handled in the
-    // model
-    VecField V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
-    Field P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
-
     Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
     VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
 

@@ -216,7 +216,7 @@ class Diagnostics(object):
 
 # ------------------------------------------------------------------------------
 class MHDDiagnostics(Diagnostics):
-    mhd_quantities = ["rho", "V", "P", "rhoV", "Etot"]
+    mhd_quantities = ["rho", "V", "P", "rhoV", "Etot", "divB"]
     type = "mhd"
 
     def __init__(self, **kwargs):
