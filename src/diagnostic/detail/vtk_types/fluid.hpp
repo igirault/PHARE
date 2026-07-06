@@ -2,7 +2,7 @@
 #define PHARE_DIAGNOSTIC_DETAIL_VTK_TYPES_FLUID_HPP
 
 #include "core/logger.hpp"
-#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/data/derived_quantity/derived_scratch.hpp"
 
 #include "amr/physical_models/mhd_model.hpp"
 #include "amr/physical_models/hybrid_model.hpp"
@@ -25,6 +25,8 @@ class FluidDiagnosticWriter : public H5TypeWriter<H5Writer>
     using VTKFileInitializer = Super::VTKFileInitializer;
     using Model_t            = H5Writer::ModelView::Model_t;
     using GridLayout         = H5Writer::GridLayout;
+    using Scratch_t          = core::DerivedScratch<typename Model_t::vecfield_type,
+                                                    typename Model_t::physical_quantity_type>;
 
 public:
     FluidDiagnosticWriter(H5Writer& h5Writer)
@@ -88,14 +90,6 @@ private:
     };
 
 
-    struct MhdFluidComputer
-    {
-        void operator()();
-
-        FluidDiagnosticWriter* writer;
-        DiagnosticProperties& diagnostic;
-    };
-
     auto static isActiveDiag(DiagnosticProperties const& diagnostic, std::string const& tree,
                              std::string const& var)
     {
@@ -103,6 +97,7 @@ private:
     };
 
     std::unordered_map<std::string, Info> mem;
+    Scratch_t scratch_;
 };
 
 
@@ -148,9 +143,6 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
     auto& rhoV = modelView.getRhoV();
     auto& Etot = modelView.getEtot();
 
-    // need computation
-    // auto& V    = modelView.getV();
-    // auto& P    = modelView.getP();
     std::string const tree{"/mhd/"};
 
     if (isActiveDiag(diagnostic, tree, "rho"))
@@ -159,10 +151,14 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
         return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
     if (isActiveDiag(diagnostic, tree, "Etot"))
         return file_initializer.initFieldFileLevel(ilvl);
-    if (isActiveDiag(diagnostic, tree, "P"))
-        return file_initializer.initFieldFileLevel(ilvl);
-    if (isActiveDiag(diagnostic, tree, "V"))
-        return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
+
+    auto const& derived = modelView.derivedQuantities();
+    for (auto const& dq : derived.template quantities<0>())
+        if (isActiveDiag(diagnostic, tree, dq->name()))
+            return file_initializer.initFieldFileLevel(ilvl);
+    for (auto const& dq : derived.template quantities<1>())
+        if (isActiveDiag(diagnostic, tree, dq->name()))
+            return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
 
     return std::nullopt;
 }
@@ -252,8 +248,6 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
     auto& rho  = modelView.getRho();
     auto& rhoV = modelView.getRhoV();
     auto& Etot = modelView.getEtot();
-    auto& P    = modelView.getP();
-    auto& V    = modelView.getV();
 
     std::string const tree{"/mhd/"};
 
@@ -263,10 +257,26 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
         file_writer.template writeTensorField<1>(rhoV, layout);
     else if (isActiveDiag(diagnostic, tree, "Etot"))
         file_writer.writeField(Etot, layout);
-    else if (isActiveDiag(diagnostic, tree, "P"))
-        file_writer.writeField(P, layout);
-    else if (isActiveDiag(diagnostic, tree, "V"))
-        file_writer.template writeTensorField<1>(V, layout);
+    else
+    {
+        auto const& derived = modelView.derivedQuantities();
+        auto const time     = writer->h5Writer_.timestamp();
+
+        for (auto const& dq : derived.template quantities<0>())
+            if (isActiveDiag(diagnostic, tree, dq->name()))
+            {
+                auto field = writer->scratch_.scalar(dq->centering(), layout);
+                dq->compute(modelView.state(), layout, field, time);
+                file_writer.writeField(field, layout);
+            }
+        for (auto const& dq : derived.template quantities<1>())
+            if (isActiveDiag(diagnostic, tree, dq->name()))
+            {
+                auto vecfield = writer->scratch_.vector(dq->centering(), layout);
+                dq->compute(modelView.state(), layout, vecfield, time);
+                file_writer.template writeTensorField<1>(vecfield, layout);
+            }
+    }
 }
 
 
@@ -309,57 +319,9 @@ void FluidDiagnosticWriter<H5Writer>::HybridFluidComputer::operator()()
 
 
 template<typename H5Writer>
-void FluidDiagnosticWriter<H5Writer>::MhdFluidComputer::operator()()
+void FluidDiagnosticWriter<H5Writer>::compute(DiagnosticProperties&)
 {
-    auto& modelView = writer->h5Writer_.modelView();
-    auto minLvl     = writer->h5Writer_.minLevel;
-    auto maxLvl     = writer->h5Writer_.maxLevel;
-
-    auto& rho  = modelView.getRho();
-    auto& V    = modelView.getV();
-    auto& B    = modelView.getB();
-    auto& P    = modelView.getP();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
-
-    std::string tree{"/mhd/"};
-
-    if (isActiveDiag(diagnostic, tree, "V"))
-    {
-        modelView.visitHierarchy(
-            [&](GridLayout& layout, std::string, std::size_t) {
-                core::ToPrimitiveConverter<GridLayout> toPrim{layout};
-                toPrim.rhoVToVOnGhostBox(rho, rhoV, V);
-            },
-            minLvl, maxLvl);
-    }
-    else if (isActiveDiag(diagnostic, tree, "P"))
-    {
-        modelView.visitHierarchy(
-            [&](GridLayout& layout, std::string, std::size_t) {
-                auto const gamma = diagnostic.fileAttributes["heat_capacity_ratio"]
-                                       .template to<double>(); // or FloatType if we want to expose
-                                                               // that to DiagnosticProperties
-                core::ToPrimitiveConverter<GridLayout> toPrim{layout};
-                toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
-            },
-            minLvl, maxLvl);
-    }
-}
-
-
-
-template<typename H5Writer>
-void FluidDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
-{
-    if constexpr (solver::is_mhd_model_v<Model_t>)
-    {
-        MhdFluidComputer{this, diagnostic}();
-    }
-    else if constexpr (solver::is_hybrid_model_v<Model_t>)
-    {
-        // to implement
-    }
+    // derived quantities are computed per patch during write(), into scratch views
 }
 
 } // namespace PHARE::diagnostic::vtkh5
