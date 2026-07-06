@@ -3,6 +3,7 @@
 
 #include "core/boundary/boundary.hpp"
 #include "core/boundary/boundary_defs.hpp"
+#include "core/boundary/boundary_inflow_compose.hpp"
 #include "core/data/field/field_traits.hpp"
 #include "core/data/grid/gridlayout_traits.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition_factory.hpp"
@@ -163,30 +164,21 @@ private:
         return data.contains(flag) && data[flag].template to<bool>();
     }
 
-    /** @brief Linear combination c1*f1 + c2*f2 of two time functions, evaluated node-wise at
-     * the same spatial coordinates and time. */
-    static _space_time_function linComb2_(double c1, _space_time_function f1, double c2, _space_time_function f2)
+    /** @brief Lift a constant 3-vector to three constant-valued space-time functions. */
+    static std::array<_space_time_function, 3> liftConst3_(std::array<double, 3> const& c)
     {
-        return [c1, c2, f1 = std::move(f1), f2 = std::move(f2)](
-                   auto const&... args) -> std::shared_ptr<Span<double>> {
-            auto s1 = f1(args...);
-            auto s2 = f2(args...);
-            std::vector<double> out(s1->size());
-            for (std::size_t k = 0; k < out.size(); ++k)
-                out[k] = c1 * (*s1)[k] + c2 * (*s2)[k];
-            return std::make_shared<VectorSpan<double>>(std::move(out));
-        };
+        return {inflow_compose::constFunction<dimension>(c[0]),
+                inflow_compose::constFunction<dimension>(c[1]),
+                inflow_compose::constFunction<dimension>(c[2])};
     }
 
-    /** @brief Build the three time functions of the ideal motional electric field
-     * E = -v x B(t) from the (time-varying) total-field components B(t) and the constant
-     * inflow velocity v. Time-varying twin of @c inflow_motional_E_. */
+    /** @brief A prescribable 3-vector as functions, whether given as constants or functions. */
     static std::array<_space_time_function, 3>
-    motionalEFunction_(std::array<_space_time_function, 3> const& B, std::array<double, 3> const& v)
+    vecAsFunctions_(initializer::PHAREDict const& data, std::string const& key)
     {
-        // E_x = -(v_y B_z - v_z B_y), E_y = -(v_z B_x - v_x B_z), E_z = -(v_x B_y - v_y B_x)
-        return {linComb2_(-v[1], B[2], v[2], B[1]), linComb2_(-v[2], B[0], v[0], B[2]),
-                linComb2_(-v[0], B[1], v[1], B[0])};
+        if (isFunctionXYZ_(data, key))
+            return initializer::parseDimXYZType<_space_time_function, 3>(data, key);
+        return liftConst3_(initializer::parseDimXYZType<double, 3>(data, key));
     }
 
     /** @brief Build the shared B sub-BC used by compound conditions (e.g.
@@ -334,71 +326,112 @@ private:
                 "BoundaryFactory: a Thermo object is required for SuperMagnetofastInflow "
                 "boundaries but none was provided.");
 
-        double const p   = data["pressure"].to<double>();
-        double const rho = data["density"].to<double>();
-        auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
-        auto const rhoV  = vToRhoV(rho, v);
-
         if (!data.contains("B"))
             throw std::runtime_error(
                 "BoundaryFactory: SuperMagnetofastInflow requires the magnetic field 'B'.");
+
         // The boundary magnetic field is driven through the constrained transport from the
         // prescribed motional electric field E = -v x B (full Dirichlet on E), not by pinning
         // B in the ghosts (B = None). Etot is derived from the prescribed pressure via the
         // compound energy BC, whose magnetic term reads the prescribed B (Dirichlet sub-BC).
-        // The field B may be a constant or a time function B(t) (IMF turning): in the latter
-        // case E and the energy term's B fill are recomputed from B(t) every substep.
+        // Each of density/pressure/velocity/B may independently be a constant or a space-time
+        // function; the all-constant fast path stays byte-identical to the prior behavior.
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+        using STF          = _space_time_function;
 
-        bool const BisFn = isFunctionXYZ_(data, "B");
+        bool const rhoIsFn = isFunctionXYZ_(data, "density");
+        bool const pIsFn   = isFunctionXYZ_(data, "pressure");
+        bool const vIsFn   = isFunctionXYZ_(data, "velocity");
+        bool const bIsFn   = isFunctionXYZ_(data, "B");
 
-        std::array<double, 3> E{};                  // constant-B path
-        std::array<_space_time_function, 3> Efns{};       // time-varying-B path
-        std::shared_ptr<VectorBcType> B_bc;
-        if (BisFn)
+        // --- scalar Dirichlet sub/main BC: rho ---
+        auto rho_bc = rhoIsFn
+                          ? std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
+                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
+                                data["density"].template to<STF>())}
+                          : std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
+                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
+                                data["density"].template to<double>())};
+
+        // --- pressure P_bc: constant or function ---
+        auto P_bc = pIsFn
+                        ? std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
+                              FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
+                              data["pressure"].template to<STF>())}
+                        : std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
+                              FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
+                              data["pressure"].template to<double>())};
+
+        // --- momentum rhoV: constant fast-path if rho and v both constant, else composed ---
+        std::array<double, 3> rhoV{};
+        std::array<STF, 3> rhoVfns{};
+        std::shared_ptr<VectorBcType> rhoV_bc;
+        if (!rhoIsFn && !vIsFn)
         {
-            auto const Bfns
-                = initializer::parseDimXYZType<_space_time_function, 3>(data, "B");
-            Efns  = motionalEFunction_(Bfns, v);
-            B_bc  = make_inflow_B_bc_<VecFieldT, VectorBcType>(Bfns);
-            // regrid fallback: B is None here (driven by the Dirichlet E through constrained
-            // transport), so at regrid the outside-domain B ghosts are unfilled. Impose the
-            // prescribed (time-varying) inflow field on the tangential faces with the normal
-            // face kept divergence-free.
-            boundary->template registerRegridFallbackCondition<
-                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
-                PhysicalQuantityT::Vector::B, Bfns);
+            double const rho = data["density"].template to<double>();
+            auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            rhoV             = vToRhoV(rho, v);
+            rhoV_bc          = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+                FieldBoundaryConditionType::Dirichlet, VecFieldT, GridLayoutT>(rhoV)};
         }
         else
         {
+            auto const rhoFn = rhoIsFn ? data["density"].template to<STF>()
+                                       : inflow_compose::constFunction<dimension>(
+                                             data["density"].template to<double>());
+            auto const vFns  = vecAsFunctions_(data, "velocity");
+            rhoVfns          = {inflow_compose::mulFunction<dimension>(rhoFn, vFns[0]),
+                                inflow_compose::mulFunction<dimension>(rhoFn, vFns[1]),
+                                inflow_compose::mulFunction<dimension>(rhoFn, vFns[2])};
+            rhoV_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+                FieldBoundaryConditionType::Dirichlet, VecFieldT, GridLayoutT>(rhoVfns)};
+        }
+
+        // --- B sub-BC + motional E + regrid fallback ---
+        bool const eNeedsFn = vIsFn || bIsFn;
+        std::array<double, 3> E{};
+        std::array<STF, 3> Efns{};
+        std::shared_ptr<VectorBcType> B_bc;
+        if (!eNeedsFn)
+        {
+            auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
             auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
             E            = inflow_motional_E_(v, B);
             B_bc         = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
+            // regrid fallback: B is None here (driven by the Dirichlet E through constrained
+            // transport), so at regrid the outside-domain B ghosts are unfilled. Impose the
+            // prescribed inflow field on the tangential faces with the normal face kept
+            // divergence-free.
             boundary->template registerRegridFallbackCondition<
                 FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
                 PhysicalQuantityT::Vector::B, B);
         }
-
-        auto rho_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
-                                                  GridLayoutT>(rho)};
-        auto rhoV_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
-                                                  GridLayoutT>(rhoV)};
-        auto P_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
-                                                  GridLayoutT>(p)};
+        else
+        {
+            auto const vFns = vecAsFunctions_(data, "velocity");
+            auto const Bfns = vecAsFunctions_(data, "B");
+            Efns            = inflow_compose::negCrossFunction<dimension>(vFns, Bfns);
+            B_bc            = make_inflow_B_bc_<VecFieldT, VectorBcType>(Bfns);
+            boundary->template registerRegridFallbackCondition<
+                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
+                PhysicalQuantityT::Vector::B, Bfns);
+        }
 
         for (auto const quantity : quantities.scalars)
         {
             switch (quantity)
             {
                 case (PhysicalQuantityT::Scalar::rho):
-                    boundary
-                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
-                            quantity, rho);
+                    if (rhoIsFn)
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(
+                            quantity, data["density"].template to<STF>());
+                    else
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(
+                            quantity, data["density"].template to<double>());
                     break;
                 case (PhysicalQuantityT::Scalar::Etot):
                     boundary->template registerFieldCondition<
@@ -417,12 +450,15 @@ private:
             switch (quantity)
             {
                 case (PhysicalQuantityT::Vector::rhoV):
-                    boundary
-                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
-                            quantity, rhoV);
+                    if (!rhoIsFn && !vIsFn)
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoV);
+                    else
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoVfns);
                     break;
                 case (PhysicalQuantityT::Vector::E):
-                    if (BisFn)
+                    if (eNeedsFn)
                         boundary->template registerFieldCondition<
                             FieldBoundaryConditionType::Dirichlet>(quantity, Efns);
                     else
@@ -462,47 +498,101 @@ private:
                 "BoundaryFactory: a Thermo object is required for FreePressureInflow "
                 "boundaries but none was provided.");
 
-        double const rho = data["density"].to<double>();
-        auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
-        auto const rhoV  = vToRhoV(rho, v);
-
         if (!data.contains("B"))
             throw std::runtime_error(
                 "BoundaryFactory: FreePressureInflow requires the magnetic field 'B'.");
-        auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
-        auto const E = inflow_motional_E_(v, B);
 
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+        using STF          = _space_time_function;
 
-        // regrid fallback: B is None here (driven by the Dirichlet E through constrained
-        // transport), so at regrid the outside-domain B ghosts are unfilled. Impose the
-        // prescribed inflow field on the tangential faces with the normal face divergence-free.
-        boundary->template registerRegridFallbackCondition<
-            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
-            PhysicalQuantityT::Vector::B, B);
+        bool const rhoIsFn = isFunctionXYZ_(data, "density");
+        bool const vIsFn   = isFunctionXYZ_(data, "velocity");
+        bool const bIsFn   = isFunctionXYZ_(data, "B");
 
-        // Build sub-BCs shared by the energy compound BC
-        auto rho_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
-                                                  GridLayoutT>(rho)};
-        auto rhoV_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
-                                                  GridLayoutT>(rhoV)};
-        auto B_bc = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
+        // --- scalar Dirichlet sub/main BC: rho ---
+        auto rho_bc = rhoIsFn
+                          ? std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
+                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
+                                data["density"].template to<STF>())}
+                          : std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
+                                FieldBoundaryConditionType::Dirichlet, FieldT, GridLayoutT>(
+                                data["density"].template to<double>())};
+
+        // pressure is not prescribed at a free-pressure inflow: stays Neumann.
         auto P_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
                                                   GridLayoutT>()};
+
+        // --- momentum rhoV: constant fast-path if rho and v both constant, else composed ---
+        std::array<double, 3> rhoV{};
+        std::array<STF, 3> rhoVfns{};
+        std::shared_ptr<VectorBcType> rhoV_bc;
+        if (!rhoIsFn && !vIsFn)
+        {
+            double const rho = data["density"].template to<double>();
+            auto const v     = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            rhoV             = vToRhoV(rho, v);
+            rhoV_bc          = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+                FieldBoundaryConditionType::Dirichlet, VecFieldT, GridLayoutT>(rhoV)};
+        }
+        else
+        {
+            auto const rhoFn = rhoIsFn ? data["density"].template to<STF>()
+                                       : inflow_compose::constFunction<dimension>(
+                                             data["density"].template to<double>());
+            auto const vFns  = vecAsFunctions_(data, "velocity");
+            rhoVfns          = {inflow_compose::mulFunction<dimension>(rhoFn, vFns[0]),
+                                inflow_compose::mulFunction<dimension>(rhoFn, vFns[1]),
+                                inflow_compose::mulFunction<dimension>(rhoFn, vFns[2])};
+            rhoV_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+                FieldBoundaryConditionType::Dirichlet, VecFieldT, GridLayoutT>(rhoVfns)};
+        }
+
+        // --- B sub-BC + motional E + regrid fallback ---
+        bool const eNeedsFn = vIsFn || bIsFn;
+        std::array<double, 3> E{};
+        std::array<STF, 3> Efns{};
+        std::shared_ptr<VectorBcType> B_bc;
+        if (!eNeedsFn)
+        {
+            auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
+            auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
+            E            = inflow_motional_E_(v, B);
+            B_bc         = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
+            // regrid fallback: B is None here (driven by the Dirichlet E through constrained
+            // transport), so at regrid the outside-domain B ghosts are unfilled. Impose the
+            // prescribed inflow field on the tangential faces with the normal face
+            // divergence-free.
+            boundary->template registerRegridFallbackCondition<
+                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
+                PhysicalQuantityT::Vector::B, B);
+        }
+        else
+        {
+            auto const vFns = vecAsFunctions_(data, "velocity");
+            auto const Bfns = vecAsFunctions_(data, "B");
+            Efns            = inflow_compose::negCrossFunction<dimension>(vFns, Bfns);
+            B_bc            = make_inflow_B_bc_<VecFieldT, VectorBcType>(Bfns);
+            boundary->template registerRegridFallbackCondition<
+                FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(
+                PhysicalQuantityT::Vector::B, Bfns);
+        }
 
         for (auto const quantity : quantities.scalars)
         {
             switch (quantity)
             {
                 case (PhysicalQuantityT::Scalar::rho):
-                    boundary
-                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
-                            quantity, rho);
+                    if (rhoIsFn)
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(
+                            quantity, data["density"].template to<STF>());
+                    else
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(
+                            quantity, data["density"].template to<double>());
                     break;
                 case (PhysicalQuantityT::Scalar::Etot):
                     boundary->template registerFieldCondition<
@@ -521,14 +611,20 @@ private:
             switch (quantity)
             {
                 case (PhysicalQuantityT::Vector::rhoV):
-                    boundary
-                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
-                            quantity, rhoV);
+                    if (!rhoIsFn && !vIsFn)
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoV);
+                    else
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, rhoVfns);
                     break;
                 case (PhysicalQuantityT::Vector::E):
-                    boundary
-                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
-                            quantity, E);
+                    if (eNeedsFn)
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, Efns);
+                    else
+                        boundary->template registerFieldCondition<
+                            FieldBoundaryConditionType::Dirichlet>(quantity, E);
                     break;
                 case (PhysicalQuantityT::Vector::B):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
