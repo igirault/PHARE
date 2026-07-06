@@ -296,8 +296,11 @@ TEST_F(MhdDerived, electricFieldHyperresistiveSpatialUsesPerComponentProjection)
     // while cellCenterToEdgeX (which averages in y) does not -- making the two
     // projections numerically distinguishable.
     //
-    // For nonzero laplacian(J), we set B quadratically in space (e.g., B_x = i*j),
-    // which produces a non-constant curl(B) = J.
+    // For nonzero laplacian(J), we set B so that curl(B) = J is non-constant AND
+    // non-linear in space. In particular, 2D Ampere gives J_y = -dBz/dx, so Bz
+    // must be cubic in i: a merely quadratic Bz(i) would make J_y linear in i,
+    // whose second derivative (and hence its laplacian) is identically zero and
+    // the guard below would never fire.
 
     auto& rho = state.rho;
     for (std::uint32_t i = 0; i < rho.shape()[0]; ++i)
@@ -319,7 +322,9 @@ TEST_F(MhdDerived, electricFieldHyperresistiveSpatialUsesPerComponentProjection)
             By(i, j) = static_cast<double>(i) * static_cast<double>(i + 1);
     for (std::uint32_t i = 0; i < Bz.shape()[0]; ++i)
         for (std::uint32_t j = 0; j < Bz.shape()[1]; ++j)
-            Bz(i, j) = static_cast<double>(j) * static_cast<double>(j + 1);
+            Bz(i, j) = static_cast<double>(i) * static_cast<double>(i + 1)
+                           * static_cast<double>(i + 2)
+                       + static_cast<double>(j) * static_cast<double>(j + 1);
 
     UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
     MhdElectricField<State_t, YeeLayout_t>{0.0, 1.0, HyperMode::spatial}.compute(*state, layout,
