@@ -159,7 +159,11 @@ TEST_F(MhdDerived, currentDensityMatchesAmpereDirectly)
     auto& expectedJ = static_cast<VecFieldMHD<dim>&>(expected);
     layout.evalOnGhostBox(J[0], [&](auto const&... args) {
         EXPECT_DOUBLE_EQ(J[0](args...), expectedJ[0](args...));
+    });
+    layout.evalOnGhostBox(J[1], [&](auto const&... args) {
         EXPECT_DOUBLE_EQ(J[1](args...), expectedJ[1](args...));
+    });
+    layout.evalOnGhostBox(J[2], [&](auto const&... args) {
         EXPECT_DOUBLE_EQ(J[2](args...), expectedJ[2](args...));
     });
 }
