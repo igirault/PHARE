@@ -33,8 +33,6 @@ public:
 
     using ModelView_t = std::decay_t<decltype(std::declval<H5Writer&>().modelView())>;
     using Model_t     = typename ModelView_t::Model_t;
-    using Scratch_t   = core::DerivedScratch<typename Model_t::vecfield_type,
-                                             typename Model_t::physical_quantity_type>;
 
     static constexpr auto dimension    = GridLayout::dimension;
     static constexpr auto interp_order = GridLayout::interp_order;
@@ -66,8 +64,6 @@ private:
     {
         return diagnostic.quantity == tree + name;
     }
-
-    Scratch_t scratch_;
 };
 
 template<typename H5Writer>
@@ -123,20 +119,23 @@ void MHDDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& diagnos
     if (isActiveDiag(diagnostic, tree, "Etot"))
         infoDS(Etot, "Etot", patchAttributes[lvlPatchID]["mhd"]);
 
-    auto const& derived = h5Writer.modelView().derivedQuantities();
+    auto& modelView     = h5Writer.modelView();
+    auto const& derived = modelView.derivedQuantities();
     auto const& layout  = h5Writer.patchLayout();
 
     for (auto const& dq : derived.template quantities<0>())
         if (isActiveDiag(diagnostic, tree, dq->name()))
         {
-            auto field = scratch_.scalar(dq->centering(), layout);
+            auto field = core::derived_scalar_view<typename Model_t::physical_quantity_type>(
+                modelView.derivedScalarScratch(), dq->centering(), layout);
             infoDS(field, dq->name(), patchAttributes[lvlPatchID]["mhd"]);
         }
 
     for (auto const& dq : derived.template quantities<1>())
         if (isActiveDiag(diagnostic, tree, dq->name()))
         {
-            auto vecfield = scratch_.vector(dq->centering(), layout);
+            auto vecfield = core::derived_vector_view<typename Model_t::physical_quantity_type>(
+                modelView.derivedVecScratch(), dq->centering(), layout);
             infoVF(vecfield, dq->name(), patchAttributes[lvlPatchID]["mhd"]);
         }
 }
@@ -249,7 +248,8 @@ void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
     for (auto const& dq : derived.template quantities<0>())
         if (isActiveDiag(diagnostic, tree, dq->name()))
         {
-            auto field = scratch_.scalar(dq->centering(), layout);
+            auto field = core::derived_scalar_view<typename Model_t::physical_quantity_type>(
+                modelView.derivedScalarScratch(), dq->centering(), layout);
             dq->compute(modelView.state(), layout, field, time);
             writeDS(path + dq->name(), field);
         }
@@ -257,7 +257,8 @@ void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
     for (auto const& dq : derived.template quantities<1>())
         if (isActiveDiag(diagnostic, tree, dq->name()))
         {
-            auto vecfield = scratch_.vector(dq->centering(), layout);
+            auto vecfield = core::derived_vector_view<typename Model_t::physical_quantity_type>(
+                modelView.derivedVecScratch(), dq->centering(), layout);
             dq->compute(modelView.state(), layout, vecfield, time);
             writeTF(path + dq->name(), vecfield);
         }

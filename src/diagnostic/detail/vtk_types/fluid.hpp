@@ -25,8 +25,6 @@ class FluidDiagnosticWriter : public H5TypeWriter<H5Writer>
     using VTKFileInitializer = Super::VTKFileInitializer;
     using Model_t            = H5Writer::ModelView::Model_t;
     using GridLayout         = H5Writer::GridLayout;
-    using Scratch_t          = core::DerivedScratch<typename Model_t::vecfield_type,
-                                                    typename Model_t::physical_quantity_type>;
 
 public:
     FluidDiagnosticWriter(H5Writer& h5Writer)
@@ -97,7 +95,6 @@ private:
     };
 
     std::unordered_map<std::string, Info> mem;
-    Scratch_t scratch_;
 };
 
 
@@ -265,14 +262,16 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
         for (auto const& dq : derived.template quantities<0>())
             if (isActiveDiag(diagnostic, tree, dq->name()))
             {
-                auto field = writer->scratch_.scalar(dq->centering(), layout);
+                auto field = core::derived_scalar_view<typename Model_t::physical_quantity_type>(
+                    modelView.derivedScalarScratch(), dq->centering(), layout);
                 dq->compute(modelView.state(), layout, field, time);
                 file_writer.writeField(field, layout);
             }
         for (auto const& dq : derived.template quantities<1>())
             if (isActiveDiag(diagnostic, tree, dq->name()))
             {
-                auto vecfield = writer->scratch_.vector(dq->centering(), layout);
+                auto vecfield = core::derived_vector_view<typename Model_t::physical_quantity_type>(
+                    modelView.derivedVecScratch(), dq->centering(), layout);
                 dq->compute(modelView.state(), layout, vecfield, time);
                 file_writer.template writeTensorField<1>(vecfield, layout);
             }

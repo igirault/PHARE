@@ -47,6 +47,12 @@ public:
     field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
     vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
 
+    // generic scratch backing for derived-quantity diagnostics. All-primal is the
+    // most demanding centering, so any centering view fits inside these buffers.
+    field_type derivedScalarScratch_{"PHARE_derived_scalar",
+                                     core::MHDQuantity::Scalar::ScalarAllPrimal};
+    vecfield_type derivedVecScratch_{"PHARE_derived_vec", core::MHDQuantity::Vector::VecAllPrimal};
+
     void initialize(level_t& level) override;
 
 
@@ -55,6 +61,8 @@ public:
         resourcesManager->allocate(state, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
+        resourcesManager->allocate(derivedScalarScratch_, patch, allocateTime);
+        resourcesManager->allocate(derivedVecScratch_, patch, allocateTime);
     }
 
 
@@ -73,6 +81,8 @@ public:
     {
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
+        resourcesManager->registerResources(derivedScalarScratch_);
+        resourcesManager->registerResources(derivedVecScratch_);
     }
 
     ~MHDModel() override = default;

@@ -2,91 +2,61 @@
 #define PHARE_CORE_DATA_DERIVED_QUANTITY_DERIVED_SCRATCH_HPP
 
 #include "core/data/derived_quantity/centering.hpp"
-#include "core/utilities/types.hpp"
 
+#include <cassert>
 #include <cstdint>
+#include <functional>
 #include <numeric>
-#include <vector>
 
 namespace PHARE::core
 {
-/** Transient scratch memory for derived-quantity outputs. One raw block, grown
- *  lazily to the most demanding request; Field/VecField views are built per
- *  patch over it. Deliberately NOT a SAMRAI resource: values never survive the
- *  patch visit, so ResourcesManager/setOnPatch machinery is unnecessary.
- *
- *  Usage contract: all views share this single memory block, so at most one
- *  view may be written at a time. Requesting a new view does not preserve
- *  previous ones - by design, callers compute and consume/write one derived
- *  quantity at a time before requesting the next view. */
-template<typename VecField_t, typename PhysicalQuantity>
-class DerivedScratch
+namespace detail
 {
-public:
-    using Field_t                   = typename VecField_t::field_type;
-    static constexpr auto dimension = Field_t::dimension;
-
-    template<typename GridLayout>
-    Field_t scalar(ScalarCentering const centering, GridLayout const& layout)
-    {
-        auto const qty   = scalar_qty<PhysicalQuantity>(centering);
-        auto const shape = layout.allocSize(qty);
-        ensure_(product_(shape));
-        return Field_t{"PHARE_derived_scratch", qty, mem_.data(), shape};
-    }
-
-    template<typename GridLayout>
-    VecField_t vector(VectorCentering const centering, GridLayout const& layout)
-    {
-        auto const qty  = vector_qty<PhysicalQuantity>(centering);
-        auto const qtys = PhysicalQuantity::componentsQuantities(qty);
-
-        VecField_t vf{"PHARE_derived_scratch_vec", qty};
-
-        std::array<std::array<std::uint32_t, dimension>, 3> shapes;
-        std::size_t total = 0;
-        for (std::size_t i = 0; i < 3; ++i)
-        {
-            shapes[i] = layout.allocSize(qtys[i]);
-            total += product_(shapes[i]);
-        }
-        ensure_(total);
-
-        std::size_t offset = 0;
-        for (std::size_t i = 0; i < 3; ++i)
-        {
-            Field_t component{vf[i].name(), qtys[i], mem_.data() + offset, shapes[i]};
-            vf[i].setBuffer(&component);
-            offset += product_(shapes[i]);
-        }
-        return vf;
-    }
-
-    template<std::size_t rank, typename GridLayout, typename Centering>
-    auto view(Centering const centering, GridLayout const& layout)
-    {
-        static_assert(rank <= 1, "tensor scratch not implemented");
-        if constexpr (rank == 0)
-            return scalar(centering, layout);
-        else
-            return vector(centering, layout);
-    }
-
-private:
-    static std::size_t product_(std::array<std::uint32_t, dimension> const& shape)
+    template<std::size_t dim>
+    std::size_t product(std::array<std::uint32_t, dim> const& shape)
     {
         return std::accumulate(shape.begin(), shape.end(), std::size_t{1},
                                std::multiplies<std::size_t>{});
     }
+} // namespace detail
 
-    void ensure_(std::size_t const n)
+/** Build a centering-correct scalar view over an all-primal SAMRAI-backed
+ *  scratch field. The backing buffer is the most demanding case (all-primal),
+ *  so any centering shape fits inside its per-patch allocation. The view
+ *  aliases the backing memory; contents are transient per (patch, quantity). */
+template<typename PhysicalQuantity, typename Field_t, typename GridLayout>
+Field_t derived_scalar_view(Field_t& backing, ScalarCentering const centering,
+                            GridLayout const& layout)
+{
+    auto const qty   = scalar_qty<PhysicalQuantity>(centering);
+    auto const shape = layout.allocSize(qty);
+    assert(backing.isUsable());
+    assert(detail::product<GridLayout::dimension>(shape) <= backing.size());
+    return Field_t{backing.name(), qty, backing.data(), shape};
+}
+
+/** Same for vectors: each component view lives inside the corresponding
+ *  all-primal backing component (no cross-component packing). */
+template<typename PhysicalQuantity, typename VecField_t, typename GridLayout>
+VecField_t derived_vector_view(VecField_t& backing, VectorCentering const centering,
+                               GridLayout const& layout)
+{
+    using Field_t = typename VecField_t::field_type;
+
+    auto const vqty = vector_qty<PhysicalQuantity>(centering);
+    auto const qtys = PhysicalQuantity::componentsQuantities(vqty);
+
+    VecField_t vf{backing.name(), vqty};
+    for (std::size_t i = 0; i < 3; ++i)
     {
-        if (mem_.size() < n)
-            mem_.resize(n);
+        auto const shape = layout.allocSize(qtys[i]);
+        assert(backing[i].isUsable());
+        assert(detail::product<GridLayout::dimension>(shape) <= backing[i].size());
+        Field_t component{vf[i].name(), qtys[i], backing[i].data(), shape};
+        vf[i].setBuffer(&component);
     }
-
-    std::vector<double> mem_;
-};
+    return vf;
+}
 
 } // namespace PHARE::core
 

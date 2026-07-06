@@ -327,12 +327,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(tmpField_, tmpVec_);
+        return std::forward_as_tuple(tmpField_, tmpVec_, derivedScalarScratch_, derivedVecScratch_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(tmpField_, tmpVec_);
+        return std::forward_as_tuple(tmpField_, tmpVec_, derivedScalarScratch_, derivedVecScratch_);
     }
 
     auto& tmpField() { return tmpField_; }
@@ -346,9 +346,15 @@ public:
         return tmpVec_;
     }
 
+    NO_DISCARD Field& derivedScalarScratch() { return derivedScalarScratch_; }
+    NO_DISCARD VecField& derivedVecScratch() { return derivedVecScratch_; }
+
 protected:
     Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
     VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+
+    Field derivedScalarScratch_{"PHARE_derived_scalar", core::MHDQuantity::Scalar::ScalarAllPrimal};
+    VecField derivedVecScratch_{"PHARE_derived_vec", core::MHDQuantity::Vector::VecAllPrimal};
 
     core::DerivedQuantityRegistry<State_t, GridLayout> derived_;
 };

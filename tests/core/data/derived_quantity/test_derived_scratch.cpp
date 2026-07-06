@@ -6,6 +6,7 @@
 #include "gtest/gtest.h"
 
 #include "tests/core/data/gridlayout/test_gridlayout.hpp"
+#include "tests/core/data/field/test_usable_field_fixtures_mhd.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
 using namespace PHARE::core;
@@ -14,66 +15,56 @@ static constexpr std::size_t dim = 2;
 using YeeLayout_t                = GridLayout<GridLayoutImplYeeMHD<dim, 1>>;
 using GridLayout_t               = TestGridLayout<YeeLayout_t>;
 using VecField_t                 = VecFieldMHD<dim>;
-using Scratch_t                  = DerivedScratch<VecField_t, MHDQuantity>;
 
-TEST(DerivedScratch, scalarViewHasAllocSizeShape)
+TEST(DerivedScratch, scalarViewHasAllocSizeShapeAndAliasesBacking)
 {
     GridLayout_t layout{10};
-    Scratch_t scratch;
+    UsableFieldMHD<dim> backing{"scratch", layout, MHDQuantity::Scalar::ScalarAllPrimal};
 
-    auto f = scratch.scalar(ScalarCentering::cell, layout);
-    EXPECT_TRUE(f.isUsable());
-    EXPECT_EQ(f.shape(), layout.allocSize(MHDQuantity::Scalar::ScalarCellCentered));
+    auto view = derived_scalar_view<MHDQuantity>(backing.super(), ScalarCentering::cell, layout);
+    EXPECT_TRUE(view.isUsable());
+    EXPECT_EQ(view.shape(), layout.allocSize(MHDQuantity::Scalar::ScalarCellCentered));
+    EXPECT_EQ(view.data(), backing.super().data());
 
-    auto n = scratch.scalar(ScalarCentering::node, layout);
-    EXPECT_EQ(n.shape(), layout.allocSize(MHDQuantity::Scalar::ScalarNodeCentered));
+    view.data()[0] = 42.0;
+    EXPECT_DOUBLE_EQ(backing.super().data()[0], 42.0);
 }
 
-TEST(DerivedScratch, vectorComponentsViewDisjointSegments)
+TEST(DerivedScratch, vectorViewComponentsAliasBackingComponents)
 {
     GridLayout_t layout{10};
-    Scratch_t scratch;
+    UsableVecFieldMHD<dim> vbacking{"vscratch", layout, MHDQuantity::Vector::VecAllPrimal};
 
-    auto vf         = scratch.vector(VectorCentering::Blike, layout);
+    auto view = derived_vector_view<MHDQuantity>(vbacking.super(), VectorCentering::Blike, layout);
     auto const qtys = MHDQuantity::componentsQuantities(MHDQuantity::Vector::VecBlike);
 
     for (std::size_t i = 0; i < 3; ++i)
     {
-        EXPECT_TRUE(vf[i].isUsable());
-        EXPECT_EQ(vf[i].shape(), layout.allocSize(qtys[i]));
+        EXPECT_TRUE(view[i].isUsable());
+        EXPECT_EQ(view[i].shape(), layout.allocSize(qtys[i]));
+        EXPECT_EQ(view[i].data(), vbacking.super()[i].data());
+        EXPECT_LE(view[i].size(), vbacking.super()[i].size());
     }
-    // disjoint: end of comp i == start of comp i+1
-    EXPECT_EQ(vf[0].data() + vf[0].size(), vf[1].data());
-    EXPECT_EQ(vf[1].data() + vf[1].size(), vf[2].data());
 }
 
-TEST(DerivedScratch, memoryIsReusedAcrossCalls)
+TEST(DerivedScratch, nodeAndVectorCenteringsFitInsideAllPrimal)
 {
     GridLayout_t layout{10};
-    Scratch_t scratch;
+    UsableFieldMHD<dim> backing{"scratch", layout, MHDQuantity::Scalar::ScalarAllPrimal};
+    UsableVecFieldMHD<dim> vbacking{"vscratch", layout, MHDQuantity::Vector::VecAllPrimal};
 
-    auto a      = scratch.scalar(ScalarCentering::cell, layout);
-    a.data()[0] = 42.0;
-    auto b      = scratch.scalar(ScalarCentering::cell, layout);
-    EXPECT_EQ(a.data(), b.data()); // same block: shared scratch
-    EXPECT_DOUBLE_EQ(b.data()[0], 42.0);
-}
-
-TEST(DerivedScratch, viewDispatchesToScalarAndVector)
-{
-    GridLayout_t layout{10};
-    Scratch_t scratch;
-
-    auto f = scratch.template view<0>(ScalarCentering::cell, layout);
-    EXPECT_TRUE(f.isUsable());
-    EXPECT_EQ(f.shape(), layout.allocSize(MHDQuantity::Scalar::ScalarCellCentered));
-
-    auto vf         = scratch.template view<1>(VectorCentering::Blike, layout);
-    auto const qtys = MHDQuantity::componentsQuantities(MHDQuantity::Vector::VecBlike);
-    for (std::size_t i = 0; i < 3; ++i)
+    for (auto const centering : {ScalarCentering::cell, ScalarCentering::node})
     {
-        EXPECT_TRUE(vf[i].isUsable());
-        EXPECT_EQ(vf[i].shape(), layout.allocSize(qtys[i]));
+        auto view = derived_scalar_view<MHDQuantity>(backing.super(), centering, layout);
+        EXPECT_LE(detail::product<dim>(view.shape()), backing.super().size());
+    }
+
+    for (auto const centering :
+         {VectorCentering::cell, VectorCentering::Elike, VectorCentering::Blike})
+    {
+        auto view = derived_vector_view<MHDQuantity>(vbacking.super(), centering, layout);
+        for (std::size_t i = 0; i < 3; ++i)
+            EXPECT_LE(detail::product<dim>(view[i].shape()), vbacking.super()[i].size());
     }
 }
 
