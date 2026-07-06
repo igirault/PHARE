@@ -39,6 +39,10 @@ PHAREDict getDict()
 
     dict["to_conservative_init"]["heat_capacity_ratio"] = 5. / 3.;
 
+    dict["resistivity"]       = 0.0;
+    dict["hyper_resistivity"] = 0.0;
+    dict["hyper_mode"]        = std::string("constant");
+
     return dict;
 }
 
