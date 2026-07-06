@@ -191,6 +191,94 @@ class TestSimulation(unittest.TestCase):
             )
         )
 
+    def test_inflow_accepts_callable_density(self):
+        # density may also be a space-time callable f(x, t), not just a constant
+        global_vars.sim = None
+        rho = lambda x, t: 1.0
+        s = simulation.Simulation(
+            **self._mhd_kwargs(
+                boundary_types="physical",
+                boundary_conditions={
+                    "xlower": {
+                        "type": "super-magnetofast-inflow",
+                        "data": {
+                            "velocity": 2.0,
+                            "density": rho,
+                            "pressure": 1.0,
+                            "B": [0.5, 1.0, 0.0],
+                        },
+                    },
+                    "xupper": {"type": "super-magnetofast-outflow"},
+                },
+            )
+        )
+        self.assertIn("xlower", s.boundary_conditions)
+
+    def test_inflow_accepts_callable_velocity_component(self):
+        # a single velocity component may be a space-time callable f(x, t)
+        global_vars.sim = None
+        vx = lambda x, t: 2.0
+        s = simulation.Simulation(
+            **self._mhd_kwargs(
+                boundary_types="physical",
+                boundary_conditions={
+                    "xlower": {
+                        "type": "super-magnetofast-inflow",
+                        "data": {
+                            "velocity": [vx, 0.0, 0.0],
+                            "density": 1.0,
+                            "pressure": 1.0,
+                            "B": [0.5, 1.0, 0.0],
+                        },
+                    },
+                    "xupper": {"type": "super-magnetofast-outflow"},
+                },
+            )
+        )
+        self.assertIn("xlower", s.boundary_conditions)
+
+    def test_inflow_accepts_callable_pressure(self):
+        # pressure may also be a space-time callable f(x, t)
+        global_vars.sim = None
+        p = lambda x, t: 1.0
+        s = simulation.Simulation(
+            **self._mhd_kwargs(
+                boundary_types="physical",
+                boundary_conditions={
+                    "xlower": {
+                        "type": "super-magnetofast-inflow",
+                        "data": {
+                            "velocity": 2.0,
+                            "density": 1.0,
+                            "pressure": p,
+                            "B": [0.5, 1.0, 0.0],
+                        },
+                    },
+                    "xupper": {"type": "super-magnetofast-outflow"},
+                },
+            )
+        )
+        self.assertIn("xlower", s.boundary_conditions)
+
+    def test_free_pressure_inflow_accepts_callable_density(self):
+        # free-pressure-inflow has no pressure key; density may be callable there too
+        global_vars.sim = None
+        rho = lambda x, t: 1.0
+        s = simulation.Simulation(
+            **self._mhd_kwargs(
+                boundary_types="physical",
+                boundary_conditions={
+                    "xlower": {
+                        "type": "free-pressure-inflow",
+                        "data": {"velocity": 2.0, "density": rho, "B": [0.5, 1.0, 0.0]},
+                    },
+                    "xupper": {"type": "fixed-pressure-outflow",
+                               "data": {"pressure": 1.0}},
+                },
+            )
+        )
+        self.assertIn("xlower", s.boundary_conditions)
+
 
 if __name__ == "__main__":
     unittest.main()
