@@ -4,6 +4,7 @@
 #include "core/def.hpp"
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/utilities/mpi_utils.hpp"
+#include "core/data/derived_quantity/mhd_derived_quantities.hpp"
 
 #include "amr/amr_constants.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -157,12 +158,19 @@ class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_hybrid_model_v<Mod
 public:
     using Model_t                = Model;
     using physical_quantity_type = Model::physical_quantity_type;
+    using State_t                = std::decay_t<decltype(std::declval<Model&>().state)>;
+    using GridLayout             = typename Super::GridLayout;
 
     ModelView(Hierarchy& hierarchy, Model& model)
         : Super{hierarchy, model}
     {
         declareMomentumTensorAlgos();
     }
+
+    NO_DISCARD auto& state() { return this->model_.state; }
+    NO_DISCARD auto const& state() const { return this->model_.state; }
+
+    NO_DISCARD auto const& derivedQuantities() const { return derived_; }
 
     NO_DISCARD VecField& getB() const { return this->model_.state.electromag.B; }
 
@@ -261,6 +269,7 @@ protected:
     Field tmpField_{"PHARE_sumField", core::HybridQuantity::Scalar::rho};
     VecField tmpVec_{"PHARE_sumVec", core::HybridQuantity::Vector::V};
     TensorFieldT tmpTensor_{"PHARE_sumTensor", core::HybridQuantity::Tensor::M};
+    core::DerivedQuantityRegistry<State_t, GridLayout> derived_;
 };
 
 
@@ -274,7 +283,20 @@ class ModelView<Hierarchy, Model, std::enable_if_t<solver::is_mhd_model_v<Model>
 public:
     using Model_t                = Model;
     using physical_quantity_type = Model::physical_quantity_type;
-    using BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>::BaseModelView;
+    using Super                  = BaseModelView<ModelView<Hierarchy, Model>, Hierarchy, Model>;
+    using State_t                = typename Model::state_type;
+    using GridLayout             = typename Super::GridLayout;
+
+    ModelView(Hierarchy& hierarchy, Model& model)
+        : Super{hierarchy, model}
+        , derived_{core::makeMhdDerivedQuantities<State_t, GridLayout>(model.state.gamma())}
+    {
+    }
+
+    NO_DISCARD auto& state() { return this->model_.state; }
+    NO_DISCARD auto const& state() const { return this->model_.state; }
+
+    NO_DISCARD auto const& derivedQuantities() const { return derived_; }
 
     NO_DISCARD const Field& getRho() const { return this->model_.state.rho; }
 
@@ -342,6 +364,8 @@ protected:
 
     Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
     VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
+
+    core::DerivedQuantityRegistry<State_t, GridLayout> derived_;
 };
 
 
