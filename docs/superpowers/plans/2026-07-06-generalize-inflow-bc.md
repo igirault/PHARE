@@ -10,8 +10,8 @@
 
 ## Global Constraints
 
-- Build with `bash tools/cmake.sh` (NOT `uv run cmake --build build`). Always `-j 12`.
-- Run tests via `uv run ctest` from `build/` (never bare test binaries — embedded Python needs PYTHONPATH).
+- This worktree has NO `tools/cmake.sh` (main-repo only) and its `build/` uses Makefiles with `test:BOOL=ON`. Build with **focused targets, threads ≤ 10** (12 OOMs): `cd build && uv run cmake --build . --target <name>... -j 10`. Do NOT run a full `cmake --build .` (all template permutations → OOM). Redirect build output to a log file, never pipe through `tail` (a prior run got signaled/truncated by the pipe).
+- Run tests via `uv run ctest` from `build/` (never bare test binaries — embedded Python needs PYTHONPATH). Boundary C++ test targets: `test-boundary_condition`, `test-field-bc-<suffix>`. To validate a header that only heavy targets include (e.g. `boundary_factory.hpp` → AMR), build `test-messenger` / `test-models`.
 - Callable convention (decided): every prescribable inflow value is a constant OR a space-time callable `f(x[, y[, z]], t)` returning a per-node scalar (scalar-in-space is broadcast). Vector quantities (velocity, B) are 3-sequences whose components are each independently float-or-callable. This is a BREAKING change to the old single time-only vector B callable `f(t) -> [Bx,By,Bz]`.
 - `SpaceTimeFunction<dim>` = `std::function<std::shared_ptr<Span<double>>(<dim spatial spans>, double time)>` (`src/initializer/data_provider.hpp:84`). It is evaluated at absolute `ctx.time`.
 - Batch-evaluation invariant (HARD): a composed function, when invoked, calls each input function exactly once over the whole coordinate batch and combines element-wise. Never evaluate inputs point-by-point. Mirror the existing `linComb2_` (`boundary_factory.hpp:176-187`).
