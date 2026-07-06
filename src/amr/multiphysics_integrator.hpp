@@ -32,6 +32,7 @@
 
 #include "core/logger.hpp"
 #include "core/utilities/algorithm.hpp"
+#include "core/utilities/mpi_utils.hpp"
 
 #include <limits>
 #include <algorithm>
@@ -463,9 +464,10 @@ namespace solver
          * enforced by getMaxFinerLevelDt). Stability on level i therefore requires
          * dt_0 <= dt_i^stable * prod_{j<=i} ratio_j^2. The tightest such bound wins, hence the min.
          *
-         * Each solver.computeStableDt(...) already applies the cfl/fourier coefficients and reduces
-         * across ranks, returning its level's GLOBAL stable dt; the loop below is pure local
-         * arithmetic (projection + min) and yields the same dt_0 on every rank.
+         * Each solver.computeStableDt(...) applies the cfl/fourier coefficients and returns its
+         * level's LOCAL (per-rank, not yet reduced) stable dt; the loop below is pure local
+         * arithmetic (projection + min), and the cross-rank reduction is done exactly once at the
+         * end rather than once per level.
          */
         double computeStableDt(SAMRAI::hier::PatchHierarchy& hierarchy, double const cfl,
                                double const fourier)
@@ -486,14 +488,15 @@ namespace solver
                     l0ProjectionFactor *= r * r;
                 }
 
-                // global per-level stable dt (solver applies cfl/fourier + cross-rank reduction)
+                // local per-level stable dt (solver applies cfl/fourier, no reduction yet)
                 auto const levelDt
                     = getSolver_(iLevel).computeStableDt(getModel_(iLevel), *level, cfl, fourier);
 
                 dt0 = std::min(dt0, levelDt * l0ProjectionFactor);
             }
 
-            return dt0;
+            // single cross-rank reduction for the whole cascade, instead of one per level
+            return core::mpi::min(dt0);
         }
 
 

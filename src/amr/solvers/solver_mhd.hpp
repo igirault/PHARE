@@ -521,7 +521,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::comput
         });
     }
 
-    return core::mpi::min(dt); // reduce across the ranks the level is distributed over
+    return dt; // LOCAL (per-rank) min; caller reduces once across ranks for the whole cascade
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger>

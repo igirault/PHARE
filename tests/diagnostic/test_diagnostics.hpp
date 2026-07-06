@@ -87,7 +87,7 @@ struct Hi5Diagnostic
 
     void dump(double current_timestamp = 0, double current_timestep = 1)
     {
-        dMan.dump(current_timestamp, current_timestep);
+        dMan.dump(current_timestamp, current_timestep, /*coarseStepIndex=*/0);
     }
 
     Hierarchy& hierarchy_;

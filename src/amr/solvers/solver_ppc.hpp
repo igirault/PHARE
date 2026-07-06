@@ -359,7 +359,7 @@ double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& mode
         });
     }
 
-    return core::mpi::min(dt); // reduce across the ranks the level is distributed over
+    return dt; // LOCAL (per-rank) min; caller reduces once across ranks for the whole cascade
 }
 
 

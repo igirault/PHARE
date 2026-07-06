@@ -5,6 +5,7 @@
 #include "core/def.hpp"
 #include "core/logger.hpp"
 #include "core/utilities/mpi_utils.hpp"
+#include "core/utilities/cadence.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -22,7 +23,7 @@ namespace PHARE::restarts
 class IRestartsManager
 {
 public:
-    virtual bool dump(double timeStamp, double timeStep) = 0;
+    virtual bool dump(double timeStamp, double timeStep, std::size_t coarseStepIndex) = 0;
     inline virtual ~IRestartsManager();
 };
 IRestartsManager::~IRestartsManager() {}
@@ -33,7 +34,7 @@ template<typename Writer>
 class RestartsManager : public IRestartsManager
 {
 public:
-    bool dump(double timeStamp, double timeStep) override;
+    bool dump(double timeStamp, double timeStep, std::size_t coarseStepIndex) override;
 
 
 
@@ -77,48 +78,13 @@ public:
     RestartsManager& operator=(RestartsManager&&)      = delete;
 
 private:
-    // A scheduled time is "reached" if it lies before the next step boundary: scheduledTime is
-    // within (or behind) the current step [timeStamp, timeStamp+timeStep). Compared as
-    // (scheduledTime - timeStamp) < timeStep with a float cast to truncate trailing fp imprecision
-    // (same robustness as the historical |nextTime-timeStamp| < timeStep): a time exactly one step
-    // ahead (scheduledTime == timeStamp+timeStep) is NOT consumed now -- it belongs to the next
-    // step. There is no abs(): a time already behind timeStamp yields a large negative difference,
-    // so it stays "reached" and the catch-up loop keeps advancing instead of freezing.
-    bool reached_(double const scheduledTime, double const timeStamp, double const timeStep) const
-    {
-        return static_cast<float>(scheduledTime - timeStamp) < static_cast<float>(timeStep);
-    }
-
-    // Advance idx past every scheduled time the current step has reached; return true if any.
-    // The while-loop (vs a single ++) keeps the cadence from freezing when one step overshoots
-    // several scheduled times (dt > period, or adaptive dt growing past the period): a single ++
-    // would let nextTime fall more than a step behind currentTime, after which
-    // |nextTime-currentTime| never drops below dt again and all remaining checkpoints are silently
-    // lost.
-    bool catchUp_(std::vector<double> const& times, std::size_t& idx, double const timeStamp,
-                  double const timeStep) const
-    {
-        bool acted = false;
-        while (idx < times.size() and reached_(times[idx], timeStamp, timeStep))
-        {
-            acted = true;
-            ++idx;
-        }
-        return acted;
-    }
-
-    bool needsElapsedAction_(double const nextTime) const
-    {
-        return core::mpi::unix_timestamp_now() > nextTime;
-    }
-
-
     bool needsWrite_(RestartsProperties const& rest, double const timeStamp, double const timeStep)
     {
-        auto const simUnit = catchUp_(rest.writeTimestamps, nextWriteSimUnit_, timeStamp, timeStep);
+        auto const simUnit
+            = core::cadence_catch_up(rest.writeTimestamps, nextWriteSimUnit_, timeStamp, timeStep);
 
         auto const elapsed = nextWriteElapsed_ < rest.elapsedTimestamps.size()
-                             and needsElapsedAction_(rest.elapsedTimestamps[nextWriteElapsed_]);
+                             and core::cadence_elapsed(rest.elapsedTimestamps[nextWriteElapsed_]);
 
         if (elapsed)
             ++nextWriteElapsed_;
@@ -131,7 +97,6 @@ private:
     std::unique_ptr<Writer> writer_;
     std::size_t nextWriteSimUnit_ = 0;
     std::size_t nextWriteElapsed_ = 0;
-    std::size_t iteration_        = 0; ///< coarse-step counter for writeNiterPeriod cadence
 
     std::time_t const start_time_{core::mpi::unix_timestamp_now()};
 };
@@ -175,24 +140,25 @@ RestartsManager<Writer>::addRestartDict(initializer::PHAREDict const& params)
 
 
 template<typename Writer>
-bool RestartsManager<Writer>::dump(double timeStamp, double timeStep)
+bool RestartsManager<Writer>::dump(double timeStamp, double timeStep,
+                                   std::size_t coarseStepIndex)
 {
     if (!restarts_properties_)
         return false; // not active
 
     // iteration-based cadence: write every writeNiterPeriod coarse steps (the only timestamp-free
     // option valid under adaptive dt). needsWrite_ is called unconditionally so its timestamp
-    // index still advances.
+    // index still advances. coarseStepIndex is the caller's (Simulator's) real coarse-step
+    // counter, restart-safe and independent of how many times dump() itself gets called.
     bool const niterNow = restarts_properties_->writeNiterPeriod > 0
-                          and (iteration_ % restarts_properties_->writeNiterPeriod == 0);
+                          and (coarseStepIndex % restarts_properties_->writeNiterPeriod == 0);
     bool const writeNow = needsWrite_(*restarts_properties_, timeStamp, timeStep);
-    ++iteration_;
 
     if (!(writeNow || niterNow))
         return false; // not needed now
 
     PHARE_LOG_SCOPE(3, "RestartsManager::dump");
-    writer_->dump(*restarts_properties_, timeStamp);
+    writer_->dump(*restarts_properties_, timeStamp, coarseStepIndex);
     return true;
 }
 

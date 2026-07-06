@@ -10,7 +10,6 @@
 import os
 import unittest
 import numpy as np
-import h5py
 
 from pathlib import Path
 
@@ -19,6 +18,13 @@ from pyphare.pharesee.hierarchy.fromh5 import h5_filename_from, h5_time_grp_key
 from pyphare.simulator.simulator import Simulator, startMPI
 
 from tests.simulator import SimulatorTest
+
+
+def _h5_time_group_count(h5_filepath):
+    import h5py  # see doc/conventions.md section 2.1.1
+
+    with h5py.File(h5_filepath, "r") as h5_file:
+        return len(h5_file[h5_time_grp_key].keys())
 
 
 def setup_model(sim, ppc=10):
@@ -111,8 +117,7 @@ class AdaptiveCadenceTest(SimulatorTest):
         diagInfo = next(iter(sim.diagnostics.values()))
         h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
         self.assertTrue(Path(h5_filepath).exists())
-        with h5py.File(h5_filepath, "r") as h5_file:
-            self.assertEqual(len(h5_file[h5_time_grp_key].keys()), expected_dumps)
+        self.assertEqual(_h5_time_group_count(h5_filepath), expected_dumps)
 
     def test_restart_niter_period_under_adaptive_dt(self):
         """restart_options niter_period must fire on the same fixed coarse-step cadence."""
@@ -164,10 +169,62 @@ class AdaptiveCadenceTest(SimulatorTest):
         diag_dir = sim.diag_options["options"]["dir"]
         diagInfo = next(iter(sim.diagnostics.values()))
         h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
-        with h5py.File(h5_filepath, "r") as h5_file:
-            # one dump per step (init + each advance): if the cadence had frozen after the
-            # first step, this would be 1 instead of n_advances + 1
-            self.assertEqual(len(h5_file[h5_time_grp_key].keys()), n_advances + 1)
+        # one dump per step (init + each advance): if the cadence had frozen after the
+        # first step, this would be 1 instead of n_advances + 1
+        self.assertEqual(_h5_time_group_count(h5_filepath), n_advances + 1)
+
+    def test_dump_scheduled_exactly_at_final_time_is_not_dropped(self):
+        """Regression test: under adaptive dt, timeStep() clamps to 0 on the very last step
+        (currentTime()==endTime()). If dump() re-derived its timestep from a fresh timeStep()
+        query instead of the dt that actually produced the current state, a diagnostic scheduled
+        exactly at final_time would silently never fire (0 < 0 is always false)."""
+        final_time = 0.2  # small: run() drives the whole thing to completion, few steps expected
+
+        sim = self.simulation(
+            **base_args(out + "/final_time_dump", final_time=final_time)
+        )
+        setup_model(sim)
+        ph.ElectromagDiagnostics(quantity="B", write_timestamps=np.array([final_time]))
+
+        self.simulator = Simulator(sim)
+        self.simulator.run()
+        self.simulator = None  # run() already reset()
+
+        diag_dir = sim.diag_options["options"]["dir"]
+        diagInfo = next(iter(sim.diagnostics.values()))
+        h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
+        self.assertEqual(_h5_time_group_count(h5_filepath), 1)
+
+    def test_restart_persists_coarse_step_index(self):
+        """Regression test: the coarse-step count must be persisted into the restart file (as
+        the C++ side's write_niter_period/niter_period cadence relies on resuming from it, not
+        resetting to 0 on restart) and must be readable back via restart_coarse_step()."""
+        from pyphare.cpp import cpp_etc_lib
+
+        n_advances = 5
+
+        sim = self.simulation(
+            **base_args(
+                out + "/restart_persists_coarse_step",
+                restart_options=dict(mode="overwrite", timestamps=[0.0]),
+            )
+        )
+        setup_model(sim)
+
+        self.simulator = Simulator(sim, auto_dump=False).initialize()
+        for _ in range(n_advances):
+            self.simulator.advance()
+        self.simulator.dump()  # force a restart checkpoint at the current coarse step
+        self.simulator.reset()
+
+        restart_dir = sim.restart_options["dir"]
+        restart_time_dirs = [
+            p for p in Path(restart_dir).iterdir() if p.is_dir()
+        ]
+        self.assertEqual(len(restart_time_dirs), 1)
+        self.assertEqual(
+            cpp_etc_lib().restart_coarse_step(str(restart_time_dirs[0])), n_advances
+        )
 
 
 if __name__ == "__main__":

@@ -24,6 +24,17 @@ def _serialized_simulation_string(restart_file_dir):
     return cpp_etc_lib().serialized_simulation_string(restart_file_dir)
 
 
+def _restart_coarse_step(restart_file_dir):
+    """
+    the coarse-step count persisted in the restart file being resumed from, so
+    write_niter_period/niter_period cadence can continue its absolute schedule across a
+    restart instead of resetting to 0. Restart files predating this attribute default to 0.
+    """
+    from pyphare.cpp import cpp_etc_lib
+
+    return cpp_etc_lib().restart_coarse_step(restart_file_dir)
+
+
 # converts scalars to array of expected size
 # converts lists to arrays
 class py_fn_wrapper:
@@ -281,6 +292,10 @@ def populateDict(sim):
             )
             add_string(restarts_path + "loadPath", restart_file_load_path)
             add_double(restarts_path + "restart_time", restart_time)
+            add_int(
+                restarts_path + "restart_coarse_step",
+                _restart_coarse_step(restart_file_load_path),
+            )
 
         if "mode" in restart_options:
             add_string(restarts_path + "mode", restart_options["mode"])

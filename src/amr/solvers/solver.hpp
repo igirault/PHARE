@@ -122,8 +122,10 @@ namespace solver
 
 
         /**
-         * @brief computeStableDt returns the level's GLOBAL stable time step, already reduced
-         * across every rank the level is distributed over (so the value is identical on all ranks).
+         * @brief computeStableDt returns the level's LOCAL stable time step: the minimum over
+         * only the patches owned by the calling rank, NOT YET reduced across the ranks the level
+         * is distributed over. The caller (MultiPhysicsIntegrator::computeStableDt) is
+         * responsible for the single cross-rank reduction covering the whole multi-level cascade.
          *
          * It combines two stability buckets, each scaled by its own coefficient (both normalized so
          * that 1 is the stability limit independent of dimension; choose in (0, 1]):
