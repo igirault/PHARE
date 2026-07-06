@@ -127,14 +127,6 @@ public:
                         "FixedPressureOutflow boundary type is not supported for this physical "
                         "model.");
                 break;
-            case BoundaryType::AdaptiveOutflow:
-                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
-                    register_adaptive_outflow_conditions_(boundary, data, quantities, thermo);
-                else
-                    throw std::runtime_error(
-                        "AdaptiveOutflow boundary type is not supported for this physical "
-                        "model.");
-                break;
             default: throw std::runtime_error("Boundary type not implemented.");
         }
         return boundary;
@@ -627,89 +619,6 @@ private:
             }
         }
     }
-
-
-    /**
-     * @brief Register boundary conditions for an adaptive outflow boundary.
-     *
-     * ρ, ρv, and B use Neumann (zero-gradient) conditions, exactly like a fixed-pressure
-     * outflow. The pressure uses @c FieldAdaptiveOutflowPressureBoundaryCondition, which
-     * decides per tangential ghost-column between zero-gradient (super-magnetofast) and
-     * Dirichlet at the target pressure (sub-fast); the total energy ghost values are then
-     * derived from that ghost pressure via @c
-     * FieldTotalEnergyFromPressureBoundaryCondition.
-     *
-     * Only available for physical quantity types carrying conserved MHD variables.
-     */
-    static void register_adaptive_outflow_conditions_(boundary_ptr_type& boundary,
-                                                      initializer::PHAREDict const& data,
-                                                      _model_menu_type const& quantities,
-                                                      std::shared_ptr<Thermo> thermo)
-        requires HasInflowQuantities<PhysicalQuantityT>
-    {
-        if (!thermo)
-            throw std::runtime_error(
-                "BoundaryFactory: a Thermo object is required for AdaptiveOutflow "
-                "boundaries but none was provided.");
-
-        double const pressure = data["pressure"].to<double>();
-
-        using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
-        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
-        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
-
-        auto rho_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
-                                                  GridLayoutT>()};
-        auto P_bc    = std::shared_ptr<ScalarBcType>{FieldBoundaryConditionFactory::create<
-               FieldBoundaryConditionType::AdaptiveOutflowPressure, FieldT, GridLayoutT>(pressure,
-                                                                                         thermo)};
-        auto rhoV_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
-                                                  GridLayoutT>()};
-        auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
-            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT>()};
-
-        for (auto const quantity : quantities.scalars)
-        {
-            switch (quantity)
-            {
-                case (PhysicalQuantityT::Scalar::rho):
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                        quantity);
-                    break;
-                case (PhysicalQuantityT::Scalar::Etot):
-                    boundary->template registerFieldCondition<
-                        FieldBoundaryConditionType::TotalEnergyFromPressure>(
-                        quantity, rho_bc, rhoV_bc, B_bc, P_bc, thermo);
-                    break;
-                default:
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
-                        quantity);
-                    break;
-            }
-        }
-
-        for (auto const quantity : quantities.vectors)
-        {
-            switch (quantity)
-            {
-                case (PhysicalQuantityT::Vector::rhoV):
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                        quantity);
-                    break;
-                case (PhysicalQuantityT::Vector::B):
-                    boundary->template registerFieldCondition<
-                        FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
-                    break;
-                default:
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
-                        quantity);
-                    break;
-            }
-        }
-    }
-
 
 };
 

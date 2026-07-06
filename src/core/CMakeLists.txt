@@ -44,7 +44,6 @@ set( SOURCES_INC
      numerics/boundary_condition/field_antisymmetric_boundary_condition.hpp
      numerics/boundary_condition/field_divergence_free_transverse_neumann_boundary_condition.hpp
      numerics/boundary_condition/field_total_energy_from_pressure_boundary_condition.hpp
-     numerics/boundary_condition/field_adaptive_outflow_pressure_boundary_condition.hpp
      numerics/interpolator/interpolator.hpp
      numerics/pusher/boris.hpp
      numerics/pusher/pusher.hpp
