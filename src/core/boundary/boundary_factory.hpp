@@ -90,7 +90,8 @@ public:
         switch (type)
         {
             case BoundaryType::None:
-                // do nothing
+                register_none_conditions_(boundary, quantities);
+                break;
             case BoundaryType::Reflective:
                 register_reflective_conditions_(boundary, data, quantities);
                 break;
@@ -203,6 +204,17 @@ private:
         return std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet,
                                                   VecFieldT, GridLayoutT>(Bfns)};
+    }
+
+    /** @brief Register no-op (None) conditions so a "none" boundary leaves ghosts untouched
+     * rather than falling through to another type or throwing "condition not found". */
+    static void register_none_conditions_(boundary_ptr_type& boundary,
+                                          _model_menu_type const& quantities)
+    {
+        for (auto const quantity : quantities.scalars)
+            boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(quantity);
+        for (auto const quantity : quantities.vectors)
+            boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(quantity);
     }
 
     /** @brief Register boundary conditions to make a reflective boundary */

@@ -145,7 +145,7 @@ getAdjacentBoundaryLocations(Codim2BoundaryLocation location)
         case Codim2BoundaryLocation::YUpper_ZUpper:
             return {BoundaryLocation::YUpper, BoundaryLocation::ZUpper};
 
-        default: return {};
+        default: throw std::runtime_error("Invalid adjacent boundary location index.");
     }
 }
 
@@ -192,7 +192,7 @@ getAdjacentBoundaryLocations(Codim3BoundaryLocation location)
         case Codim3BoundaryLocation::XUpper_YUpper_ZUpper:
             return {BoundaryLocation::XUpper, BoundaryLocation::YUpper, BoundaryLocation::ZUpper};
 
-        default: return {};
+        default: throw std::runtime_error("Invalid adjacent boundary location index.");
     }
 }
 

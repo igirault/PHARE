@@ -395,12 +395,7 @@ namespace amr
             // has not run yet). Raise regrid-fallback mode around the magnetic init fill so those
             // ghosts get the fallback (e.g. the prescribed inflow field) instead of the NaN
             // sentinel; boundaries without a fallback keep their normal condition.
-            magneticRefinePatchStrategy_.setRegridFallback(true);
-            struct RegridFallbackGuard
-            {
-                MagneticRefinePatchStrategyT& strat;
-                ~RegridFallbackGuard() { strat.setRegridFallback(false); }
-            } regridFallbackGuard{magneticRefinePatchStrategy_};
+            auto regridFallbackGuard = scopedRegridFallback_();
 
             magInitRefineSchedules[levelNumber]->fillData(initDataTime);
             densityInitRefiners_.fill(levelNumber, initDataTime);
@@ -732,12 +727,7 @@ namespace amr
             // Raise regrid-fallback mode so setPhysicalBoundaryConditions applies each boundary's
             // regrid fallback B condition instead of the normal one. Guarded so an exception in
             // fillData still clears the flag (the same instance is reused for the init fill).
-            magneticRefinePatchStrategy_.setRegridFallback(true);
-            struct RegridFallbackGuard
-            {
-                MagneticRefinePatchStrategyT& strat;
-                ~RegridFallbackGuard() { strat.setRegridFallback(false); }
-            } regridFallbackGuard{magneticRefinePatchStrategy_};
+            auto regridFallbackGuard = scopedRegridFallback_();
 
             magSchedule->fillData(initDataTime);
         }
@@ -951,6 +941,19 @@ namespace amr
             = std::vector<std::shared_ptr<VectorFieldRefinePatchStrategyT>>;
         using MagneticRefinePatchStrategyList
             = std::vector<std::shared_ptr<MagneticRefinePatchStrategyT>>;
+
+        // RAII: enable regrid-fallback BC mode for the enclosing scope, clearing it on
+        // exit even if fillData throws. Reused by initLevel and magneticRegriding_.
+        [[nodiscard]] auto scopedRegridFallback_()
+        {
+            magneticRefinePatchStrategy_.setRegridFallback(true);
+            struct Guard
+            {
+                MagneticRefinePatchStrategyT& strat;
+                ~Guard() { strat.setRegridFallback(false); }
+            };
+            return Guard{magneticRefinePatchStrategy_};
+        }
 
         std::vector<scalar_id_map_type> allScalarIdMaps_;
         std::vector<vector_id_map_type> allVectorIdMaps_;

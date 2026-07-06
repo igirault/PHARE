@@ -267,6 +267,7 @@ namespace core
             constexpr size_t d = static_cast<size_t>(direction);
             static_assert(std::is_integral_v<decltype(offset)>,
                           "'offset' template parameter must have an integral type.");
+            static_assert(d < dim, "'direction' out of range for this Point's dimensionality.");
 
             Point<Type, dim> result = *this;
             result[d] += static_cast<Type>(offset);
@@ -275,6 +276,7 @@ namespace core
 
         NO_DISCARD constexpr Point<Type, dim> neighbor(std::size_t d, int offset) const
         {
+            assert(d < dim);
             Point<Type, dim> result = *this;
             result[d] += static_cast<Type>(offset);
             return result;

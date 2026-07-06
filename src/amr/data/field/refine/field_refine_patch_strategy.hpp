@@ -202,6 +202,9 @@ public:
         std::shared_ptr<cartesian_patch_geometry_type> patchGeom
             = std::static_pointer_cast<cartesian_patch_geometry_type>(patch.getPatchGeometry());
 
+        // `*(&(getField(...)))` extracts the non-owning Field view out of the patch-owned
+        // Grid via Grid::operator&() (returns &field_). `auto` then copies that lightweight
+        // view, which still aliases the patch buffer, so bc->apply(...) writes to patch data.
         auto scalarOrTensorField = [&]() {
             if constexpr (is_scalar)
             {

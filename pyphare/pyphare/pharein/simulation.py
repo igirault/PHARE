@@ -394,14 +394,14 @@ def check_boundary_conditions(ndim, **kwargs):
     sides = "lower", "upper"
     boundary_types = kwargs["boundary_types"]
     physical_directions = []
-    for dir, type in zip(all_directions, boundary_types):
-        if type == "physical":
-            physical_directions.append(dir)
+    for direction, boundary_type in zip(all_directions, boundary_types):
+        if boundary_type == "physical":
+            physical_directions.append(direction)
     physical_boundary_locations = [
-        f"{dir}{side}" for dir in physical_directions for side in sides
+        f"{direction}{side}" for direction in physical_directions for side in sides
     ]
     all_boundary_locations = [
-        f"{dir}{side}" for side in sides for dir in all_directions
+        f"{direction}{side}" for side in sides for direction in all_directions
     ]
     boundary_conditions = kwargs.get("boundary_conditions", {})
 
@@ -866,7 +866,13 @@ def check_mhd_eos(**kwargs):
     eos = kwargs.get("eos", "ideal_gas")
     gamma = kwargs.get("gamma", 5.0 / 3.0)
 
-    return eos, gamma
+    valid_eos = ("ideal_gas",)
+    if eos not in valid_eos:
+        raise ValueError(f"Invalid eos '{eos}', expected one of {valid_eos}")
+    if not isinstance(gamma, (int, float)) or gamma <= 1:
+        raise ValueError(f"'gamma' must be a scalar greater than 1, got {gamma!r}")
+
+    return eos, float(gamma)
 
 
 def check_mhd_constants(**kwargs):

@@ -45,6 +45,7 @@ public:
     FieldDirichletBoundaryCondition() = default;
 
     FieldDirichletBoundaryCondition(value_type value)
+        requires(is_scalar)
         : value_{value} {};
 
     FieldDirichletBoundaryCondition(std::array<value_type, N> value)
@@ -52,6 +53,7 @@ public:
 
     // Function-based Dirichlet value: f(x[,y[,z]], t). Scalar field overload.
     FieldDirichletBoundaryCondition(initializer::SpaceTimeFunction<dimension> fn)
+        requires(is_scalar)
         : hasFn_{true}
     {
         fn_[0] = std::move(fn);

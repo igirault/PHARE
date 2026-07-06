@@ -58,7 +58,7 @@ final_time = nsteps * time_step
 dump_freq = 1
 # time_step = 0.2
 timestamps = np.arange(0.0, final_time, dump_freq*time_step)
-diag_dir = "phare_outputs/shock"
+diag_dir = "phare_outputs/shock_super_alfvenic_inflow"
 
 
 def print_case_info():
