@@ -35,14 +35,20 @@ is defined once, shared by all diagnostic formats.
 3. **State access**: interface templated on `State` type (`MHDState`,
    `HybridState`); no runtime state adapter. Constants such as gamma are captured
    in the implementation's constructor.
-4. **Buffers**: shared scratch, not per-quantity SAMRAI resources. Writer-owned
-   raw memory block (`std::vector<double>`) grown lazily to the most demanding
-   (rank, centering) case for the current patch; `Field`/`VecField` views are
-   constructed per patch over that block. Compute and write are fused per patch.
-   No ResourcesManager registration: scratch is transient and never crosses
-   patches, so `setOnPatch` machinery is unnecessary. `Field(name, qty, ptr,
-   dims)` supports this directly (same pattern as the test-side
-   `UsableTensorField` fixtures).
+4. **Buffers** (revised 2026-07-06 after review): shared generic scratch,
+   SAMRAI-allocated. `MHDModel` registers and allocates one all-primal scalar
+   (`PHARE_derived_scalar`, `ScalarAllPrimal`) and one all-primal vector
+   (`PHARE_derived_vec`, `VecAllPrimal`) — all-primal is the most demanding
+   centering, so any centering view fits inside the per-patch allocation.
+   Writers build centering-correct `Field`/`VecField` views over these backing
+   buffers per patch (`Field(name, qty, ptr, dims)`). Compute and write remain
+   fused per patch per diagnostic: a true two-phase (compute all patches, then
+   write) is impossible with a single shared scratch because
+   `DiagnosticsManager::dump` computes all diagnostics before one patch visit
+   writes them all — two derived scalars in the same dump cycle would clobber
+   each other. Memory cost equals the old `V_diag_`+`P_diag_` pair but is
+   quantity-agnostic. (Earlier writer-owned `std::vector` scratch was replaced
+   to keep allocation under SAMRAI/ResourcesManager per project convention.)
 5. **Centerings covered (v1)**: scalars: cell-centered, node-centered; vectors:
    cell-centered, E-like, B-like. No tensors in v1.
 6. **Writer scope**: both stacks (phareh5 and vtkhdf) from the start, removing the
