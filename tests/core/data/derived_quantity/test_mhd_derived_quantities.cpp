@@ -1,6 +1,7 @@
 #include "core/data/derived_quantity/mhd_derived_quantities.hpp"
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee_mhd.hpp"
+#include "core/numerics/ampere/ampere.hpp"
 
 #include "gtest/gtest.h"
 
@@ -130,6 +131,43 @@ TEST_F(MhdDerived, factoryRegistersVPandDivB)
     EXPECT_NE(registry.find<0>("P"), nullptr);
     EXPECT_NE(registry.find<0>("divB"), nullptr);
     EXPECT_EQ(registry.find<0>("V"), nullptr);
+}
+
+TEST_F(MhdDerived, currentDensityMatchesAmpereDirectly)
+{
+    // Bx(i,j) = i, By(i,j) = j, Bz = 0 => J = curl(B) is a simple, known
+    // combination of the mesh spacings; check MhdCurrentDensity agrees
+    // exactly with calling core::Ampere directly on the same B.
+    auto& Bx = state.B[0];
+    auto& By = state.B[1];
+    for (std::uint32_t i = 0; i < Bx.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < Bx.shape()[1]; ++j)
+            Bx(i, j) = static_cast<double>(i);
+    for (std::uint32_t i = 0; i < By.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < By.shape()[1]; ++j)
+            By(i, j) = static_cast<double>(j);
+    fill(state.B[2], 0.0);
+
+    UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
+    MhdCurrentDensity<State_t, YeeLayout_t>{}.compute(*state, layout, out, 0.0);
+
+    UsableVecFieldMHD<dim> expected{"expected", layout, MHDQuantity::Vector::VecElike};
+    Ampere<YeeLayout_t>{layout}(static_cast<VecFieldMHD<dim> const&>(state.B),
+                                 static_cast<VecFieldMHD<dim>&>(expected));
+
+    auto& J        = static_cast<VecFieldMHD<dim>&>(out);
+    auto& expectedJ = static_cast<VecFieldMHD<dim>&>(expected);
+    layout.evalOnGhostBox(J[0], [&](auto const&... args) {
+        EXPECT_DOUBLE_EQ(J[0](args...), expectedJ[0](args...));
+        EXPECT_DOUBLE_EQ(J[1](args...), expectedJ[1](args...));
+        EXPECT_DOUBLE_EQ(J[2](args...), expectedJ[2](args...));
+    });
+}
+
+TEST_F(MhdDerived, factoryRegistersJ)
+{
+    auto registry = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3.);
+    EXPECT_NE(registry.find<1>("J"), nullptr);
 }
 
 int main(int argc, char** argv)

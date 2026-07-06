@@ -4,6 +4,7 @@
 #include "core/data/derived_quantity/derived_quantity.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
+#include "core/numerics/ampere/ampere.hpp"
 #include "core/utilities/index/index.hpp"
 
 #include <memory>
@@ -130,12 +131,32 @@ private:
 
 
 template<typename State, typename GridLayout>
+class MhdCurrentDensity : public DerivedQuantity<State, GridLayout, 1>
+{
+    using Super = DerivedQuantity<State, GridLayout, 1>;
+
+public:
+    using typename Super::out_t;
+
+    std::string name() const override { return "J"; }
+    VectorCentering centering() const override { return VectorCentering::Elike; }
+
+    void compute(State const& state, GridLayout const& layout, out_t& out,
+                 double /*time*/) const override
+    {
+        Ampere<GridLayout>{layout}(state.B, out);
+    }
+};
+
+
+template<typename State, typename GridLayout>
 DerivedQuantityRegistry<State, GridLayout> makeMhdDerivedQuantities(double const gamma)
 {
     DerivedQuantityRegistry<State, GridLayout> registry;
     registry.template add<1>(std::make_unique<MhdVelocity<State, GridLayout>>());
     registry.template add<0>(std::make_unique<MhdPressure<State, GridLayout>>(gamma));
     registry.template add<0>(std::make_unique<MhdDivB<State, GridLayout>>());
+    registry.template add<1>(std::make_unique<MhdCurrentDensity<State, GridLayout>>());
     return registry;
 }
 
