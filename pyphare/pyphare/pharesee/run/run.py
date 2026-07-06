@@ -34,6 +34,7 @@ quantities_per_file = {
     "mhd_P": "mhd_P",
     "mhd_rhoV": "mhd_rhoV",
     "mhd_Etot": "mhd_Etot",
+    "mhd_divB": "mhd_divB",
 }
 
 
@@ -237,6 +238,18 @@ class Run:
             return self._get(hier, time, merged, interp)
 
         h = compute_hier_from(_compute_to_primal, hier, value="mhdEtot")
+        return ScalarField(h)
+
+    def GetMHDdivB(
+        self, time, merged=False, interp="nearest", all_primal=True, **kwargs
+    ):
+        if merged:
+            all_primal = False
+        hier = self._get_hierarchy(time, "mhd_divB.h5", **kwargs)
+        if not all_primal:
+            return self._get(hier, time, merged, interp)
+
+        h = compute_hier_from(_compute_to_primal, hier, value="mhdDivB")
         return ScalarField(h)
 
     def GetMagneticFlux(

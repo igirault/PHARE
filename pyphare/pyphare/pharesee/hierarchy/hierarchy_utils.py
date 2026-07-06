@@ -47,6 +47,7 @@ field_qties = {
     "rhoV_y": "mhdRhoVy",
     "rhoV_z": "mhdRhoVz",
     "Etot": "mhdEtot",
+    "divB": "mhdDivB",
 }
 
 
