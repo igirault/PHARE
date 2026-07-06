@@ -1,6 +1,8 @@
 #ifndef PHARE_DIAGNOSTIC_DETAIL_VTK_TYPES_ELECTROMAG_HPP
 #define PHARE_DIAGNOSTIC_DETAIL_VTK_TYPES_ELECTROMAG_HPP
 
+#include "core/data/derived_quantity/derived_scratch.hpp"
+
 #include "diagnostic/detail/vtkh5_type_writer.hpp"
 
 #include "amr/physical_models/mhd_model.hpp"
@@ -61,6 +63,8 @@ void ElectromagDiagnosticWriter<H5Writer>::setup(DiagnosticProperties& diagnosti
         mem.try_emplace(diagnostic.quantity);
     auto& info = mem[diagnostic.quantity];
 
+    auto const& derived = modelView.derivedQuantities();
+
     // assumes exists for all models
     auto const init = [&](auto const& level) -> std::optional<std::size_t> {
         if (isActiveDiag(diagnostic, "/", "EM_B"))
@@ -68,6 +72,17 @@ void ElectromagDiagnosticWriter<H5Writer>::setup(DiagnosticProperties& diagnosti
 
         if (isActiveDiag(diagnostic, "/", "EM_E"))
             return initializer.template initTensorFieldFileLevel<1>(level);
+
+        for (auto const& dq : derived.template quantities<1>())
+            if (isActiveDiag(diagnostic, "/", "EM_" + dq->name()))
+                return initializer.template initTensorFieldFileLevel<1>(level);
+
+        if constexpr (solver::is_mhd_model_v<Model_t>)
+        {
+            for (auto const& dq : derived.template quantities<0>())
+                if (isActiveDiag(diagnostic, "/", "EM_" + dq->name()))
+                    return initializer.initFieldFileLevel(level);
+        }
 
         return std::nullopt;
     };
@@ -113,6 +128,32 @@ void ElectromagDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnosti
                         auto& E = this->h5Writer_.modelView().getE();
                         writer.template writeTensorField<1>(E, layout);
                     }
+                }
+
+                auto const& derived = modelView.derivedQuantities();
+                auto const time     = this->h5Writer_.timestamp();
+
+                for (auto const& dq : derived.template quantities<1>())
+                    if (isActiveDiag(diagnostic, "/", "EM_" + dq->name()))
+                    {
+                        auto vecfield
+                            = core::derived_vector_view<typename Model_t::physical_quantity_type>(
+                                modelView.derivedVecScratch(), dq->centering(), layout);
+                        dq->compute(modelView.state(), layout, vecfield, time);
+                        writer.template writeTensorField<1>(vecfield, layout);
+                    }
+
+                if constexpr (solver::is_mhd_model_v<Model_t>)
+                {
+                    for (auto const& dq : derived.template quantities<0>())
+                        if (isActiveDiag(diagnostic, "/", "EM_" + dq->name()))
+                        {
+                            auto field = core::derived_scalar_view<
+                                typename Model_t::physical_quantity_type>(
+                                modelView.derivedScalarScratch(), dq->centering(), layout);
+                            dq->compute(modelView.state(), layout, field, time);
+                            writer.writeField(field, layout);
+                        }
                 }
             };
 
