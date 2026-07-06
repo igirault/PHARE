@@ -5,6 +5,8 @@
 #include "core/utilities/mpi_utils.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
+#include <optional>
+
 #include "initializer/data_provider.hpp"
 
 #include "diagnostic/diagnostic_model_view.hpp"
@@ -197,6 +199,7 @@ private:
     double timestamp_ = 0;
     std::string filePath_;
     std::string patchPath_; // is passed around as "virtual write()" has no parameters
+    std::optional<GridLayout> patchLayout_; // set per-patch during visits, like patchPath_
     Attributes fileAttributes_;
 
     std::unordered_map<std::string, HiFile::AccessMode> file_flags;
@@ -238,6 +241,7 @@ private:
 
 
     auto& patchPath() const { return patchPath_; }
+    NO_DISCARD auto& patchLayout() const { return *patchLayout_; }
     // used by friends end
 };
 
@@ -302,7 +306,9 @@ void H5Writer<ModelView>::initializeDatasets_(std::vector<DiagnosticProperties*>
     for (auto* diag : diagnostics)
         typeWriters_.at(diag->type)->createFiles(*diag);
 
-    auto collectPatchAttributes = [&](GridLayout&, std::string patchID, std::size_t iLevel) {
+    auto collectPatchAttributes = [&](GridLayout& gridLayout, std::string patchID,
+                                      std::size_t iLevel) {
+        patchLayout_.emplace(gridLayout);
         if (!lvlPatchIDs.count(iLevel))
             lvlPatchIDs.emplace(iLevel, std::vector<std::string>());
 
@@ -340,6 +346,7 @@ void H5Writer<ModelView>::writeDatasets_(std::vector<DiagnosticProperties*> cons
 
     std::size_t maxLocalLevel = 0;
     auto writePatch = [&](GridLayout& gridLayout, std::string patchID, std::size_t iLevel) {
+        patchLayout_.emplace(gridLayout);
         if (!patchAttributes.count(iLevel))
             patchAttributes.emplace(iLevel, std::vector<std::pair<std::string, Attributes>>{});
         patchPath_ = getPatchPathAddTimestamp(iLevel, patchID);

@@ -1,10 +1,10 @@
 #ifndef PHARE_DIAGNOSTIC_DETAIL_TYPES_MHD_HPP
 #define PHARE_DIAGNOSTIC_DETAIL_TYPES_MHD_HPP
 
-#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "diagnostic/detail/h5typewriter.hpp"
 
 #include "core/data/vecfield/vecfield_component.hpp"
+#include "core/data/derived_quantity/derived_scratch.hpp"
 
 namespace PHARE::diagnostic::h5
 {
@@ -14,6 +14,7 @@ namespace PHARE::diagnostic::h5
  * /t#/pl#/p#/mhd/pressure
  * /t#/pl#/p#/mhd/rhoV/(x,y,z)
  * /t#/pl#/p#/mhd/Etot
+ * /t#/pl#/p#/mhd/divB
  */
 template<typename H5Writer>
 class MHDDiagnosticWriter : public H5TypeWriter<H5Writer>
@@ -29,6 +30,11 @@ public:
     using Attributes = typename Super::Attributes;
     using GridLayout = typename H5Writer::GridLayout;
     using FloatType  = typename H5Writer::FloatType;
+
+    using ModelView_t = std::decay_t<decltype(std::declval<H5Writer&>().modelView())>;
+    using Model_t     = typename ModelView_t::Model_t;
+    using Scratch_t   = core::DerivedScratch<typename Model_t::vecfield_type,
+                                             typename Model_t::physical_quantity_type>;
 
     static constexpr auto dimension    = GridLayout::dimension;
     static constexpr auto interp_order = GridLayout::interp_order;
@@ -60,50 +66,21 @@ private:
     {
         return diagnostic.quantity == tree + name;
     }
+
+    Scratch_t scratch_;
 };
 
 template<typename H5Writer>
 void MHDDiagnosticWriter<H5Writer>::createFiles(DiagnosticProperties& diagnostic)
 {
     std::string tree{"/mhd/"};
-    checkCreateFileFor_(diagnostic, fileData_, tree, "rho", "V", "P", "rhoV", "Etot");
+    checkCreateFileFor_(diagnostic, fileData_, tree, "rho", "V", "P", "rhoV", "Etot", "divB");
 }
 
 template<typename H5Writer>
-void MHDDiagnosticWriter<H5Writer>::compute(DiagnosticProperties& diagnostic)
+void MHDDiagnosticWriter<H5Writer>::compute(DiagnosticProperties&)
 {
-    auto& h5Writer  = this->h5Writer_;
-    auto& modelView = h5Writer.modelView();
-    auto minLvl     = h5Writer.minLevel;
-    auto maxLvl     = h5Writer.maxLevel;
-
-    auto& rho  = modelView.getRho();
-    auto& V    = modelView.getV();
-    auto& B    = modelView.getB();
-    auto& P    = modelView.getP();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
-
-    std::string tree{"/mhd/"};
-    if (isActiveDiag(diagnostic, tree, "V"))
-    {
-        auto computeVelocity = [&](GridLayout& layout, std::string patchID, std::size_t iLevel) {
-            core::ToPrimitiveConverter<GridLayout> toPrim{layout};
-            toPrim.rhoVToVOnGhostBox(rho, rhoV, V);
-        };
-        modelView.visitHierarchy(computeVelocity, minLvl, maxLvl);
-    }
-    if (isActiveDiag(diagnostic, tree, "P"))
-    {
-        auto computePressure = [&](GridLayout& layout, std::string patchID, std::size_t iLevel) {
-            auto const gamma = diagnostic.fileAttributes["heat_capacity_ratio"]
-                                   .template to<double>(); // or FloatType if we want to expose that
-                                                           // to DiagnosticProperties
-            core::ToPrimitiveConverter<GridLayout> toPrim{layout};
-            toPrim.eosEtotToPOnGhostBox(gamma, rho, rhoV, B, Etot, P);
-        };
-        modelView.visitHierarchy(computePressure, minLvl, maxLvl);
-    }
+    // derived quantities are computed per patch during write(), into scratch views
 }
 
 template<typename H5Writer>
@@ -113,8 +90,6 @@ void MHDDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& diagnos
 {
     auto& h5Writer         = this->h5Writer_;
     auto& rho              = h5Writer.modelView().getRho();
-    auto& V                = h5Writer.modelView().getV();
-    auto& P                = h5Writer.modelView().getP();
     auto& rhoV             = h5Writer.modelView().getRhoV();
     auto& Etot             = h5Writer.modelView().getEtot();
     std::string lvlPatchID = std::to_string(iLevel) + "_" + patchID;
@@ -143,14 +118,27 @@ void MHDDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& diagnos
     std::string tree{"/mhd/"};
     if (isActiveDiag(diagnostic, tree, "rho"))
         infoDS(rho, "rho", patchAttributes[lvlPatchID]["mhd"]);
-    if (isActiveDiag(diagnostic, tree, "V"))
-        infoVF(V, "V", patchAttributes[lvlPatchID]["mhd"]);
-    if (isActiveDiag(diagnostic, tree, "P"))
-        infoDS(P, "P", patchAttributes[lvlPatchID]["mhd"]);
     if (isActiveDiag(diagnostic, tree, "rhoV"))
         infoVF(rhoV, "rhoV", patchAttributes[lvlPatchID]["mhd"]);
     if (isActiveDiag(diagnostic, tree, "Etot"))
         infoDS(Etot, "Etot", patchAttributes[lvlPatchID]["mhd"]);
+
+    auto const& derived = h5Writer.modelView().derivedQuantities();
+    auto const& layout  = h5Writer.patchLayout();
+
+    for (auto const& dq : derived.template quantities<0>())
+        if (isActiveDiag(diagnostic, tree, dq->name()))
+        {
+            auto field = scratch_.scalar(dq->centering(), layout);
+            infoDS(field, dq->name(), patchAttributes[lvlPatchID]["mhd"]);
+        }
+
+    for (auto const& dq : derived.template quantities<1>())
+        if (isActiveDiag(diagnostic, tree, dq->name()))
+        {
+            auto vecfield = scratch_.vector(dq->centering(), layout);
+            infoVF(vecfield, dq->name(), patchAttributes[lvlPatchID]["mhd"]);
+        }
 }
 
 template<typename H5Writer>
@@ -194,14 +182,18 @@ void MHDDiagnosticWriter<H5Writer>::initDataSets(
         std::string tree{"/mhd/"};
         if (isActiveDiag(diagnostic, tree, "rho"))
             initDS(path, attr["mhd"], "rho", null);
-        if (isActiveDiag(diagnostic, tree, "V"))
-            initVF(path, attr["mhd"], "V", null);
-        if (isActiveDiag(diagnostic, tree, "P"))
-            initDS(path, attr["mhd"], "P", null);
         if (isActiveDiag(diagnostic, tree, "rhoV"))
             initVF(path, attr["mhd"], "rhoV", null);
         if (isActiveDiag(diagnostic, tree, "Etot"))
             initDS(path, attr["mhd"], "Etot", null);
+
+        auto const& derived = h5Writer.modelView().derivedQuantities();
+        for (auto const& dq : derived.template quantities<0>())
+            if (isActiveDiag(diagnostic, tree, dq->name()))
+                initDS(path, attr["mhd"], dq->name(), null);
+        for (auto const& dq : derived.template quantities<1>())
+            if (isActiveDiag(diagnostic, tree, dq->name()))
+                initVF(path, attr["mhd"], dq->name(), null);
     };
 
     initDataSets_(patchIDs, patchAttributes, maxLevel, initPatch);
@@ -212,8 +204,6 @@ void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
 {
     auto& h5Writer = this->h5Writer_;
     auto& rho      = h5Writer.modelView().getRho();
-    auto& V        = h5Writer.modelView().getV();
-    auto& P        = h5Writer.modelView().getP();
     auto& rhoV     = h5Writer.modelView().getRhoV();
     auto& Etot     = h5Writer.modelView().getEtot();
     auto& h5file   = *fileData_.at(diagnostic.quantity);
@@ -246,14 +236,31 @@ void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
 
     if (isActiveDiag(diagnostic, tree, "rho"))
         writeDS(path + "rho", rho);
-    if (isActiveDiag(diagnostic, tree, "V"))
-        writeTF(path + "V", V);
-    if (isActiveDiag(diagnostic, tree, "P"))
-        writeDS(path + "P", P);
     if (isActiveDiag(diagnostic, tree, "rhoV"))
         writeTF(path + "rhoV", rhoV);
     if (isActiveDiag(diagnostic, tree, "Etot"))
         writeDS(path + "Etot", Etot);
+
+    auto& modelView     = h5Writer.modelView();
+    auto const& derived = modelView.derivedQuantities();
+    auto const& layout  = h5Writer.patchLayout();
+    auto const time     = h5Writer.timestamp();
+
+    for (auto const& dq : derived.template quantities<0>())
+        if (isActiveDiag(diagnostic, tree, dq->name()))
+        {
+            auto field = scratch_.scalar(dq->centering(), layout);
+            dq->compute(modelView.state(), layout, field, time);
+            writeDS(path + dq->name(), field);
+        }
+
+    for (auto const& dq : derived.template quantities<1>())
+        if (isActiveDiag(diagnostic, tree, dq->name()))
+        {
+            auto vecfield = scratch_.vector(dq->centering(), layout);
+            dq->compute(modelView.state(), layout, vecfield, time);
+            writeTF(path + dq->name(), vecfield);
+        }
 }
 
 template<typename H5Writer>
