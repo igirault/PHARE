@@ -39,7 +39,7 @@ Both the legacy HDF5 diagnostics (`src/diagnostic/detail/types/`, `PHARE::diagno
 
 ## Part 2 — J (Hybrid + MHD)
 
-New rank-1 `DerivedQuantity`, name `"J"`, `VectorCentering::Elike`, computed via the same curl-of-B formulas already used by `core::Ampere` (inlined directly in the derived-quantity class, consistent with the existing convention that derived quantities are self-contained — see `MhdDivB`).
+New rank-1 `DerivedQuantity`, name `"J"`, `VectorCentering::Elike`, computed by constructing `core::Ampere<GridLayout>{layout}` and calling it on `(B, out)` — the existing, already-shared-between-Hybrid-and-MHD curl-of-B operator (`src/core/numerics/ampere/ampere.hpp`), reused as-is rather than reimplemented.
 
 - `MhdCurrentDensity` in `mhd_derived_quantities.hpp`, added to `makeMhdDerivedQuantities` via `registry.add<1>(...)`.
 - `HybridCurrentDensity` in new `src/core/data/derived_quantity/hybrid_derived_quantities.hpp`, plus a new `makeHybridDerivedQuantities<State, GridLayout>()` factory function.
@@ -54,7 +54,7 @@ New rank-1 `DerivedQuantity`, name `"J"`, `VectorCentering::Elike`, computed via
 
 Hybrid's `getE()`/electromag `E` output is untouched (already a real stored field, already written).
 
-New `MhdElectricField` in `mhd_derived_quantities.hpp`, rank-1, name `"E"`, `VectorCentering::Elike`. Point-wise, self-contained (recomputes its own local J via the same inline curl formulas as `MhdCurrentDensity` — no cross-dependency between derived quantities):
+New `MhdElectricField` in `mhd_derived_quantities.hpp`, rank-1, name `"E"`, `VectorCentering::Elike`. Point-wise; recomputes its own local J via `core::Ampere` internally (same operator `MhdCurrentDensity` uses, called independently — no cross-dependency on the `MhdCurrentDensity` derived-quantity object itself, just on the same shared `Ampere` numerics class). Since `Field`/`VecFieldT` are non-owning views, the local J is backed by three `std::vector<double>` sized/shaped like `out`'s own components (same `Elike` centering, so no extra ModelView-level scratch buffer is needed — this is a self-contained, per-call heap allocation, acceptable since diagnostics are not a hot path). Formula, evaluated per-point after J is filled:
 
 ```
 E = -V×B                      (ideal, using bulk V, not an electron Ve)
@@ -72,16 +72,16 @@ Since `MhdElectricField` is registered through the same `makeMhdDerivedQuantitie
 
 ### New state plumbing required
 
-`eta`, `nu`, `hyper_mode` are not currently reachable from `MhdState`/`ModelView` — they live in `ComputeFluxes`'s `GodunovInfo` (solver-level config). Mirroring the existing `gamma_` precedent on `MhdState`:
+`eta`, `nu`, `hyper_mode` are not currently reachable from `MhdState`/`ModelView` — they live in `ComputeFluxes`'s `GodunovInfo` (solver-level config, itself built via `core::OhmInfo::FROM(dict)` parsing `"resistivity"`/`"hyper_resistivity"`/`"hyper_mode"` keys). Mirroring the existing `gamma_` precedent on `MhdState`, and reusing `core::OhmInfo::FROM` rather than re-parsing:
 
-- `src/core/models/mhd_state.hpp`: add `eta_`, `nu_`, `hyperMode_` members, parsed from dict in the constructor alongside `gamma_`.
-- `pyphare/pyphare/pharein/initialize/mhd.py`: add new dict entries mirroring the existing gamma line:
+- `src/core/models/mhd_state.hpp`: add a `core::OhmInfo const ohmInfo_` member, built via `core::OhmInfo::FROM(dict)` in the dict-based constructor (default-initialized to `{0.0, 0.0, HyperMode::constant}` in the name-only constructor), plus `eta()`/`nu()`/`hyperMode()` accessors mirroring `gamma()`. Requires including `core/numerics/ohm/ohm.hpp` (no circular dependency — that header only depends on generic grid/vecfield/initializer headers).
+- `pyphare/pyphare/pharein/initialize/mhd.py`: add new dict entries under the `mhd_state` subtree, reusing the same key names (`"resistivity"`, `"hyper_resistivity"`, `"hyper_mode"`) that `OhmInfo::FROM` already expects elsewhere (`fv_method`, `constrained_transport`):
   ```python
-  add_double("simulation/mhd_state/eta", sim.eta)
-  add_double("simulation/mhd_state/nu", sim.nu)
+  add_double("simulation/mhd_state/resistivity", sim.eta)
+  add_double("simulation/mhd_state/hyper_resistivity", sim.nu)
   add_string("simulation/mhd_state/hyper_mode", sim.hyper_mode)
   ```
-- `src/diagnostic/diagnostic_model_view.hpp`: MHD `ModelView`'s `makeMhdDerivedQuantities` call gains `eta`/`nu`/`hyper_mode` args alongside the existing `gamma`.
+- `src/diagnostic/diagnostic_model_view.hpp`: MHD `ModelView`'s `makeMhdDerivedQuantities` call gains `eta()`/`nu()`/`hyperMode()` args alongside the existing `gamma()`.
 
 ## Testing
 
