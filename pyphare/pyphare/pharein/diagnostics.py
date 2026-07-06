@@ -43,7 +43,11 @@ def _resolve_dump_cadence(kwargs):
         kwargs["write_timestamps"] = init + period * np.arange(nbr)
         kwargs["write_niter_period"] = 0
     elif "write_niter_period" in kwargs:
-        period = int(kwargs.pop("write_niter_period"))
+        raw_period = kwargs.pop("write_niter_period")
+        period_float = float(raw_period)
+        if not period_float.is_integer():
+            raise RuntimeError("Error: write_niter_period must be an integer")
+        period = int(period_float)
         if period <= 0:
             raise RuntimeError("Error: write_niter_period must be > 0")
         kwargs["write_timestamps"] = np.array([])

@@ -204,6 +204,12 @@ def check_adaptive_time(**kwargs):
         )
     if kwargs["time_step_cfl"] <= 0:
         raise ValueError("Error: adaptive time_step 'cfl' must be > 0")
+    if kwargs["time_step_fourier"] <= 0:
+        raise ValueError("Error: adaptive time_step 'fourier' must be > 0")
+
+    start_time = (kwargs.get("restart_options") or {}).get("restart_time", 0)
+    if kwargs["final_time"] - start_time < 0:
+        raise RuntimeError("Simulation time cannot be negative - review inputs")
 
     return None, None, kwargs["final_time"]
 

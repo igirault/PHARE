@@ -459,8 +459,8 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
 
     currentTime_ = restart_time(dict);
     if (timeStepType_ == "adaptive")
-        // dt is computed each step; the run is bounded by final_time directly
-        finalTime_ = currentTime_ + dict["simulation"]["final_time"].template to<double>();
+        // Python serializes final_time as the absolute simulation end time; no offset needed.
+        finalTime_ = dict["simulation"]["final_time"].template to<double>();
     else
         finalTime_ += currentTime_; // final time is from timestep * timestep_nbr!
 

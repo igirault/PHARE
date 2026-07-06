@@ -100,7 +100,11 @@ def validate(sim):
         nbr = int(np.floor((sim.final_time - init) / period + 1e-9)) + 1
         restart_options["timestamps"] = init + period * np.arange(nbr)
     elif "niter_period" in restart_options:
-        period = int(restart_options.pop("niter_period"))
+        raw_period = restart_options.pop("niter_period")
+        period_float = float(raw_period)
+        if not period_float.is_integer():
+            raise RuntimeError("Error: restart_options niter_period must be an integer")
+        period = int(period_float)
         if period <= 0:
             raise RuntimeError("Error: restart_options niter_period must be > 0")
         restart_options["write_niter_period"] = period
