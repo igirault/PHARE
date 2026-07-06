@@ -281,6 +281,96 @@ TEST_F(MhdDerived, electricFieldHallTermUsesPerComponentRhoProjection)
     });
 }
 
+TEST_F(MhdDerived, electricFieldHyperresistiveSpatialUsesPerComponentProjection)
+{
+    // Regression test for a bug where the spatial hyper-resistive term's density and
+    // magnetic field projections were always computed with the same component (X),
+    // regardless of the requested E component. Here we exercise the Y component:
+    // with eta=0 the ohmic term vanishes, and with V=0 the ideal term vanishes,
+    // so E_y reduces exactly to the Hall term + hyper-resistive term. The hyper-resistive
+    // term is -nu * (b/rho + 1) * laplacian(J_y), where b and rho must be projected
+    // with component Y (cellCenterToEdgeY and *ToEy projections), not X.
+    //
+    // rho varies quadratically with the local y-index and is uniform in x,
+    // so cellCenterToEdgeY reproduces rho's exact pointwise value in y,
+    // while cellCenterToEdgeX (which averages in y) does not -- making the two
+    // projections numerically distinguishable.
+    //
+    // For nonzero laplacian(J), we set B quadratically in space (e.g., B_x = i*j),
+    // which produces a non-constant curl(B) = J.
+
+    auto& rho = state.rho;
+    for (std::uint32_t i = 0; i < rho.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < rho.shape()[1]; ++j)
+            rho(i, j) = static_cast<double>(j * j) + 1.0;
+
+    for (std::size_t c = 0; c < 3; ++c)
+        fill(state.rhoV[c], 0.0); // V = 0 => ideal term vanishes
+
+    auto& Bx = state.B[0];
+    auto& By = state.B[1];
+    auto& Bz = state.B[2];
+    // Set B so curl(B) is non-constant (produces non-zero laplacian(J))
+    for (std::uint32_t i = 0; i < Bx.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < Bx.shape()[1]; ++j)
+            Bx(i, j) = static_cast<double>(i * j);
+    for (std::uint32_t i = 0; i < By.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < By.shape()[1]; ++j)
+            By(i, j) = static_cast<double>(i) * static_cast<double>(i + 1);
+    for (std::uint32_t i = 0; i < Bz.shape()[0]; ++i)
+        for (std::uint32_t j = 0; j < Bz.shape()[1]; ++j)
+            Bz(i, j) = static_cast<double>(j) * static_cast<double>(j + 1);
+
+    UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
+    MhdElectricField<State_t, YeeLayout_t>{0.0, 1.0, HyperMode::spatial}.compute(*state, layout,
+                                                                                   out, 0.0);
+
+    UsableVecFieldMHD<dim> J{"J", layout, MHDQuantity::Vector::VecElike};
+    Ampere<YeeLayout_t>{layout}(static_cast<VecFieldMHD<dim> const&>(state.B),
+                                static_cast<VecFieldMHD<dim>&>(J));
+
+    auto& E        = static_cast<VecFieldMHD<dim>&>(out);
+    auto& Jvec     = static_cast<VecFieldMHD<dim>&>(J);
+    auto const& Bx_ = static_cast<VecFieldMHD<dim> const&>(state.B)[0];
+    auto const& By_ = static_cast<VecFieldMHD<dim> const&>(state.B)[1];
+    auto const& Bz_ = static_cast<VecFieldMHD<dim> const&>(state.B)[2];
+
+    Point<std::uint32_t, dim> shrink;
+    for (std::size_t i = 0; i < dim; ++i)
+        shrink[i] = 2;
+
+    layout.evalOnShrinkedGhostBox(E[1], shrink, [&](auto const&... args) {
+        MeshIndex<dim> const index{args...};
+
+        auto const bx = YeeLayout_t::template project<YeeLayout_t::BxToEy>(Bx_, index);
+        auto const by = YeeLayout_t::template project<YeeLayout_t::ByToEy>(By_, index);
+        auto const bz = YeeLayout_t::template project<YeeLayout_t::BzToEy>(Bz_, index);
+        auto const rhoE_correct
+            = YeeLayout_t::template project<YeeLayout_t::cellCenterToEdgeY>(rho, index);
+        auto const rhoE_wrong
+            = YeeLayout_t::template project<YeeLayout_t::cellCenterToEdgeX>(rho, index);
+
+        // Sanity check: the two projections must actually differ here.
+        ASSERT_NE(rhoE_correct, rhoE_wrong);
+
+        auto const b = std::sqrt(bx * bx + by * by + bz * bz);
+        auto const Jy_laplacian = layout.laplacian(Jvec[1], index);
+
+        // Only check at points where the hyper-resistive term is substantial
+        if (std::abs(Jy_laplacian) > 1e-14)
+        {
+            // E_y = Hall term + hyper-resistive term
+            // Hall: (J_z * b_x - J_x * b_z) / rho_E
+            // Hyper: -nu * (b/rho + 1) * laplacian(J_y)
+            auto const hall_term = (Jvec[2](args...) * bx - Jvec[0](args...) * bz) / rhoE_correct;
+            auto const hyper_term = -1.0 * (b / rhoE_correct + 1.0) * Jy_laplacian;
+            auto const expected = hall_term + hyper_term;
+
+            EXPECT_NEAR(E[1](args...), expected, 1e-10 * (std::abs(expected) + 1.0) + 1e-12);
+        }
+    });
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
