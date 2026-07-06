@@ -277,106 +277,71 @@ def check_boundaries(ndim, **kwargs):
 _BOUNDARY_NORMAL_INDEX = {"x": 0, "y": 1, "z": 2}
 
 
-def _normalize_inflow_velocity(location, velocity):
-    """Return velocity as a (vx, vy, vz) tuple.
+def _normalize_inflow_scalar(location, key, val, positive=False):
+    """A prescribable inflow scalar: a float or a space-time callable f(x[,y[,z]],t)."""
+    if callable(val):
+        return val
+    if not isinstance(val, (int, float)) or (positive and val <= 0):
+        raise ValueError(
+            f"'{key}' at inflow boundary '{location}' must be a "
+            f"{'positive ' if positive else ''}scalar or a callable f(x,y,z,t), got {val!r}"
+        )
+    return float(val)
 
-    A scalar is interpreted as the inward-normal speed: it is stored with a
+
+def _normalize_inflow_vector(location, key, vec):
+    """A prescribable inflow 3-vector: each component a float or a callable f(x[,y[,z]],t)."""
+    try:
+        comps = list(vec)
+    except TypeError:
+        raise TypeError(
+            f"'{key}' at inflow boundary '{location}' must be a 3-vector (each component a "
+            f"float or a callable f(x,y,z,t)), got {vec!r}"
+        )
+    if len(comps) != 3:
+        raise ValueError(
+            f"'{key}' at inflow boundary '{location}' must be a 3-vector, "
+            f"got a {len(comps)}-element sequence"
+        )
+    return [
+        c if callable(c) else _normalize_inflow_scalar(location, f"{key}[{i}]", c)
+        for i, c in enumerate(comps)
+    ]
+
+
+def _normalize_inflow_velocity(location, velocity):
+    """Return velocity as a (vx, vy, vz) tuple, each component a float or a callable.
+
+    A scalar constant is interpreted as the inward-normal speed: it is stored with a
     positive sign for lower boundaries (flow enters in the +direction) and a
     negative sign for upper boundaries (flow enters in the -direction).
     The two transverse components are set to zero.
-    A 3-element sequence is kept as-is with no sign adjustment.
+    A 3-element sequence is validated component-wise (each a float or a space-time
+    callable f(x[,y[,z]],t)) with no sign adjustment.
     """
-    normal_idx = _BOUNDARY_NORMAL_INDEX[location[0]]
-    side = location[1:]  # "lower" or "upper"
     if isinstance(velocity, (int, float)):
+        normal_idx = _BOUNDARY_NORMAL_INDEX[location[0]]
+        side = location[1:]  # "lower" or "upper"
         sign = 1.0 if side == "lower" else -1.0
         v = [0.0, 0.0, 0.0]
         v[normal_idx] = sign * float(velocity)
         return tuple(v)
-    try:
-        v = tuple(float(vi) for vi in velocity)
-    except (TypeError, ValueError):
-        raise TypeError(
-            f"'velocity' at boundary '{location}' must be a scalar or a 3-vector, "
-            f"got {velocity!r}"
-        )
-    if len(v) != 3:
-        raise ValueError(
-            f"'velocity' at boundary '{location}' must be a scalar or a 3-vector, "
-            f"got a {len(v)}-element sequence"
-        )
-    return v
-
-
-def _normalize_B(location, B, allow_time_function=False):
-    """Return the magnetic field as a (Bx, By, Bz) tuple, or, when allowed, a single time
-    function f(t) -> [Bx, By, Bz] (uniform in space, used for IMF turning).
-
-    A 3-element sequence is normalised to a tuple of floats. A callable is kept as-is when
-    ``allow_time_function`` is set; it is rejected otherwise.
-    """
-    if callable(B):
-        if not allow_time_function:
-            raise NotImplementedError(
-                f"'B' at boundary '{location}' may only be a time function f(t) for a "
-                f"super-magnetofast-inflow boundary; got a callable for an unsupported BC type."
-            )
-        try:
-            probe = B(0.0)
-        except Exception as e:
-            raise TypeError(
-                f"'B' time function at boundary '{location}' must be callable as f(t) with a "
-                f"scalar time; calling B(0.0) raised {e!r}"
-            )
-        if len(probe) != 3:
-            raise ValueError(
-                f"'B' time function at boundary '{location}' must return a 3-vector "
-                f"[Bx, By, Bz]; B(0.0) returned {probe!r}"
-            )
-        return B
-    try:
-        b = tuple(float(bi) for bi in B)
-    except (TypeError, ValueError):
-        raise TypeError(f"'B' at boundary '{location}' must be a 3-vector, got {B!r}")
-    if len(b) != 3:
-        raise ValueError(
-            f"'B' at boundary '{location}' must be a 3-vector, "
-            f"got a {len(b)}-element sequence"
-        )
-    return b
-
-
-def _normalize_inflow_magnetic_field(location, data, allow_time_function=False):
-    """Validate and normalise the magnetic field of an inflow 'data' sub-dict.
-
-    The field is prescribed via 'B'; it is normalised in place via _normalize_B. The boundary
-    magnetic field is driven through the constrained transport from the motional electric field
-    E = -v x B (full Dirichlet on E) on the C++ side, with B left free in the ghosts. When
-    ``allow_time_function`` is set, 'B' may be a single time function f(t) -> [Bx, By, Bz]
-    (uniform in space) to drive a rotating inflow field (IMF turning).
-    """
-    if "B" not in data:
-        raise KeyError(
-            f"Inflow BC at '{location}' requires the magnetic field 'B' inside 'data'"
-        )
-    data["B"] = _normalize_B(location, data["B"], allow_time_function=allow_time_function)
+    return tuple(_normalize_inflow_vector(location, "velocity", velocity))
 
 
 def _check_inflow_data(location, bc):
-    """Validate and normalise the 'data' sub-dict for a super-magnetofast-inflow BC."""
+    """Validate the 'data' sub-dict for a super-magnetofast-inflow BC.
+
+    density, pressure, velocity, and B may each be a constant or a space-time callable
+    f(x[, y[, z]], t) (per component for velocity/B)."""
     data = bc.get("data", {})
-    for key in ("density", "pressure", "velocity"):
+    for key in ("density", "pressure", "velocity", "B"):
         if key not in data:
             raise KeyError(f"Inflow BC at '{location}' requires '{key}' inside 'data'")
-    for key in ("density", "pressure"):
-        val = data[key]
-        if not isinstance(val, (int, float)) or val <= 0:
-            raise ValueError(
-                f"'{key}' at inflow boundary '{location}' must be a positive scalar, "
-                f"got {val!r}"
-            )
+    data["density"] = _normalize_inflow_scalar(location, "density", data["density"], positive=True)
+    data["pressure"] = _normalize_inflow_scalar(location, "pressure", data["pressure"], positive=True)
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    _normalize_inflow_magnetic_field(location, data, allow_time_function=True)
+    data["B"] = _normalize_inflow_vector(location, "B", data["B"])
     bc["data"] = data
 
 
@@ -401,25 +366,17 @@ def _check_fixed_pressure_outflow_data(location, bc):
 
 
 def _check_free_pressure_inflow_data(location, bc):
-    """Validate and normalise the 'data' sub-dict for a free-pressure-inflow BC.
-
-    Like a super-magnetofast-inflow but without a prescribed pressure: the ghost
-    pressure is obtained from a Neumann extrapolation at runtime.
-    """
+    """Free-pressure inflow: density, velocity, B prescribable (constant or callable);
+    pressure is not prescribed (Neumann)."""
     data = bc.get("data", {})
-    for key in ("density", "velocity"):
+    for key in ("density", "velocity", "B"):
         if key not in data:
             raise KeyError(
                 f"Free-pressure inflow BC at '{location}' requires '{key}' inside 'data'"
             )
-    val = data["density"]
-    if not isinstance(val, (int, float)) or val <= 0:
-        raise ValueError(
-            f"'density' at free-pressure inflow boundary '{location}' must be a positive scalar, "
-            f"got {val!r}"
-        )
+    data["density"] = _normalize_inflow_scalar(location, "density", data["density"], positive=True)
     data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    _normalize_inflow_magnetic_field(location, data)
+    data["B"] = _normalize_inflow_vector(location, "B", data["B"])
     bc["data"] = data
 
 

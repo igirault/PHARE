@@ -118,29 +118,29 @@ def _add_bc_value(path, val, ndim):
         add_double(path, float(val))
 
 
-def _add_inflow_magnetic_field(bc_path, data, ndim):
-    """Serialise the inflow magnetic field under 'data/B'.
+def _add_inflow_scalar(bc_path, data, key, ndim):
+    """Serialise a prescribable inflow scalar: a constant double or a space-time function,
+    tagged by '<key>_is_function'."""
+    val = data[key]
+    add_bool(f"{bc_path}/data/{key}_is_function", callable(val))
+    _add_bc_value(f"{bc_path}/data/{key}", val, ndim)
 
-    The C++ BoundaryFactory drives the boundary field through the motional electric field
-    E = -v x B (full Dirichlet on E) and leaves B free in the ghosts.
 
-    'B' may be a constant vector ``[bx, by, bz]`` or a single time function
-    ``f(t) -> [bx, by, bz]`` (uniform in space, used for IMF turning). A vector-valued time
-    function is split into three per-component space/time functions that ignore the spatial
-    coordinates and broadcast the scalar component over the face nodes.
+def _add_inflow_vector(bc_path, data, key, ndim):
+    """Serialise a prescribable inflow 3-vector: each component a constant double or a
+    space-time function, tagged by '<key>_is_function' (true if any component is callable).
+
+    When tagged as a function, every component slot must hold a function (the C++
+    parseDimXYZType<SpaceTimeFunction,3> reader requires it): constant components are lifted
+    to constant space-time callables before serialisation.
     """
-    B = data["B"]
-    # Explicit flag so C++ does not have to introspect the dict variant type (the pinned
-    # cppdict release has no Dict::is<T>()).
-    add_bool(f"{bc_path}/data/B_is_function", callable(B))
-    if callable(B):
-        for i, axis in enumerate("xyz"):
-            # extract component i at time t (last positional arg); ignore spatial vectors
-            comp = lambda *args, i=i, f=B: f(args[-1])[i]
-            _add_bc_value(f"{bc_path}/data/B/{axis}", comp, ndim)
-    else:
-        for axis, val in zip("xyz", B):
-            _add_bc_value(f"{bc_path}/data/B/{axis}", val, ndim)
+    comps = list(data[key])
+    is_fn = any(callable(c) for c in comps)
+    add_bool(f"{bc_path}/data/{key}_is_function", is_fn)
+    if is_fn:
+        comps = [c if callable(c) else (lambda *a, _c=float(c): _c) for c in comps]
+    for axis, c in zip("xyz", comps):
+        _add_bc_value(f"{bc_path}/data/{key}/{axis}", c, ndim)
 
 
 def populateDict(sim):
@@ -178,21 +178,15 @@ def populateDict(sim):
                 add_string(f"{bc_path}/type", bc["type"])
                 if bc["type"] == "super-magnetofast-inflow":
                     data = bc["data"]
-                    add_double(f"{bc_path}/data/density", data["density"])
-                    add_double(f"{bc_path}/data/pressure", data["pressure"])
-                    vx, vy, vz = data["velocity"]
-                    add_double(f"{bc_path}/data/velocity/x", vx)
-                    add_double(f"{bc_path}/data/velocity/y", vy)
-                    add_double(f"{bc_path}/data/velocity/z", vz)
-                    _add_inflow_magnetic_field(bc_path, data, sim.ndim)
+                    _add_inflow_scalar(bc_path, data, "density", sim.ndim)
+                    _add_inflow_scalar(bc_path, data, "pressure", sim.ndim)
+                    _add_inflow_vector(bc_path, data, "velocity", sim.ndim)
+                    _add_inflow_vector(bc_path, data, "B", sim.ndim)
                 elif bc["type"] == "free-pressure-inflow":
                     data = bc["data"]
-                    add_double(f"{bc_path}/data/density", data["density"])
-                    vx, vy, vz = data["velocity"]
-                    add_double(f"{bc_path}/data/velocity/x", vx)
-                    add_double(f"{bc_path}/data/velocity/y", vy)
-                    add_double(f"{bc_path}/data/velocity/z", vz)
-                    _add_inflow_magnetic_field(bc_path, data, sim.ndim)
+                    _add_inflow_scalar(bc_path, data, "density", sim.ndim)
+                    _add_inflow_vector(bc_path, data, "velocity", sim.ndim)
+                    _add_inflow_vector(bc_path, data, "B", sim.ndim)
                 elif bc["type"] == "fixed-pressure-outflow":
                     data = bc["data"]
                     add_double(f"{bc_path}/data/pressure", data["pressure"])

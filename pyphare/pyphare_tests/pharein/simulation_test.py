@@ -153,10 +153,12 @@ class TestSimulation(unittest.TestCase):
                 )
             )
 
-    def test_callable_B_only_for_super_magnetofast_inflow(self):
-        # a time-function B is accepted for super-magnetofast-inflow but not free-pressure-inflow
+    def test_callable_B_component_accepted_for_both_inflow_types(self):
+        # each component of B (and the other inflow quantities) may be a space-time
+        # callable f(x[, y[, z]], t); this is accepted for both super-magnetofast-inflow
+        # and free-pressure-inflow (no BC-type-specific restriction).
         global_vars.sim = None
-        Bt = lambda t: [0.5, 1.0, 0.0]
+        Bx = lambda x, t: 0.5
         simulation.Simulation(
             **self._mhd_kwargs(
                 boundary_types="physical",
@@ -167,7 +169,7 @@ class TestSimulation(unittest.TestCase):
                             "velocity": 2.0,
                             "density": 1.0,
                             "pressure": 1.0,
-                            "B": Bt,
+                            "B": [Bx, 1.0, 0.0],
                         },
                     },
                     "xupper": {"type": "super-magnetofast-outflow"},
@@ -175,20 +177,19 @@ class TestSimulation(unittest.TestCase):
             )
         )
         global_vars.sim = None
-        with self.assertRaises(NotImplementedError):
-            simulation.Simulation(
-                **self._mhd_kwargs(
-                    boundary_types="physical",
-                    boundary_conditions={
-                        "xlower": {
-                            "type": "free-pressure-inflow",
-                            "data": {"velocity": 2.0, "density": 1.0, "B": Bt},
-                        },
-                        "xupper": {"type": "fixed-pressure-outflow",
-                                   "data": {"pressure": 1.0}},
+        simulation.Simulation(
+            **self._mhd_kwargs(
+                boundary_types="physical",
+                boundary_conditions={
+                    "xlower": {
+                        "type": "free-pressure-inflow",
+                        "data": {"velocity": 2.0, "density": 1.0, "B": [Bx, 1.0, 0.0]},
                     },
-                )
+                    "xupper": {"type": "fixed-pressure-outflow",
+                               "data": {"pressure": 1.0}},
+                },
             )
+        )
 
 
 if __name__ == "__main__":
