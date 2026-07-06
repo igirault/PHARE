@@ -5,6 +5,7 @@
 #include "core/mhd/mhd_quantities.hpp"
 #include "core/utilities/mpi_utils.hpp"
 #include "core/data/derived_quantity/mhd_derived_quantities.hpp"
+#include "core/data/derived_quantity/hybrid_derived_quantities.hpp"
 
 #include "amr/amr_constants.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -163,6 +164,7 @@ public:
 
     ModelView(Hierarchy& hierarchy, Model& model)
         : Super{hierarchy, model}
+        , derived_{core::makeHybridDerivedQuantities<State_t, GridLayout>()}
     {
         declareMomentumTensorAlgos();
     }
@@ -171,6 +173,8 @@ public:
     NO_DISCARD auto const& state() const { return this->model_.state; }
 
     NO_DISCARD auto const& derivedQuantities() const { return derived_; }
+
+    NO_DISCARD VecField& derivedVecScratch() { return derivedVecScratch_; }
 
     NO_DISCARD VecField& getB() const { return this->model_.state.electromag.B; }
 
@@ -215,12 +219,12 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_);
+        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_, derivedVecScratch_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_);
+        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_, derivedVecScratch_);
     }
 
 protected:
@@ -269,6 +273,7 @@ protected:
     Field tmpField_{"PHARE_sumField", core::HybridQuantity::Scalar::rho};
     VecField tmpVec_{"PHARE_sumVec", core::HybridQuantity::Vector::V};
     TensorFieldT tmpTensor_{"PHARE_sumTensor", core::HybridQuantity::Tensor::M};
+    VecField derivedVecScratch_{"PHARE_derived_vec", core::HybridQuantity::Vector::VecElike};
     core::DerivedQuantityRegistry<State_t, GridLayout> derived_;
 };
 
