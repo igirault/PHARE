@@ -28,6 +28,11 @@ struct derived_traits<State, GridLayout, 1>
 };
 
 
+/** Diagnostic family a derived quantity is published under: "fluid" quantities
+ *  live in the model tree (e.g. /mhd/), "electromag" ones under the EM_ names. */
+enum class DerivedCategory { fluid, electromag };
+
+
 /** Interface for computing a derived (post-processed) quantity from the primary
  *  variables of a State into a caller-provided buffer, over the ghost box. */
 template<typename State, typename GridLayout, std::size_t rank>
@@ -41,8 +46,9 @@ public:
 
     virtual ~DerivedQuantity() = default;
 
-    virtual std::string name() const      = 0;
-    virtual centering_t centering() const = 0;
+    virtual std::string name() const         = 0;
+    virtual centering_t centering() const    = 0;
+    virtual DerivedCategory category() const = 0;
     virtual void compute(State const& state, GridLayout const& layout, out_t& out,
                          double time) const
         = 0;

@@ -6,6 +6,7 @@
 #include "core/utilities/mpi_utils.hpp"
 #include "core/data/derived_quantity/mhd_derived_quantities.hpp"
 #include "core/data/derived_quantity/hybrid_derived_quantities.hpp"
+#include "core/data/derived_quantity/derived_scratch.hpp"
 
 #include "amr/amr_constants.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -29,6 +30,18 @@ public:
     inline virtual ~IModelView();
 };
 IModelView::~IModelView() {}
+
+
+/** Identifies one fluid-tree diagnostic quantity: `tree + name` is the
+ *  diagnostic quantity string, `group` the per-patch attribute subgroup key. */
+struct FluidQtyInfo
+{
+    std::string tree;
+    std::string name;
+    std::string group;
+
+    std::string path() const { return tree + name; }
+};
 
 
 template<typename Derived, typename Hierarchy, typename Model>
@@ -181,6 +194,141 @@ public:
     NO_DISCARD VecField& getE() const { return this->model_.state.electromag.E; }
 
     NO_DISCARD auto& getIons() const { return this->model_.state.ions; }
+
+
+    /** Catalogue of fluid-tree quantities (ions + per-population). Enumerates
+     *  FluidQtyInfo only — no patch data access, so callable for null/remote
+     *  patches and per-level setup. */
+    template<typename OnScalar, typename OnVector, typename OnTensor>
+    void forEachFluidQuantity(OnScalar&& onScalar, OnVector&& onVector, OnTensor&& onTensor) const
+    {
+        for (auto const& pop : this->model_.state.ions)
+        {
+            std::string const tree{"/ions/pop/" + pop.name() + "/"};
+            std::string const group{"fluid_" + pop.name()};
+            onScalar(FluidQtyInfo{tree, "density", group});
+            onScalar(FluidQtyInfo{tree, "charge_density", group});
+            onVector(FluidQtyInfo{tree, "flux", group});
+            onTensor(FluidQtyInfo{tree, "momentum_tensor", group});
+        }
+
+        std::string const tree{"/ions/"};
+        onScalar(FluidQtyInfo{tree, "charge_density", "ion"});
+        onScalar(FluidQtyInfo{tree, "mass_density", "ion"});
+        onVector(FluidQtyInfo{tree, "bulkVelocity", "ion"});
+        onTensor(FluidQtyInfo{tree, "momentum_tensor", "ion"});
+    }
+
+    /** Dispatch the active fluid diagnostic to its per-patch data. All hybrid
+     *  fluid quantities are primaries today; extend with fluid-category derived
+     *  quantities (and a layout/time/compute_derived signature) when needed.
+     *  Returns true if the diagnostic named a fluid-tree quantity. */
+    template<typename OnScalar, typename OnVector, typename OnTensor>
+    bool visitActiveFluidQuantity(std::string const& quantity, OnScalar&& onScalar,
+                                  OnVector&& onVector, OnTensor&& onTensor)
+    {
+        auto& ions = this->model_.state.ions;
+
+        for (auto& pop : ions)
+        {
+            std::string const tree{"/ions/pop/" + pop.name() + "/"};
+            std::string const group{"fluid_" + pop.name()};
+            if (quantity == tree + "density")
+            {
+                onScalar(FluidQtyInfo{tree, "density", group}, pop.particleDensity());
+                return true;
+            }
+            if (quantity == tree + "charge_density")
+            {
+                onScalar(FluidQtyInfo{tree, "charge_density", group}, pop.chargeDensity());
+                return true;
+            }
+            if (quantity == tree + "flux")
+            {
+                onVector(FluidQtyInfo{tree, "flux", group}, pop.flux());
+                return true;
+            }
+            if (quantity == tree + "momentum_tensor")
+            {
+                onTensor(FluidQtyInfo{tree, "momentum_tensor", group}, pop.momentumTensor());
+                return true;
+            }
+        }
+
+        std::string const tree{"/ions/"};
+        if (quantity == tree + "charge_density")
+        {
+            onScalar(FluidQtyInfo{tree, "charge_density", "ion"}, ions.chargeDensity());
+            return true;
+        }
+        if (quantity == tree + "mass_density")
+        {
+            onScalar(FluidQtyInfo{tree, "mass_density", "ion"}, ions.massDensity());
+            return true;
+        }
+        if (quantity == tree + "bulkVelocity")
+        {
+            onVector(FluidQtyInfo{tree, "bulkVelocity", "ion"}, ions.velocity());
+            return true;
+        }
+        if (quantity == tree + "momentum_tensor")
+        {
+            onTensor(FluidQtyInfo{tree, "momentum_tensor", "ion"}, ions.momentumTensor());
+            return true;
+        }
+        return false;
+    }
+
+
+    /** Catalogue of EM-tree quantities: primaries plus electromag-category
+     *  derived quantities under the "EM_" prefix. Names only. Hybrid has no
+     *  scalar EM quantities (and no scalar scratch to view them in), so
+     *  onScalar is never invoked. */
+    template<typename OnScalar, typename OnVector>
+    void forEachEmQuantity(OnScalar&&, OnVector&& onVector) const
+    {
+        onVector("EM_B");
+        onVector("EM_E");
+
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::electromag)
+                onVector("EM_" + dq->name());
+    }
+
+    /** Dispatch the active EM diagnostic to its per-patch data; derived
+     *  quantities are viewed in scratch and computed iff compute_derived. */
+    template<typename OnScalar, typename OnVector>
+    bool visitActiveEmQuantity(std::string const& quantity, GridLayout const& layout,
+                               double const time, bool const compute_derived, OnScalar&&,
+                               OnVector&& onVector)
+    {
+        auto const isActive = [&](std::string const& name) { return quantity == "/" + name; };
+
+        if (isActive("EM_B"))
+        {
+            onVector("EM_B", this->model_.state.electromag.B);
+            return true;
+        }
+        if (isActive("EM_E"))
+        {
+            onVector("EM_E", this->model_.state.electromag.E);
+            return true;
+        }
+
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::electromag
+                and isActive("EM_" + dq->name()))
+            {
+                auto vecfield = core::derived_vector_view<physical_quantity_type>(
+                    derivedVecScratch_, dq->centering(), layout);
+                if (compute_derived)
+                    dq->compute(state(), layout, vecfield, time);
+                onVector("EM_" + dq->name(), vecfield);
+                return true;
+            }
+        return false;
+    }
+
 
     auto& tmpField() { return tmpField_; }
 
@@ -344,6 +492,132 @@ public:
 
     NO_DISCARD Field& derivedScalarScratch() { return derivedScalarScratch_; }
     NO_DISCARD VecField& derivedVecScratch() { return derivedVecScratch_; }
+
+
+    /** The catalogue of fluid-tree ("/mhd/") quantities: primaries plus
+     *  fluid-category derived quantities. Enumerates names only — no patch
+     *  data access, so callable for null/remote patches and per-level setup. */
+    template<typename OnScalar, typename OnVector>
+    void forEachFluidQuantity(OnScalar&& onScalar, OnVector&& onVector) const
+    {
+        onScalar("rho");
+        onVector("rhoV");
+        onScalar("Etot");
+
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::fluid)
+                onScalar(dq->name());
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::fluid)
+                onVector(dq->name());
+    }
+
+    /** Dispatch the active fluid diagnostic to its per-patch data: primaries
+     *  are passed through, derived quantities are viewed in scratch and
+     *  computed iff compute_derived (shape-only consumers skip the compute).
+     *  Returns true if the diagnostic named a fluid-tree quantity. */
+    template<typename OnScalar, typename OnVector>
+    bool visitActiveFluidQuantity(std::string const& quantity, GridLayout const& layout,
+                                  double const time, bool const compute_derived,
+                                  OnScalar&& onScalar, OnVector&& onVector)
+    {
+        std::string const tree{"/mhd/"};
+        auto const isActive = [&](std::string const& name) { return quantity == tree + name; };
+
+        if (isActive("rho"))
+        {
+            onScalar("rho", this->model_.state.rho);
+            return true;
+        }
+        if (isActive("rhoV"))
+        {
+            onVector("rhoV", this->model_.state.rhoV);
+            return true;
+        }
+        if (isActive("Etot"))
+        {
+            onScalar("Etot", this->model_.state.Etot);
+            return true;
+        }
+
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::fluid and isActive(dq->name()))
+            {
+                auto field = core::derived_scalar_view<physical_quantity_type>(
+                    derivedScalarScratch_, dq->centering(), layout);
+                if (compute_derived)
+                    dq->compute(state(), layout, field, time);
+                onScalar(dq->name(), field);
+                return true;
+            }
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::fluid and isActive(dq->name()))
+            {
+                auto vecfield = core::derived_vector_view<physical_quantity_type>(
+                    derivedVecScratch_, dq->centering(), layout);
+                if (compute_derived)
+                    dq->compute(state(), layout, vecfield, time);
+                onVector(dq->name(), vecfield);
+                return true;
+            }
+        return false;
+    }
+
+
+    /** Catalogue of EM-tree quantities: B plus electromag-category derived
+     *  quantities (E, J, divB) under the "EM_" prefix. Names only. */
+    template<typename OnScalar, typename OnVector>
+    void forEachEmQuantity(OnScalar&& onScalar, OnVector&& onVector) const
+    {
+        onVector("EM_B");
+
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::electromag)
+                onScalar("EM_" + dq->name());
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::electromag)
+                onVector("EM_" + dq->name());
+    }
+
+    /** Dispatch the active EM diagnostic to its per-patch data; derived
+     *  quantities are viewed in scratch and computed iff compute_derived. */
+    template<typename OnScalar, typename OnVector>
+    bool visitActiveEmQuantity(std::string const& quantity, GridLayout const& layout,
+                               double const time, bool const compute_derived, OnScalar&& onScalar,
+                               OnVector&& onVector)
+    {
+        auto const isActive = [&](std::string const& name) { return quantity == "/" + name; };
+
+        if (isActive("EM_B"))
+        {
+            onVector("EM_B", this->model_.state.B);
+            return true;
+        }
+
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::electromag
+                and isActive("EM_" + dq->name()))
+            {
+                auto field = core::derived_scalar_view<physical_quantity_type>(
+                    derivedScalarScratch_, dq->centering(), layout);
+                if (compute_derived)
+                    dq->compute(state(), layout, field, time);
+                onScalar("EM_" + dq->name(), field);
+                return true;
+            }
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::electromag
+                and isActive("EM_" + dq->name()))
+            {
+                auto vecfield = core::derived_vector_view<physical_quantity_type>(
+                    derivedVecScratch_, dq->centering(), layout);
+                if (compute_derived)
+                    dq->compute(state(), layout, vecfield, time);
+                onVector("EM_" + dq->name(), vecfield);
+                return true;
+            }
+        return false;
+    }
 
 protected:
     Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};

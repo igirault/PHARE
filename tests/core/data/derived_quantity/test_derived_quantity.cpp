@@ -19,6 +19,7 @@ using State_t                    = MHDState<VecFieldMHD<dim>>;
 struct Ones : DerivedQuantity<State_t, YeeLayout_t, 0>
 {
     std::string name() const override { return "ones"; }
+    DerivedCategory category() const override { return DerivedCategory::fluid; }
     ScalarCentering centering() const override { return ScalarCentering::cell; }
     void compute(State_t const& /*state*/, YeeLayout_t const& layout, out_t& out,
                  double /*time*/) const override
