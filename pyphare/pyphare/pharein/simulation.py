@@ -400,6 +400,16 @@ def check_boundary_conditions(ndim, **kwargs):
     physical_boundary_locations = [
         f"{direction}{side}" for direction in physical_directions for side in sides
     ]
+
+    # physical outer boundary conditions are only implemented for the MHD model; reject them
+    # for other models here rather than letting the C++ boundary factory throw at model
+    # construction.
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    if physical_boundary_locations and "MHDModel" not in model_options:
+        raise ValueError(
+            "'physical' boundary_types are only supported by the MHDModel; "
+            f"got model_options={model_options}"
+        )
     all_boundary_locations = [
         f"{direction}{side}" for side in sides for direction in all_directions
     ]

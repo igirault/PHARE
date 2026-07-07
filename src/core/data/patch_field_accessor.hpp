@@ -3,8 +3,25 @@
 
 #include "core/data/vecfield/vecfield.hpp"
 
+#include <stdexcept>
+
 namespace PHARE::core
 {
+
+/**
+ * @brief Thrown by IPatchFieldAccessor implementations when a requested quantity is not
+ * registered on the current patch.
+ *
+ * SAMRAI invokes boundary-condition callbacks on temporary single-quantity patches (built
+ * for cross-level interpolation) that do not carry sibling fields; a coupled BC reading those
+ * siblings hits this error. BC appliers catch it *narrowly* to fall back to a sibling-free
+ * fill, so it must be distinct from the generic std::runtime_error used for real faults.
+ */
+class PatchFieldAccessorError : public std::runtime_error
+{
+public:
+    using std::runtime_error::runtime_error;
+};
 
 /**
  * @brief Abstract interface for accessing fields on a patch by physical quantity.

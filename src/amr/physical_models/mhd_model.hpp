@@ -101,8 +101,13 @@ public:
             core::MHDQuantity::Vector::rhoV,
         };
 
-        boundaryManager = std::make_shared<boundary_manager_type>(
-            dict["grid"]["boundary_conditions"], scalarQuantities, vectorQuantities, thermo);
+        // Python-driven sims always emit grid/boundary_conditions; hand-built C++ test dicts
+        // may omit it. Fall back to an empty dict so the manager stays inert (registers no
+        // boundaries) rather than dereferencing a missing key, mirroring HybridModel.
+        auto const has_bcs = dict.contains("grid") && dict["grid"].contains("boundary_conditions");
+        boundaryManager    = std::make_shared<boundary_manager_type>(
+            has_bcs ? dict["grid"]["boundary_conditions"] : PHARE::initializer::PHAREDict{},
+            scalarQuantities, vectorQuantities, thermo);
     }
 
     ~MHDModel() override = default;

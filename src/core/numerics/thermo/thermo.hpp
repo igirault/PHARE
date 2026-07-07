@@ -15,6 +15,12 @@ namespace PHARE::core
  * The object holds the state internally; callers set it once and query as needed,
  * which amortises any conversion cost when multiple quantities are required.
  *
+ * @warning A single Thermo instance carries mutable state and is shared (by shared_ptr)
+ *          across boundary conditions and patches. It is therefore NOT thread-safe: the
+ *          set-then-query sequence assumes single-threaded, one-patch-at-a-time boundary
+ *          application (PHARE's MPI-per-rank, non-threaded execution model). If patch-level
+ *          boundary application is ever parallelised, give each worker its own instance.
+ *
  * @note Total energy in MHD includes kinetic (½ρv²) and magnetic (½B²) contributions
  *       that are EOS-agnostic. This interface covers only the thermodynamic (internal
  *       energy) part; callers are responsible for adding those external contributions.

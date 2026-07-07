@@ -96,7 +96,8 @@ public:
         {
             auto it = scalarIds_.find(qty);
             if (it == scalarIds_.end())
-                throw std::runtime_error("PatchFieldAccessor: scalar quantity not registered");
+                throw core::PatchFieldAccessorError(
+                    "PatchFieldAccessor: scalar quantity not registered");
             return *(&(scalar_field_data_type::getField(patch_, it->second)));
         }
 
@@ -104,7 +105,8 @@ public:
         {
             auto it = vectorIds_.find(qty);
             if (it == vectorIds_.end())
-                throw std::runtime_error("PatchFieldAccessor: vector quantity not registered");
+                throw core::PatchFieldAccessorError(
+                    "PatchFieldAccessor: vector quantity not registered");
             return vector_field_data_type::getTensorField(patch_, it->second);
         }
 
@@ -184,16 +186,10 @@ public:
     {
         gridlayout_type const& gridLayout = ScalarOrTensorFieldDataT::getLayout(patch, data_id_);
 
-        // consistency check on the number of ghosts
-        // SAMRAI::hier::IntVector dataGhostWidths = patchData->getGhostCellWidth();
-        // if (ghost_width_to_fill != gridLayout.nbrGhosts())
-        //     throw std::runtime_error("Error - inconsistent ghost cell widths");
-
-        /// @todo Make SAMRAI call the current function with the correct value for argument
-        /// `ghost_width_to_fill`? With only L0, the above commented check pass,
-        /// but with more levels it fails. To be valid, this would require correctly overriding
-        /// getRefineOpStencilWidth, but I do not want to break anything by changing current
-        /// implementation that always return 1.
+        /// @todo SAMRAI does not pass a `ghost_width_to_fill` consistent with
+        /// `gridLayout.nbrGhosts()` beyond L0, so we ignore the argument and refill the whole
+        /// ghost layer. Making it consistent would require overriding getRefineOpStencilWidth,
+        /// deferred to avoid perturbing the always-return-1 interpolation stencil.
         SAMRAI::hier::IntVector const ghost_width_to_fill{
             static_cast<SAMRAI::tbox::Dimension>(static_cast<int>(dimension)),
             static_cast<int>(gridLayout.nbrGhosts())};
@@ -287,12 +283,16 @@ public:
                 // so they must not be left at the NaN sentinel: fall back to a sibling-free
                 // zero-gradient (Neumann) fill for that quantity. The real level patches, which
                 // carry the full state, still receive the exact coupled condition.
+                //
+                // Only the missing-sibling case (PatchFieldAccessorError) is caught here; any other
+                // exception is a genuine fault and must propagate rather than be masked as a silent
+                // Neumann fill.
                 try
                 {
                     bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
                               ctx);
                 }
-                catch (std::exception const& e)
+                catch (core::PatchFieldAccessorError const& e)
                 {
                     PHARE_LOG_LINE_SS(
                         "Neumann fallback triggered in setPhysicalBoundaryConditions"

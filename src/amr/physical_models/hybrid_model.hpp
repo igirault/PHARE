@@ -93,14 +93,15 @@ public:
         , resourcesManager{std::move(_resourcesManager)}
     {
         // inert manager: no quantity has a registered field BC for the hybrid model yet,
-        // but the messenger wiring expects a valid BoundaryManager object. Only built when
-        // the config carries boundary_conditions (always the case for sims driven from the
-        // Python layer; hand-built C++ test dicts without messengers may omit it).
-        if (dict.contains("grid") && dict["grid"].contains("boundary_conditions"))
-            boundaryManager = std::make_shared<boundary_manager_type>(
-                dict["grid"]["boundary_conditions"],
-                std::vector<core::HybridQuantity::Scalar>{},
-                std::vector<core::HybridQuantity::Vector>{});
+        // but the messenger wiring dereferences this BoundaryManager unconditionally
+        // (magneticRefinePatchStrategy_), so it must never be null. When the config carries no
+        // boundary_conditions (hand-built C++ test dicts), build it from an empty dict: the
+        // manager then registers no boundaries and stays inert.
+        auto const has_bcs = dict.contains("grid") && dict["grid"].contains("boundary_conditions");
+        boundaryManager    = std::make_shared<boundary_manager_type>(
+            has_bcs ? dict["grid"]["boundary_conditions"] : PHARE::initializer::PHAREDict{},
+            std::vector<core::HybridQuantity::Scalar>{},
+            std::vector<core::HybridQuantity::Vector>{});
     }
 
 

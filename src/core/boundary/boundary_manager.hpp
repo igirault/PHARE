@@ -61,6 +61,15 @@ public:
                     std::shared_ptr<Thermo> thermo = nullptr)
         : thermo_{std::move(thermo)}
     {
+        // An empty (non-node) dict yields an inert manager with no boundaries. Models build
+        // one from an empty PHAREDict when the config carries no boundary_conditions (e.g.
+        // hand-built C++ test dicts), and cppdict's visit throws on a non-node, so guard it.
+        if (!dict.isNode())
+        {
+            priority_policy_ = PriorityPolicy::ByDirection;
+            return;
+        }
+
         dict.visit(cppdict::visit_all_nodes,
                    [&](std::string const& locationName, initializer::PHAREDict::data_t _) {
                        /// @todo I don't do anything with the second argument because it cannot be
