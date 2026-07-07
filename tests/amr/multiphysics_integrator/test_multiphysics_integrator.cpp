@@ -176,7 +176,7 @@ TYPED_TEST(SimulatorTest, computeStableDtReturnsAFiniteBound)
 
     ASSERT_GT(hierarchy.getNumberOfLevels(), 1);
 
-    auto const dt = multiphysInteg.computeStableDt(hierarchy, /*cfl=*/0.4, /*fourier=*/0.4);
+    auto const dt = multiphysInteg.computeStableDt(hierarchy, {/*cfl=*/0.4, /*fourier=*/0.4});
 
     EXPECT_GT(dt, 0.);
     EXPECT_LT(dt, std::numeric_limits<double>::max());
@@ -189,8 +189,8 @@ TYPED_TEST(SimulatorTest, computeStableDtScalesLinearlyWithCfl)
     auto& hierarchy      = *sim.hierarchy;
     auto& multiphysInteg = *sim.getMultiPhysicsIntegrator();
 
-    auto const dt_low  = multiphysInteg.computeStableDt(hierarchy, 0.2, 0.2);
-    auto const dt_high = multiphysInteg.computeStableDt(hierarchy, 0.4, 0.4);
+    auto const dt_low  = multiphysInteg.computeStableDt(hierarchy, {0.2, 0.2});
+    auto const dt_high = multiphysInteg.computeStableDt(hierarchy, {0.4, 0.4});
 
     EXPECT_DOUBLE_EQ(dt_high, 2. * dt_low);
 }
