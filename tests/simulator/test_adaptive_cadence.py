@@ -27,6 +27,19 @@ def _h5_time_group_count(h5_filepath):
         return len(h5_file[h5_time_grp_key].keys())
 
 
+def _restart_time_dirs(restart_dir):
+    """Time-stamped restart checkpoint directories (one per coarse step that wrote)."""
+    dirs = []
+    for path_object in Path(restart_dir).iterdir():
+        if path_object.is_dir():
+            try:
+                float(path_object.name)
+            except ValueError:
+                continue  # not a time-stamped restart directory, skip
+            dirs.append(path_object)
+    return dirs
+
+
 def setup_model(sim, ppc=10):
     def density(x):
         return 1.0
@@ -225,6 +238,101 @@ class AdaptiveCadenceTest(SimulatorTest):
         self.assertEqual(
             cpp_etc_lib().restart_step_index(str(restart_time_dirs[0])), n_advances
         )
+
+    def test_restart_resume_continues_step_index(self):
+        """Regression test for restart-safety of the coarse-step counter: a run resumed from a
+        checkpoint must *continue* counting steps from the persisted index, not reset to 0.
+        test_restart_persists_step_index only checks a single checkpoint's write+read; here a
+        second Simulator loads the checkpoint and advances further, and the new checkpoint's
+        index must reflect the resumed (not restarted-from-zero) count. If the resume reset the
+        counter, restart_step_index of the post-resume checkpoint would read n2 instead of
+        resume_step + n2, and the step-period cadence would misfire after every restart."""
+        from pyphare.cpp import cpp_etc_lib
+
+        n1 = 4  # first-run advances
+        period = 2  # restart step-period cadence
+        n2 = 2  # post-resume advances
+
+        # coarse step of the last checkpoint the first run writes (largest multiple of period)
+        resume_step = (n1 // period) * period
+
+        run_dir = out + "/restart_resume_step_index"
+
+        # first run: step-period restart cadence under adaptive dt
+        sim = self.simulation(
+            **base_args(
+                run_dir,
+                restart_options=dict(mode="overwrite", step_period=period),
+            )
+        )
+        setup_model(sim)
+        self.simulator = Simulator(sim).initialize()
+        for _ in range(n1):
+            self.simulator.advance()
+        self.simulator.reset()
+        self.simulator = None
+
+        restart_dir = sim.restart_options["dir"]
+        # under adaptive dt the checkpoint times are unknown ahead of the run, so recover the
+        # latest (largest-time) checkpoint dir post-hoc and resume from its exact time
+        first_run_dirs = _restart_time_dirs(restart_dir)
+        self.assertTrue(len(first_run_dirs) > 0)
+        latest_dir = max(first_run_dirs, key=lambda p: float(p.name))
+        self.assertEqual(
+            cpp_etc_lib().restart_step_index(str(latest_dir)), resume_step
+        )
+        restart_time = float(latest_dir.name)
+
+        # second run: resume from that checkpoint, keep the same step-period cadence
+        ph.global_vars.sim = None
+        sim = self.simulation(
+            **base_args(
+                run_dir,
+                restart_options=dict(
+                    mode="overwrite", step_period=period, restart_time=restart_time
+                ),
+            )
+        )
+        self.assertIn("restart_time", sim.restart_options)
+        setup_model(sim)
+        self.simulator = Simulator(sim).initialize()
+        for _ in range(n2):
+            self.simulator.advance()
+        self.simulator.dump()  # force a checkpoint at the resumed coarse step
+        self.simulator.reset()
+
+        # the newest checkpoint (latest time > restart_time) must carry the *continued* index
+        post_resume_dirs = [
+            p for p in _restart_time_dirs(restart_dir) if float(p.name) > restart_time
+        ]
+        self.assertTrue(len(post_resume_dirs) > 0)
+        newest_dir = max(post_resume_dirs, key=lambda p: float(p.name))
+        self.assertEqual(
+            cpp_etc_lib().restart_step_index(str(newest_dir)), resume_step + n2
+        )
+
+    def test_restart_time_period_does_not_freeze_when_period_lt_dt(self):
+        """Regression test mirroring the diagnostics catch-up test for the restart path: a
+        time-based restart cadence finer than the coarse step must keep writing a checkpoint
+        every step (catch-up), not freeze after the first."""
+        n_advances = 4
+        sim = self.simulation(
+            **base_args(
+                out + "/restart_time_period_catchup",
+                final_time=1.0,
+                restart_options=dict(mode="overwrite", time_period=1e-4),
+            )
+        )
+        setup_model(sim)
+
+        self.simulator = Simulator(sim).initialize()
+        for _ in range(n_advances):
+            self.simulator.advance()
+        self.simulator.reset()
+
+        # one checkpoint per step (init + each advance): a frozen cadence would give 1
+        restart_dir = sim.restart_options["dir"]
+        self.assertEqual(len(_restart_time_dirs(restart_dir)), n_advances + 1)
 
 
 if __name__ == "__main__":
