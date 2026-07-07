@@ -29,6 +29,7 @@ public:
 
     std::string name() const override { return "V"; }
     VectorCentering centering() const override { return VectorCentering::cell; }
+    DerivedCategory category() const override { return DerivedCategory::fluid; }
 
     void compute(State const& state, GridLayout const& layout, out_t& out,
                  double /*time*/) const override
@@ -69,6 +70,7 @@ public:
     }
 
     std::string name() const override { return "P"; }
+    DerivedCategory category() const override { return DerivedCategory::fluid; }
     ScalarCentering centering() const override { return ScalarCentering::cell; }
 
     void compute(State const& state, GridLayout const& layout, out_t& out,
@@ -111,6 +113,7 @@ public:
     using typename Super::out_t;
 
     std::string name() const override { return "divB"; }
+    DerivedCategory category() const override { return DerivedCategory::electromag; }
     ScalarCentering centering() const override { return ScalarCentering::cell; }
 
     void compute(State const& state, GridLayout const& layout, out_t& out,
@@ -146,6 +149,7 @@ public:
     using typename Super::out_t;
 
     std::string name() const override { return "J"; }
+    DerivedCategory category() const override { return DerivedCategory::electromag; }
     VectorCentering centering() const override { return VectorCentering::Elike; }
 
     void compute(State const& state, GridLayout const& layout, out_t& out,
@@ -173,6 +177,7 @@ public:
     }
 
     std::string name() const override { return "E"; }
+    DerivedCategory category() const override { return DerivedCategory::electromag; }
     VectorCentering centering() const override { return VectorCentering::Elike; }
 
     void compute(State const& state, GridLayout const& layout, out_t& out,

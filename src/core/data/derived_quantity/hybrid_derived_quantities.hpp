@@ -19,6 +19,7 @@ public:
 
     std::string name() const override { return "J"; }
     VectorCentering centering() const override { return VectorCentering::Elike; }
+    DerivedCategory category() const override { return DerivedCategory::electromag; }
 
     void compute(State const& state, GridLayout const& layout, out_t& out,
                  double /*time*/) const override

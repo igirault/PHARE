@@ -6,6 +6,7 @@
 #include "core/utilities/mpi_utils.hpp"
 #include "core/data/derived_quantity/mhd_derived_quantities.hpp"
 #include "core/data/derived_quantity/hybrid_derived_quantities.hpp"
+#include "core/data/derived_quantity/derived_scratch.hpp"
 
 #include "amr/amr_constants.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -344,6 +345,76 @@ public:
 
     NO_DISCARD Field& derivedScalarScratch() { return derivedScalarScratch_; }
     NO_DISCARD VecField& derivedVecScratch() { return derivedVecScratch_; }
+
+
+    /** The catalogue of fluid-tree ("/mhd/") quantities: primaries plus
+     *  fluid-category derived quantities. Enumerates names only — no patch
+     *  data access, so callable for null/remote patches and per-level setup. */
+    template<typename OnScalar, typename OnVector>
+    void forEachFluidQuantity(OnScalar&& onScalar, OnVector&& onVector) const
+    {
+        onScalar("rho");
+        onVector("rhoV");
+        onScalar("Etot");
+
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::fluid)
+                onScalar(dq->name());
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::fluid)
+                onVector(dq->name());
+    }
+
+    /** Dispatch the active fluid diagnostic to its per-patch data: primaries
+     *  are passed through, derived quantities are viewed in scratch and
+     *  computed iff compute_derived (shape-only consumers skip the compute).
+     *  Returns true if the diagnostic named a fluid-tree quantity. */
+    template<typename OnScalar, typename OnVector>
+    bool visitActiveFluidQuantity(std::string const& quantity, GridLayout const& layout,
+                                  double const time, bool const compute_derived,
+                                  OnScalar&& onScalar, OnVector&& onVector)
+    {
+        std::string const tree{"/mhd/"};
+        auto const isActive = [&](std::string const& name) { return quantity == tree + name; };
+
+        if (isActive("rho"))
+        {
+            onScalar("rho", this->model_.state.rho);
+            return true;
+        }
+        if (isActive("rhoV"))
+        {
+            onVector("rhoV", this->model_.state.rhoV);
+            return true;
+        }
+        if (isActive("Etot"))
+        {
+            onScalar("Etot", this->model_.state.Etot);
+            return true;
+        }
+
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::fluid and isActive(dq->name()))
+            {
+                auto field = core::derived_scalar_view<physical_quantity_type>(
+                    derivedScalarScratch_, dq->centering(), layout);
+                if (compute_derived)
+                    dq->compute(state(), layout, field, time);
+                onScalar(dq->name(), field);
+                return true;
+            }
+        for (auto const& dq : derived_.template quantities<1>())
+            if (dq->category() == core::DerivedCategory::fluid and isActive(dq->name()))
+            {
+                auto vecfield = core::derived_vector_view<physical_quantity_type>(
+                    derivedVecScratch_, dq->centering(), layout);
+                if (compute_derived)
+                    dq->compute(state(), layout, vecfield, time);
+                onVector(dq->name(), vecfield);
+                return true;
+            }
+        return false;
+    }
 
 protected:
     Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};

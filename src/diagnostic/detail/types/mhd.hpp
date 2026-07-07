@@ -4,7 +4,6 @@
 #include "diagnostic/detail/h5typewriter.hpp"
 
 #include "core/data/vecfield/vecfield_component.hpp"
-#include "core/data/derived_quantity/derived_scratch.hpp"
 
 namespace PHARE::diagnostic::h5
 {
@@ -68,8 +67,10 @@ private:
 template<typename H5Writer>
 void MHDDiagnosticWriter<H5Writer>::createFiles(DiagnosticProperties& diagnostic)
 {
-    std::string tree{"/mhd/"};
-    checkCreateFileFor_(diagnostic, fileData_, tree, "rho", "V", "P", "rhoV", "Etot");
+    std::string const tree{"/mhd/"};
+    auto const create
+        = [&](std::string const& name) { checkCreateFileFor_(diagnostic, fileData_, tree, name); };
+    this->h5Writer_.modelView().forEachFluidQuantity(create, create);
 }
 
 template<typename H5Writer>
@@ -84,9 +85,6 @@ void MHDDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& diagnos
                                                    Attributes& patchAttributes)
 {
     auto& h5Writer         = this->h5Writer_;
-    auto& rho              = h5Writer.modelView().getRho();
-    auto& rhoV             = h5Writer.modelView().getRhoV();
-    auto& Etot             = h5Writer.modelView().getEtot();
     std::string lvlPatchID = std::to_string(iLevel) + "_" + patchID;
 
     auto setGhostNbr = [](auto const& field, auto& attr, auto const& name) {
@@ -110,33 +108,12 @@ void MHDDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& diagnos
             infoDS(vecF.getComponent(type), name + "_" + id, attr);
     };
 
-    std::string tree{"/mhd/"};
-    if (isActiveDiag(diagnostic, tree, "rho"))
-        infoDS(rho, "rho", patchAttributes[lvlPatchID]["mhd"]);
-    if (isActiveDiag(diagnostic, tree, "rhoV"))
-        infoVF(rhoV, "rhoV", patchAttributes[lvlPatchID]["mhd"]);
-    if (isActiveDiag(diagnostic, tree, "Etot"))
-        infoDS(Etot, "Etot", patchAttributes[lvlPatchID]["mhd"]);
-
-    auto& modelView     = h5Writer.modelView();
-    auto const& derived = modelView.derivedQuantities();
-    auto const& layout  = h5Writer.patchLayout();
-
-    for (auto const& dq : derived.template quantities<0>())
-        if (isActiveDiag(diagnostic, tree, dq->name()))
-        {
-            auto field = core::derived_scalar_view<typename Model_t::physical_quantity_type>(
-                modelView.derivedScalarScratch(), dq->centering(), layout);
-            infoDS(field, dq->name(), patchAttributes[lvlPatchID]["mhd"]);
-        }
-
-    for (auto const& dq : derived.template quantities<1>())
-        if (isActiveDiag(diagnostic, tree, dq->name()))
-        {
-            auto vecfield = core::derived_vector_view<typename Model_t::physical_quantity_type>(
-                modelView.derivedVecScratch(), dq->centering(), layout);
-            infoVF(vecfield, dq->name(), patchAttributes[lvlPatchID]["mhd"]);
-        }
+    auto& attr = patchAttributes[lvlPatchID]["mhd"];
+    h5Writer.modelView().visitActiveFluidQuantity(
+        diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
+        /*compute_derived=*/false, //
+        [&](std::string const& name, auto& field) { infoDS(field, name, attr); },
+        [&](std::string const& name, auto& vecF) { infoVF(vecF, name, attr); });
 }
 
 template<typename H5Writer>
@@ -177,21 +154,16 @@ void MHDDiagnosticWriter<H5Writer>::initDataSets(
         bool null        = patchID.empty();
         std::string path = h5Writer.getPatchPathAddTimestamp(lvl, patchID) + "/";
 
-        std::string tree{"/mhd/"};
-        if (isActiveDiag(diagnostic, tree, "rho"))
-            initDS(path, attr["mhd"], "rho", null);
-        if (isActiveDiag(diagnostic, tree, "rhoV"))
-            initVF(path, attr["mhd"], "rhoV", null);
-        if (isActiveDiag(diagnostic, tree, "Etot"))
-            initDS(path, attr["mhd"], "Etot", null);
-
-        auto const& derived = h5Writer.modelView().derivedQuantities();
-        for (auto const& dq : derived.template quantities<0>())
-            if (isActiveDiag(diagnostic, tree, dq->name()))
-                initDS(path, attr["mhd"], dq->name(), null);
-        for (auto const& dq : derived.template quantities<1>())
-            if (isActiveDiag(diagnostic, tree, dq->name()))
-                initVF(path, attr["mhd"], dq->name(), null);
+        std::string const tree{"/mhd/"};
+        h5Writer.modelView().forEachFluidQuantity(
+            [&](std::string const& name) {
+                if (isActiveDiag(diagnostic, tree, name))
+                    initDS(path, attr["mhd"], name, null);
+            },
+            [&](std::string const& name) {
+                if (isActiveDiag(diagnostic, tree, name))
+                    initVF(path, attr["mhd"], name, null);
+            });
     };
 
     initDataSets_(patchIDs, patchAttributes, maxLevel, initPatch);
@@ -201,9 +173,6 @@ template<typename H5Writer>
 void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
 {
     auto& h5Writer = this->h5Writer_;
-    auto& rho      = h5Writer.modelView().getRho();
-    auto& rhoV     = h5Writer.modelView().getRhoV();
-    auto& Etot     = h5Writer.modelView().getEtot();
     auto& h5file   = *fileData_.at(diagnostic.quantity);
 
     auto hasNaN = [](auto const& container) {
@@ -229,38 +198,13 @@ void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
         //     checkNaN(path + "[" + std::to_string(d) + "]", vecF[d]);
     };
 
-    std::string path = h5Writer.patchPath() + "/";
-    std::string tree{"/mhd/"};
+    std::string const path = h5Writer.patchPath() + "/";
 
-    if (isActiveDiag(diagnostic, tree, "rho"))
-        writeDS(path + "rho", rho);
-    if (isActiveDiag(diagnostic, tree, "rhoV"))
-        writeTF(path + "rhoV", rhoV);
-    if (isActiveDiag(diagnostic, tree, "Etot"))
-        writeDS(path + "Etot", Etot);
-
-    auto& modelView     = h5Writer.modelView();
-    auto const& derived = modelView.derivedQuantities();
-    auto const& layout  = h5Writer.patchLayout();
-    auto const time     = h5Writer.timestamp();
-
-    for (auto const& dq : derived.template quantities<0>())
-        if (isActiveDiag(diagnostic, tree, dq->name()))
-        {
-            auto field = core::derived_scalar_view<typename Model_t::physical_quantity_type>(
-                modelView.derivedScalarScratch(), dq->centering(), layout);
-            dq->compute(modelView.state(), layout, field, time);
-            writeDS(path + dq->name(), field);
-        }
-
-    for (auto const& dq : derived.template quantities<1>())
-        if (isActiveDiag(diagnostic, tree, dq->name()))
-        {
-            auto vecfield = core::derived_vector_view<typename Model_t::physical_quantity_type>(
-                modelView.derivedVecScratch(), dq->centering(), layout);
-            dq->compute(modelView.state(), layout, vecfield, time);
-            writeTF(path + dq->name(), vecfield);
-        }
+    h5Writer.modelView().visitActiveFluidQuantity(
+        diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
+        /*compute_derived=*/true, //
+        [&](std::string const& name, auto& field) { writeDS(path + name, field); },
+        [&](std::string const& name, auto& vecF) { writeTF(path + name, vecF); });
 }
 
 template<typename H5Writer>

@@ -2,7 +2,6 @@
 #define PHARE_DIAGNOSTIC_DETAIL_VTK_TYPES_FLUID_HPP
 
 #include "core/logger.hpp"
-#include "core/data/derived_quantity/derived_scratch.hpp"
 
 #include "amr/physical_models/mhd_model.hpp"
 #include "amr/physical_models/hybrid_model.hpp"
@@ -136,28 +135,20 @@ FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl
 {
     auto& modelView = writer->h5Writer_.modelView();
 
-    auto& rho  = modelView.getRho();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
-
     std::string const tree{"/mhd/"};
+    std::optional<std::size_t> ret;
 
-    if (isActiveDiag(diagnostic, tree, "rho"))
-        return file_initializer.initFieldFileLevel(ilvl);
-    if (isActiveDiag(diagnostic, tree, "rhoV"))
-        return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
-    if (isActiveDiag(diagnostic, tree, "Etot"))
-        return file_initializer.initFieldFileLevel(ilvl);
+    modelView.forEachFluidQuantity(
+        [&](std::string const& name) {
+            if (!ret and isActiveDiag(diagnostic, tree, name))
+                ret = file_initializer.initFieldFileLevel(ilvl);
+        },
+        [&](std::string const& name) {
+            if (!ret and isActiveDiag(diagnostic, tree, name))
+                ret = file_initializer.template initTensorFieldFileLevel<1>(ilvl);
+        });
 
-    auto const& derived = modelView.derivedQuantities();
-    for (auto const& dq : derived.template quantities<0>())
-        if (isActiveDiag(diagnostic, tree, dq->name()))
-            return file_initializer.initFieldFileLevel(ilvl);
-    for (auto const& dq : derived.template quantities<1>())
-        if (isActiveDiag(diagnostic, tree, dq->name()))
-            return file_initializer.template initTensorFieldFileLevel<1>(ilvl);
-
-    return std::nullopt;
+    return ret;
 }
 
 
@@ -242,40 +233,13 @@ void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& lay
 {
     auto& modelView = writer->h5Writer_.modelView();
 
-    auto& rho  = modelView.getRho();
-    auto& rhoV = modelView.getRhoV();
-    auto& Etot = modelView.getEtot();
-
-    std::string const tree{"/mhd/"};
-
-    if (isActiveDiag(diagnostic, tree, "rho"))
-        file_writer.writeField(rho, layout);
-    else if (isActiveDiag(diagnostic, tree, "rhoV"))
-        file_writer.template writeTensorField<1>(rhoV, layout);
-    else if (isActiveDiag(diagnostic, tree, "Etot"))
-        file_writer.writeField(Etot, layout);
-    else
-    {
-        auto const& derived = modelView.derivedQuantities();
-        auto const time     = writer->h5Writer_.timestamp();
-
-        for (auto const& dq : derived.template quantities<0>())
-            if (isActiveDiag(diagnostic, tree, dq->name()))
-            {
-                auto field = core::derived_scalar_view<typename Model_t::physical_quantity_type>(
-                    modelView.derivedScalarScratch(), dq->centering(), layout);
-                dq->compute(modelView.state(), layout, field, time);
-                file_writer.writeField(field, layout);
-            }
-        for (auto const& dq : derived.template quantities<1>())
-            if (isActiveDiag(diagnostic, tree, dq->name()))
-            {
-                auto vecfield = core::derived_vector_view<typename Model_t::physical_quantity_type>(
-                    modelView.derivedVecScratch(), dq->centering(), layout);
-                dq->compute(modelView.state(), layout, vecfield, time);
-                file_writer.template writeTensorField<1>(vecfield, layout);
-            }
-    }
+    modelView.visitActiveFluidQuantity(
+        diagnostic.quantity, layout, writer->h5Writer_.timestamp(),
+        /*compute_derived=*/true, //
+        [&](std::string const&, auto& field) { file_writer.writeField(field, layout); },
+        [&](std::string const&, auto& vecF) {
+            file_writer.template writeTensorField<1>(vecF, layout);
+        });
 }
 
 
