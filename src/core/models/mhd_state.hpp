@@ -83,6 +83,7 @@ namespace core
                          .template to<initializer::InitFunction<dimension>>()}
             , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
             , ohmInfo_{core::OhmInfo::FROM(dict)}
+            , hall_{cppdict::get_value(dict, "hall", false)}
         {
         }
 
@@ -102,6 +103,7 @@ namespace core
 
             , gamma_{}
             , ohmInfo_{0.0, 0.0, HyperMode::constant}
+            , hall_{false}
         {
         }
 
@@ -122,6 +124,7 @@ namespace core
         NO_DISCARD double eta() const { return ohmInfo_.eta; }
         NO_DISCARD double nu() const { return ohmInfo_.nu; }
         NO_DISCARD HyperMode hyperMode() const { return ohmInfo_.hyper_mode; }
+        NO_DISCARD bool hall() const { return hall_; }
 
         field_type rho;
         VecFieldT V;
@@ -142,6 +145,7 @@ namespace core
 
         double const gamma_;
         core::OhmInfo const ohmInfo_;
+        bool const hall_;
     };
 } // namespace core
 } // namespace PHARE

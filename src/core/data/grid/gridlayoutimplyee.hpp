@@ -108,10 +108,13 @@ namespace core
 
             std::array<QtyCentering, NBR_COMPO> const P = {{data.primal, data.primal, data.primal}};
 
+            std::array<QtyCentering, NBR_COMPO> const ScalarCellCentered
+                = {{data.dual, data.dual, data.dual}};
+
             std::array<std::array<QtyCentering, NBR_COMPO>,
                        static_cast<std::size_t>(HybridQuantity::Scalar::count)> const _QtyCentering{
-                Bx, By, Bz, Ex, Ey,  Ez,  Jx,  Jy,  Jz,  Rho,
-                Vx, Vy, Vz, P,  Mxx, Mxy, Mxz, Myy, Myz, Mzz};
+                Bx, By, Bz, Ex,  Ey,  Ez,  Jx,  Jy,  Jz,  Rho, Vx,
+                Vy, Vz, P,  Mxx, Mxy, Mxz, Myy, Myz, Mzz, ScalarCellCentered};
 
             return _QtyCentering;
         }
@@ -175,6 +178,9 @@ namespace core
                         return {{_QtyCentering_[gridData_.iMyz][gridData_.idirX]}};
                     case HybridQuantity::Scalar::Mzz:
                         return {{_QtyCentering_[gridData_.iMzz][gridData_.idirX]}};
+                    case HybridQuantity::Scalar::ScalarCellCentered:
+                        return {{_QtyCentering_[static_cast<std::uint32_t>(
+                            HybridQuantity::Scalar::ScalarCellCentered)][gridData_.idirX]}};
                     default: throw std::runtime_error("Wrong _Quantity");
                 }
             }
@@ -243,6 +249,11 @@ namespace core
                     case HybridQuantity::Scalar::Mzz:
                         return {{_QtyCentering_[gridData_.iMzz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iMzz][gridData_.idirY]}};
+                    case HybridQuantity::Scalar::ScalarCellCentered:
+                        return {{_QtyCentering_[static_cast<std::uint32_t>(
+                                     HybridQuantity::Scalar::ScalarCellCentered)][gridData_.idirX],
+                                 _QtyCentering_[static_cast<std::uint32_t>(
+                                     HybridQuantity::Scalar::ScalarCellCentered)][gridData_.idirY]}};
                     default: throw std::runtime_error("Wrong _Quantity");
                 }
             }
@@ -331,6 +342,13 @@ namespace core
                         return {{_QtyCentering_[gridData_.iMzz][gridData_.idirX],
                                  _QtyCentering_[gridData_.iMzz][gridData_.idirY],
                                  _QtyCentering_[gridData_.iMzz][gridData_.idirZ]}};
+                    case HybridQuantity::Scalar::ScalarCellCentered:
+                        return {{_QtyCentering_[static_cast<std::uint32_t>(
+                                     HybridQuantity::Scalar::ScalarCellCentered)][gridData_.idirX],
+                                 _QtyCentering_[static_cast<std::uint32_t>(
+                                     HybridQuantity::Scalar::ScalarCellCentered)][gridData_.idirY],
+                                 _QtyCentering_[static_cast<std::uint32_t>(
+                                     HybridQuantity::Scalar::ScalarCellCentered)][gridData_.idirZ]}};
                     default: throw std::runtime_error("Wrong _Quantity");
                 }
             }

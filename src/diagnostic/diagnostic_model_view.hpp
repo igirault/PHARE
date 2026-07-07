@@ -189,6 +189,8 @@ public:
 
     NO_DISCARD VecField& derivedVecScratch() { return derivedVecScratch_; }
 
+    NO_DISCARD Field& derivedScalarScratch() { return derivedScalarScratch_; }
+
     NO_DISCARD VecField& getB() const { return this->model_.state.electromag.B; }
 
     NO_DISCARD VecField& getE() const { return this->model_.state.electromag.E; }
@@ -281,15 +283,17 @@ public:
 
 
     /** Catalogue of EM-tree quantities: primaries plus electromag-category
-     *  derived quantities under the "EM_" prefix. Names only. Hybrid has no
-     *  scalar EM quantities (and no scalar scratch to view them in), so
-     *  onScalar is never invoked. */
+     *  derived quantities (scalar e.g. divB, vector e.g. J) under the "EM_"
+     *  prefix. Names only. */
     template<typename OnScalar, typename OnVector>
-    void forEachEmQuantity(OnScalar&&, OnVector&& onVector) const
+    void forEachEmQuantity(OnScalar&& onScalar, OnVector&& onVector) const
     {
         onVector("EM_B");
         onVector("EM_E");
 
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::electromag)
+                onScalar("EM_" + dq->name());
         for (auto const& dq : derived_.template quantities<1>())
             if (dq->category() == core::DerivedCategory::electromag)
                 onVector("EM_" + dq->name());
@@ -299,7 +303,7 @@ public:
      *  quantities are viewed in scratch and computed iff compute_derived. */
     template<typename OnScalar, typename OnVector>
     bool visitActiveEmQuantity(std::string const& quantity, GridLayout const& layout,
-                               double const time, bool const compute_derived, OnScalar&&,
+                               double const time, bool const compute_derived, OnScalar&& onScalar,
                                OnVector&& onVector)
     {
         auto const isActive = [&](std::string const& name) { return quantity == "/" + name; };
@@ -315,6 +319,20 @@ public:
             return true;
         }
 
+        for (auto const& dq : derived_.template quantities<0>())
+            if (dq->category() == core::DerivedCategory::electromag
+                and isActive("EM_" + dq->name()))
+            {
+                auto field = core::derived_scalar_view<physical_quantity_type>(
+                    derivedScalarScratch_, dq->centering(), layout);
+                if (compute_derived)
+                {
+                    core::zero_scalar_view(field);
+                    dq->compute(state(), layout, field, time);
+                }
+                onScalar("EM_" + dq->name(), field);
+                return true;
+            }
         for (auto const& dq : derived_.template quantities<1>())
             if (dq->category() == core::DerivedCategory::electromag
                 and isActive("EM_" + dq->name()))
@@ -322,7 +340,10 @@ public:
                 auto vecfield = core::derived_vector_view<physical_quantity_type>(
                     derivedVecScratch_, dq->centering(), layout);
                 if (compute_derived)
+                {
+                    core::zero_vector_view(vecfield);
                     dq->compute(state(), layout, vecfield, time);
+                }
                 onVector("EM_" + dq->name(), vecfield);
                 return true;
             }
@@ -367,12 +388,14 @@ public:
 
     NO_DISCARD auto getCompileTimeResourcesViewList()
     {
-        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_, derivedVecScratch_);
+        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_, derivedVecScratch_,
+                                     derivedScalarScratch_);
     }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {
-        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_, derivedVecScratch_);
+        return std::forward_as_tuple(tmpField_, tmpVec_, tmpTensor_, derivedVecScratch_,
+                                     derivedScalarScratch_);
     }
 
 protected:
@@ -422,6 +445,8 @@ protected:
     VecField tmpVec_{"PHARE_sumVec", core::HybridQuantity::Vector::V};
     TensorFieldT tmpTensor_{"PHARE_sumTensor", core::HybridQuantity::Tensor::M};
     VecField derivedVecScratch_{"PHARE_derived_vec", core::HybridQuantity::Vector::VecElike};
+    Field derivedScalarScratch_{"PHARE_derived_scalar",
+                                core::HybridQuantity::Scalar::ScalarNodeCentered};
     core::DerivedQuantityRegistry<State_t, GridLayout> derived_;
 };
 
@@ -443,7 +468,8 @@ public:
     ModelView(Hierarchy& hierarchy, Model& model)
         : Super{hierarchy, model}
         , derived_{core::makeMhdDerivedQuantities<State_t, GridLayout>(
-              model.state.gamma(), model.state.eta(), model.state.nu(), model.state.hyperMode())}
+              model.state.gamma(), model.state.eta(), model.state.nu(), model.state.hyperMode(),
+              model.state.hall())}
     {
     }
 
@@ -546,7 +572,10 @@ public:
                 auto field = core::derived_scalar_view<physical_quantity_type>(
                     derivedScalarScratch_, dq->centering(), layout);
                 if (compute_derived)
+                {
+                    core::zero_scalar_view(field);
                     dq->compute(state(), layout, field, time);
+                }
                 onScalar(dq->name(), field);
                 return true;
             }
@@ -556,7 +585,10 @@ public:
                 auto vecfield = core::derived_vector_view<physical_quantity_type>(
                     derivedVecScratch_, dq->centering(), layout);
                 if (compute_derived)
+                {
+                    core::zero_vector_view(vecfield);
                     dq->compute(state(), layout, vecfield, time);
+                }
                 onVector(dq->name(), vecfield);
                 return true;
             }
@@ -601,7 +633,10 @@ public:
                 auto field = core::derived_scalar_view<physical_quantity_type>(
                     derivedScalarScratch_, dq->centering(), layout);
                 if (compute_derived)
+                {
+                    core::zero_scalar_view(field);
                     dq->compute(state(), layout, field, time);
+                }
                 onScalar("EM_" + dq->name(), field);
                 return true;
             }
@@ -612,7 +647,10 @@ public:
                 auto vecfield = core::derived_vector_view<physical_quantity_type>(
                     derivedVecScratch_, dq->centering(), layout);
                 if (compute_derived)
+                {
+                    core::zero_vector_view(vecfield);
                     dq->compute(state(), layout, vecfield, time);
+                }
                 onVector("EM_" + dq->name(), vecfield);
                 return true;
             }

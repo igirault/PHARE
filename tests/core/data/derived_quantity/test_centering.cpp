@@ -17,14 +17,16 @@ TEST(DerivedCentering, mhdAliasesResolveToExistingQuantities)
 
 TEST(DerivedCentering, hybridAliasesResolveToExistingQuantities)
 {
+    EXPECT_EQ(scalar_qty<HybridQuantity>(ScalarCentering::cell),
+              HybridQuantity::Scalar::ScalarCellCentered);
     EXPECT_EQ(scalar_qty<HybridQuantity>(ScalarCentering::node), HybridQuantity::Scalar::rho);
     EXPECT_EQ(vector_qty<HybridQuantity>(VectorCentering::Elike), HybridQuantity::Vector::E);
     EXPECT_EQ(vector_qty<HybridQuantity>(VectorCentering::Blike), HybridQuantity::Vector::B);
 }
 
-TEST(DerivedCentering, hybridCellCenteredThrows)
+TEST(DerivedCentering, hybridCellCenteredVectorThrows)
 {
-    EXPECT_THROW(scalar_qty<HybridQuantity>(ScalarCentering::cell), std::runtime_error);
+    // Hybrid has an all-dual scalar (for divB) but still no all-dual vector quantity.
     EXPECT_THROW(vector_qty<HybridQuantity>(VectorCentering::cell), std::runtime_error);
 }
 

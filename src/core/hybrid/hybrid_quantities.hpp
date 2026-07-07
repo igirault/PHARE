@@ -34,6 +34,9 @@ public:
         Myy,
         Myz,
         Mzz,
+        // all-dual (cell-centered) quantity: a derived-quantity view centering for
+        // scalars like divB that live at cell centers (Yee div of face-centered B).
+        ScalarCellCentered,
         count,
 
         // centering-only alias for derived-quantity scratch fields (moments are all-primal)

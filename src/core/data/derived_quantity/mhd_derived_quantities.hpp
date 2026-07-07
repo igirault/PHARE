@@ -11,6 +11,7 @@
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/utilities/index/index.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
@@ -169,10 +170,11 @@ class MhdElectricField : public DerivedQuantity<State, GridLayout, 1>
 public:
     using typename Super::out_t;
 
-    MhdElectricField(double const eta, double const nu, HyperMode const hyper_mode)
+    MhdElectricField(double const eta, double const nu, HyperMode const hyper_mode, bool const hall)
         : eta_{eta}
         , nu_{nu}
         , hyper_mode_{hyper_mode}
+        , hall_{hall}
     {
     }
 
@@ -227,49 +229,63 @@ private:
     void point_(State const& state, GridLayout const& layout, out_t const& J,
                 MeshIndex<dimension> const index, Field& E) const
     {
-        auto&& [vx, vy, vz]
-            = rhoVToV(state.rho(index), state.rhoV(Component::X)(index),
-                      state.rhoV(Component::Y)(index), state.rhoV(Component::Z)(index));
-
-        E(index) = ideal_<component>(state, layout, vx, vy, vz, index)
-                   + hall_<component>(state, layout, J, index) + eta_ * J(component)(index)
+        E(index) = ideal_<component>(state, layout, index) + eta_ * J(component)(index)
                    + hyperresistive_<component>(state, layout, J(component), index);
+        // Hall term is compiled in/out of the solver via a template flag; gate the
+        // diagnostic on the same flag so E matches the model actually being run.
+        if (hall_)
+            E(index) += hallTerm_<component>(state, layout, J, index);
+    }
+
+    // Bulk velocity is reconstructed from the conserved (cell-centered) rho / rhoV
+    // projected onto the E-edge, so V shares the same centering as the B it is
+    // crossed with (mirrors the hybrid Ohm ideal term). v[0]=vx, v[1]=vy, v[2]=vz.
+    template<auto rhoProj>
+    auto vOnEdge_(State const& state, MeshIndex<dimension> const index) const
+    {
+        auto const n = GridLayout::template project<rhoProj>(state.rho, index);
+        return std::array<double, 3>{
+            GridLayout::template project<rhoProj>(state.rhoV(Component::X), index) / n,
+            GridLayout::template project<rhoProj>(state.rhoV(Component::Y), index) / n,
+            GridLayout::template project<rhoProj>(state.rhoV(Component::Z), index) / n};
     }
 
     template<auto component>
-    auto ideal_(State const& state, GridLayout const& layout, double const vx, double const vy,
-                double const vz, MeshIndex<dimension> const index) const
+    auto ideal_(State const& state, GridLayout const& layout, MeshIndex<dimension> const index) const
     {
         auto const& B = state.B;
         if constexpr (component == Component::X)
         {
+            auto const v = vOnEdge_<GridLayout::cellCenterToEdgeX>(state, index);
             auto const by
                 = GridLayout::template project<GridLayout::ByToEx>(B(Component::Y), index);
             auto const bz
                 = GridLayout::template project<GridLayout::BzToEx>(B(Component::Z), index);
-            return -vy * bz + vz * by;
+            return -v[1] * bz + v[2] * by;
         }
         if constexpr (component == Component::Y)
         {
+            auto const v = vOnEdge_<GridLayout::cellCenterToEdgeY>(state, index);
             auto const bx
                 = GridLayout::template project<GridLayout::BxToEy>(B(Component::X), index);
             auto const bz
                 = GridLayout::template project<GridLayout::BzToEy>(B(Component::Z), index);
-            return -vz * bx + vx * bz;
+            return -v[2] * bx + v[0] * bz;
         }
         if constexpr (component == Component::Z)
         {
+            auto const v = vOnEdge_<GridLayout::cellCenterToEdgeZ>(state, index);
             auto const bx
                 = GridLayout::template project<GridLayout::BxToEz>(B(Component::X), index);
             auto const by
                 = GridLayout::template project<GridLayout::ByToEz>(B(Component::Y), index);
-            return -vx * by + vy * bx;
+            return -v[0] * by + v[1] * bx;
         }
     }
 
     template<auto component>
-    auto hall_(State const& state, GridLayout const& layout, out_t const& J,
-               MeshIndex<dimension> const index) const
+    auto hallTerm_(State const& state, GridLayout const& layout, out_t const& J,
+                   MeshIndex<dimension> const index) const
     {
         auto const& B = state.B;
         if constexpr (component == Component::X)
@@ -311,6 +327,19 @@ private:
         if (hyper_mode_ == HyperMode::constant)
             return -nu_ * layout.laplacian(Jc, index);
 
+        // spatial mode carries a minMeshSize^2 factor, matching the solver's
+        // ConstrainedTransport::spatial_hyperresistive_ (dropping it made the term
+        // orders of magnitude too large).
+        auto const dl2 = [&]() {
+            auto const m = layout.meshSize();
+            if constexpr (dimension == 1)
+                return m[0] * m[0];
+            else if constexpr (dimension == 2)
+                return std::min(m[0], m[1]) * std::min(m[0], m[1]);
+            else
+                return std::min({m[0], m[1], m[2]}) * std::min({m[0], m[1], m[2]});
+        }();
+
         auto const& B = state.B;
         if constexpr (component == Component::X)
         {
@@ -323,7 +352,7 @@ private:
             auto const rho
                 = GridLayout::template project<GridLayout::cellCenterToEdgeX>(state.rho, index);
             auto const b = std::sqrt(bx * bx + by * by + bz * bz);
-            return -nu_ * (b / rho + 1.0) * layout.laplacian(Jc, index);
+            return -nu_ * (b / rho + 1.0) * dl2 * layout.laplacian(Jc, index);
         }
         if constexpr (component == Component::Y)
         {
@@ -336,7 +365,7 @@ private:
             auto const rho
                 = GridLayout::template project<GridLayout::cellCenterToEdgeY>(state.rho, index);
             auto const b = std::sqrt(bx * bx + by * by + bz * bz);
-            return -nu_ * (b / rho + 1.0) * layout.laplacian(Jc, index);
+            return -nu_ * (b / rho + 1.0) * dl2 * layout.laplacian(Jc, index);
         }
         if constexpr (component == Component::Z)
         {
@@ -349,20 +378,21 @@ private:
             auto const rho
                 = GridLayout::template project<GridLayout::cellCenterToEdgeZ>(state.rho, index);
             auto const b = std::sqrt(bx * bx + by * by + bz * bz);
-            return -nu_ * (b / rho + 1.0) * layout.laplacian(Jc, index);
+            return -nu_ * (b / rho + 1.0) * dl2 * layout.laplacian(Jc, index);
         }
     }
 
     double const eta_;
     double const nu_;
     HyperMode const hyper_mode_;
+    bool const hall_;
 };
 
 
 template<typename State, typename GridLayout>
 DerivedQuantityRegistry<State, GridLayout>
 makeMhdDerivedQuantities(double const gamma, double const eta, double const nu,
-                         HyperMode const hyper_mode)
+                         HyperMode const hyper_mode, bool const hall)
 {
     DerivedQuantityRegistry<State, GridLayout> registry;
     registry.template add<1>(std::make_unique<MhdVelocity<State, GridLayout>>());
@@ -370,7 +400,7 @@ makeMhdDerivedQuantities(double const gamma, double const eta, double const nu,
     registry.template add<0>(std::make_unique<MhdDivB<State, GridLayout>>());
     registry.template add<1>(std::make_unique<MhdCurrentDensity<State, GridLayout>>());
     registry.template add<1>(
-        std::make_unique<MhdElectricField<State, GridLayout>>(eta, nu, hyper_mode));
+        std::make_unique<MhdElectricField<State, GridLayout>>(eta, nu, hyper_mode, hall));
     return registry;
 }
 

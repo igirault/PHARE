@@ -127,7 +127,8 @@ TEST_F(MhdDerived, divBOfDiscreteCurlIsZero)
 TEST_F(MhdDerived, factoryRegistersVPandDivB)
 {
     auto registry
-        = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3., 0.0, 0.0, HyperMode::constant);
+        = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3., 0.0, 0.0, HyperMode::constant,
+                                                         /*hall=*/false);
     EXPECT_NE(registry.find<1>("V"), nullptr);
     EXPECT_NE(registry.find<0>("P"), nullptr);
     EXPECT_NE(registry.find<0>("divB"), nullptr);
@@ -169,7 +170,8 @@ TEST_F(MhdDerived, currentDensityMatchesAmpereDirectly)
 TEST_F(MhdDerived, factoryRegistersJ)
 {
     auto registry
-        = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3., 0.0, 0.0, HyperMode::constant);
+        = makeMhdDerivedQuantities<State_t, YeeLayout_t>(5. / 3., 0.0, 0.0, HyperMode::constant,
+                                                         /*hall=*/false);
     EXPECT_NE(registry.find<1>("J"), nullptr);
     EXPECT_NE(registry.find<1>("E"), nullptr);
 }
@@ -188,8 +190,8 @@ TEST_F(MhdDerived, electricFieldIdealOnlyMatchesMinusVCrossB)
     fill(state.B[2], 3.0); // uniform B => J = curl(B) = 0, Hall term vanishes too
 
     UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
-    MhdElectricField<State_t, YeeLayout_t>{0.0, 0.0, HyperMode::constant}.compute(*state, layout,
-                                                                                  out, 0.0);
+    MhdElectricField<State_t, YeeLayout_t>{0.0, 0.0, HyperMode::constant, /*hall=*/true}.compute(
+        *state, layout, out, 0.0);
 
     // -V x B with V=(1,2,0), B=(0,0,3): (-V x B) = (-(2*3-0*0), -(0*0-1*3), -(1*0-2*0))
     //                                            = (-6, 3, 0)
@@ -245,8 +247,8 @@ TEST_F(MhdDerived, electricFieldHallTermUsesPerComponentRhoProjection)
             Bz(i, j) = static_cast<double>(j);
 
     UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
-    MhdElectricField<State_t, YeeLayout_t>{0.0, 0.0, HyperMode::constant}.compute(*state, layout,
-                                                                                  out, 0.0);
+    MhdElectricField<State_t, YeeLayout_t>{0.0, 0.0, HyperMode::constant, /*hall=*/true}.compute(
+        *state, layout, out, 0.0);
 
     UsableVecFieldMHD<dim> J{"J", layout, MHDQuantity::Vector::VecElike};
     Ampere<YeeLayout_t>{layout}(static_cast<VecFieldMHD<dim> const&>(state.B),
@@ -327,8 +329,8 @@ TEST_F(MhdDerived, electricFieldHyperresistiveSpatialUsesPerComponentProjection)
                        + static_cast<double>(j) * static_cast<double>(j + 1);
 
     UsableVecFieldMHD<dim> out{"out", layout, MHDQuantity::Vector::VecElike};
-    MhdElectricField<State_t, YeeLayout_t>{0.0, 1.0, HyperMode::spatial}.compute(*state, layout,
-                                                                                   out, 0.0);
+    MhdElectricField<State_t, YeeLayout_t>{0.0, 1.0, HyperMode::spatial, /*hall=*/true}.compute(
+        *state, layout, out, 0.0);
 
     UsableVecFieldMHD<dim> J{"J", layout, MHDQuantity::Vector::VecElike};
     Ampere<YeeLayout_t>{layout}(static_cast<VecFieldMHD<dim> const&>(state.B),
@@ -366,9 +368,12 @@ TEST_F(MhdDerived, electricFieldHyperresistiveSpatialUsesPerComponentProjection)
         {
             // E_y = Hall term + hyper-resistive term
             // Hall: (J_z * b_x - J_x * b_z) / rho_E
-            // Hyper: -nu * (b/rho + 1) * laplacian(J_y)
+            // Hyper: -nu * (b/rho + 1) * minMeshSize^2 * laplacian(J_y)
+            auto const m   = layout.meshSize();
+            auto const dl  = std::min(m[0], m[1]);
+            auto const dl2 = dl * dl;
             auto const hall_term = (Jvec[2](args...) * bx - Jvec[0](args...) * bz) / rhoE_correct;
-            auto const hyper_term = -1.0 * (b / rhoE_correct + 1.0) * Jy_laplacian;
+            auto const hyper_term = -1.0 * (b / rhoE_correct + 1.0) * dl2 * Jy_laplacian;
             auto const expected = hall_term + hyper_term;
 
             EXPECT_NEAR(E[1](args...), expected, 1e-10 * (std::abs(expected) + 1.0) + 1e-12);

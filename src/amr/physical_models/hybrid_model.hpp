@@ -53,8 +53,12 @@ public:
     std::shared_ptr<resources_manager_type> resourcesManager;
 
     // generic scratch backing for derived-quantity diagnostics (e.g. J). Elike is the
-    // natural, exactly-sized centering here since Hybrid's derived quantities are Elike.
+    // natural, exactly-sized centering here since Hybrid's derived vector quantities are Elike.
     vecfield_type derivedVecScratch_{"PHARE_derived_vec", core::HybridQuantity::Vector::VecElike};
+    // all-primal scalar backing for scalar derived quantities (e.g. divB): the most
+    // demanding centering, so any scalar-view centering fits its per-patch allocation.
+    field_type derivedScalarScratch_{"PHARE_derived_scalar",
+                                      core::HybridQuantity::Scalar::ScalarNodeCentered};
 
 
     void initialize(level_t& level) override;
@@ -68,6 +72,7 @@ public:
     {
         resourcesManager->allocate(state, patch, allocateTime);
         resourcesManager->allocate(derivedVecScratch_, patch, allocateTime);
+        resourcesManager->allocate(derivedScalarScratch_, patch, allocateTime);
     }
 
 
@@ -93,6 +98,7 @@ public:
         , resourcesManager{std::move(_resourcesManager)}
     {
         resourcesManager->registerResources(derivedVecScratch_);
+        resourcesManager->registerResources(derivedScalarScratch_);
     }
 
 

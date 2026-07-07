@@ -20,11 +20,8 @@ auto scalar_qty(ScalarCentering const centering)
         return centering == ScalarCentering::cell ? MHDQuantity::Scalar::ScalarCellCentered
                                                   : MHDQuantity::Scalar::ScalarNodeCentered;
     else
-    {
-        if (centering == ScalarCentering::cell)
-            throw std::runtime_error("no cell-centered scalar quantity for hybrid");
-        return HybridQuantity::Scalar::ScalarNodeCentered;
-    }
+        return centering == ScalarCentering::cell ? HybridQuantity::Scalar::ScalarCellCentered
+                                                   : HybridQuantity::Scalar::ScalarNodeCentered;
 }
 
 

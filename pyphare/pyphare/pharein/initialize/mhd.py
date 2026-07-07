@@ -1,6 +1,6 @@
 import pybindlibs.dictator as pp
 
-from .general import add_double, add_int, add_string, fn_wrapper
+from .general import add_bool, add_double, add_int, add_string, fn_wrapper
 
 
 def populateDict(sim):
@@ -29,6 +29,9 @@ def populateDict(sim):
     add_double("simulation/mhd_state/resistivity", sim.eta)
     add_double("simulation/mhd_state/hyper_resistivity", sim.nu)
     add_string("simulation/mhd_state/hyper_mode", sim.hyper_mode)
+    # Hall flag lets the derived-E diagnostic gate its Hall term exactly like the
+    # solver (which selects Hall at compile time per permutation).
+    add_bool("simulation/mhd_state/hall", sim.hall)
 
     init_model = sim.model
     modelDict = init_model.model_dict

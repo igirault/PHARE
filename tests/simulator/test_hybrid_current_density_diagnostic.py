@@ -75,6 +75,7 @@ def config():
 
     ph.ElectromagDiagnostics(quantity="B", write_timestamps=timestamps)
     ph.ElectromagDiagnostics(quantity="J", write_timestamps=timestamps)
+    ph.ElectromagDiagnostics(quantity="divB", write_timestamps=timestamps)
 
     return sim
 
@@ -117,6 +118,28 @@ class HybridCurrentDensityDiagnosticTest(SimulatorTest):
                 for c in ["x", "y", "z"]:
                     data = interior(patch.patch_datas[f"J{c}"])
                     self.assertTrue(np.isfinite(data).all(), f"J{c} has non-finite values")
+        self.assertGreater(found_patches, 0)
+
+    def test_em_divb_is_small(self):
+        # divB is now a real Hybrid electromag diagnostic (Yee div of the
+        # face-centered B). For the smooth, divergence-free init field it must
+        # be ~0 to discrete precision everywhere in the interior.
+        ph.global_vars.sim = None
+        self.register_diag_dir_for_cleanup(out_dir)
+        Simulator(config()).run().reset()
+
+        from pyphare.pharesee.run import Run
+
+        run = Run(out_dir)
+        hier = run._get_hierarchy(0.0, "EM_divB.h5")
+
+        found_patches = 0
+        for ilvl in hier.levels():
+            for patch in hier.level(ilvl).patches:
+                found_patches += 1
+                data = interior(patch.patch_datas["mhdDivB"])
+                self.assertTrue(np.isfinite(data).all(), "divB has non-finite values")
+                self.assertTrue(np.abs(data).max() < 1e-10, "divB is not ~0")
         self.assertGreater(found_patches, 0)
 
 

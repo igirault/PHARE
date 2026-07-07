@@ -3,6 +3,7 @@
 
 #include "core/data/derived_quantity/centering.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <functional>
@@ -64,6 +65,25 @@ VecField_t derived_vector_view(VecField_t& backing, VectorCentering const center
         vf[i].setBuffer(&component);
     }
     return vf;
+}
+
+/** Zero a scalar scratch view before compute. The backing scratch is reused
+ *  across patches and quantities and is never cleared, so a computer that only
+ *  fills part of the view (e.g. curl/laplacian operators that shrink the
+ *  evaluation box) would otherwise leave stale cross-patch data in the ghost
+ *  layers that get written to file. */
+template<typename Field_t>
+void zero_scalar_view(Field_t& view)
+{
+    std::fill(view.data(), view.data() + view.size(), 0.0);
+}
+
+/** Same, per component, for a vector scratch view. */
+template<typename VecField_t>
+void zero_vector_view(VecField_t& view)
+{
+    for (std::size_t i = 0; i < 3; ++i)
+        std::fill(view[i].data(), view[i].data() + view[i].size(), 0.0);
 }
 
 } // namespace PHARE::core

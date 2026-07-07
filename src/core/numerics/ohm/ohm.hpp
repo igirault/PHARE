@@ -22,8 +22,10 @@ struct OhmInfo
 
     OhmInfo static FROM(initializer::PHAREDict const& dict)
     {
-        return {dict["resistivity"].template to<double>(),
-                dict["hyper_resistivity"].template to<double>(),
+        // resistivity / hyper_resistivity default to 0 (term off) when a dict omits
+        // them, so a state can be built from a minimal dict (e.g. ideal MHD).
+        return {cppdict::get_value(dict, "resistivity", 0.0),
+                cppdict::get_value(dict, "hyper_resistivity", 0.0),
                 cppdict::get_value(dict, "hyper_mode", std::string{"constant"}) == "constant"
                     ? HyperMode::constant
                     : HyperMode::spatial};
