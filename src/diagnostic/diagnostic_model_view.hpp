@@ -231,53 +231,31 @@ public:
     {
         auto& ions = this->model_.state.ions;
 
+        auto tryQty = [&](std::string const& tree, char const* name, std::string const& group,
+                          auto&& data, auto& on) {
+            if (quantity == tree + name)
+            {
+                on(FluidQtyInfo{tree, name, group}, data);
+                return true;
+            }
+            return false;
+        };
+
         for (auto& pop : ions)
         {
             std::string const tree{"/ions/pop/" + pop.name() + "/"};
             std::string const group{"fluid_" + pop.name()};
-            if (quantity == tree + "density")
-            {
-                onScalar(FluidQtyInfo{tree, "density", group}, pop.particleDensity());
-                return true;
-            }
-            if (quantity == tree + "charge_density")
-            {
-                onScalar(FluidQtyInfo{tree, "charge_density", group}, pop.chargeDensity());
-                return true;
-            }
-            if (quantity == tree + "flux")
-            {
-                onVector(FluidQtyInfo{tree, "flux", group}, pop.flux());
-                return true;
-            }
-            if (quantity == tree + "momentum_tensor")
-            {
-                onTensor(FluidQtyInfo{tree, "momentum_tensor", group}, pop.momentumTensor());
-                return true;
-            }
+            if (tryQty(tree, "density", group, pop.particleDensity(), onScalar)) return true;
+            if (tryQty(tree, "charge_density", group, pop.chargeDensity(), onScalar)) return true;
+            if (tryQty(tree, "flux", group, pop.flux(), onVector)) return true;
+            if (tryQty(tree, "momentum_tensor", group, pop.momentumTensor(), onTensor)) return true;
         }
 
         std::string const tree{"/ions/"};
-        if (quantity == tree + "charge_density")
-        {
-            onScalar(FluidQtyInfo{tree, "charge_density", "ion"}, ions.chargeDensity());
-            return true;
-        }
-        if (quantity == tree + "mass_density")
-        {
-            onScalar(FluidQtyInfo{tree, "mass_density", "ion"}, ions.massDensity());
-            return true;
-        }
-        if (quantity == tree + "bulkVelocity")
-        {
-            onVector(FluidQtyInfo{tree, "bulkVelocity", "ion"}, ions.velocity());
-            return true;
-        }
-        if (quantity == tree + "momentum_tensor")
-        {
-            onTensor(FluidQtyInfo{tree, "momentum_tensor", "ion"}, ions.momentumTensor());
-            return true;
-        }
+        if (tryQty(tree, "charge_density", "ion", ions.chargeDensity(), onScalar)) return true;
+        if (tryQty(tree, "mass_density", "ion", ions.massDensity(), onScalar)) return true;
+        if (tryQty(tree, "bulkVelocity", "ion", ions.velocity(), onVector)) return true;
+        if (tryQty(tree, "momentum_tensor", "ion", ions.momentumTensor(), onTensor)) return true;
         return false;
     }
 
