@@ -40,7 +40,7 @@ public:
 
 
     void dump(RestartsProperties const& properties, double timestamp,
-             std::size_t coarseStepIndex)
+             std::size_t stepIndex)
     {
         auto restart_file = writeRestartFile(restartFilePathForTime(path_, timestamp));
 
@@ -57,9 +57,9 @@ public:
             "/phare", "serialized_simulation",
             properties.fileAttributes["serialized_simulation"].template to<std::string>());
 
-        // persisted so write_niter_period/niter_period cadence can resume from the right coarse
-        // step on restart instead of resetting to 0 (see Simulator::coarseStepIndex_)
-        h5File.write_attribute("/phare", "coarse_step_index", coarseStepIndex);
+        // persisted so write_step_period/step_period cadence can resume from the right coarse
+        // step on restart instead of resetting to 0 (see Simulator::stepIndex_)
+        h5File.write_attribute("/phare", "step_index", stepIndex);
 
         core::mpi::barrier();
     }

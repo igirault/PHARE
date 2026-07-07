@@ -139,7 +139,7 @@ public:
                       double const newTime) override;
 
     double computeStableDt(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const cfl, double const fourier) override;
+                           StabilityNumbers const& stability) override;
 
     void onRegrid() override {}
 
@@ -446,10 +446,11 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::advanceL
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger>
 double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::computeStableDt(
-    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, double const cfl,
-    double const fourier)
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, StabilityNumbers const& stability)
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::computeStableDt");
+
+    auto const [cfl, fourier] = stability;
 
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
     auto& rho      = mhdModel.state.rho;

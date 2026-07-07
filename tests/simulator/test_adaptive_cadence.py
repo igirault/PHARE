@@ -1,6 +1,6 @@
 #
 # Runtime coverage for the period-based / adaptive-dt cadence options added alongside
-# adaptive time stepping: write_niter_period (diagnostics), niter_period (restarts), and the
+# adaptive time stepping: write_step_period (diagnostics), step_period (restarts), and the
 # catch-up scheduler that keeps a time-based cadence from freezing when dt > period.
 #
 # test_time_step.py only checks config-level validation (never runs the simulator); the tests
@@ -94,15 +94,15 @@ class AdaptiveCadenceTest(SimulatorTest):
         self.simulator = None
         ph.global_vars.sim = None
 
-    def test_write_niter_period_under_adaptive_dt(self):
-        """write_niter_period must fire on a fixed coarse-step cadence, independent of the
+    def test_write_step_period_under_adaptive_dt(self):
+        """write_step_period must fire on a fixed coarse-step cadence, independent of the
         (varying, unknown ahead of time) adaptive dt."""
         n_advances = 4
         period = 2
 
-        sim = self.simulation(**base_args(out + "/niter_period"))
+        sim = self.simulation(**base_args(out + "/step_period"))
         setup_model(sim)
-        ph.ElectromagDiagnostics(quantity="B", write_niter_period=period)
+        ph.ElectromagDiagnostics(quantity="B", write_step_period=period)
 
         self.simulator = Simulator(sim).initialize()
         for _ in range(n_advances):
@@ -119,15 +119,15 @@ class AdaptiveCadenceTest(SimulatorTest):
         self.assertTrue(Path(h5_filepath).exists())
         self.assertEqual(_h5_time_group_count(h5_filepath), expected_dumps)
 
-    def test_restart_niter_period_under_adaptive_dt(self):
-        """restart_options niter_period must fire on the same fixed coarse-step cadence."""
+    def test_restart_step_period_under_adaptive_dt(self):
+        """restart_options step_period must fire on the same fixed coarse-step cadence."""
         n_advances = 4
         period = 2
 
         sim = self.simulation(
             **base_args(
-                out + "/restart_niter_period",
-                restart_options=dict(mode="overwrite", niter_period=period),
+                out + "/restart_step_period",
+                restart_options=dict(mode="overwrite", step_period=period),
             )
         )
         setup_model(sim)
@@ -195,10 +195,10 @@ class AdaptiveCadenceTest(SimulatorTest):
         h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
         self.assertEqual(_h5_time_group_count(h5_filepath), 1)
 
-    def test_restart_persists_coarse_step_index(self):
+    def test_restart_persists_step_index(self):
         """Regression test: the coarse-step count must be persisted into the restart file (as
-        the C++ side's write_niter_period/niter_period cadence relies on resuming from it, not
-        resetting to 0 on restart) and must be readable back via restart_coarse_step()."""
+        the C++ side's write_step_period/step_period cadence relies on resuming from it, not
+        resetting to 0 on restart) and must be readable back via restart_step_index()."""
         from pyphare.cpp import cpp_etc_lib
 
         n_advances = 5
@@ -223,7 +223,7 @@ class AdaptiveCadenceTest(SimulatorTest):
         ]
         self.assertEqual(len(restart_time_dirs), 1)
         self.assertEqual(
-            cpp_etc_lib().restart_coarse_step(str(restart_time_dirs[0])), n_advances
+            cpp_etc_lib().restart_step_index(str(restart_time_dirs[0])), n_advances
         )
 
 

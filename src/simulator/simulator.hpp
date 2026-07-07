@@ -112,7 +112,8 @@ public:
         // Python sites at the same currentTime_); clamp the final step to land on finalTime_.
         if (cachedDtTime_ != currentTime_)
         {
-            cachedDt_     = multiphysInteg_->computeStableDt(*hierarchy_, cfl_, fourier_);
+            cachedDt_     = multiphysInteg_->computeStableDt(
+                *hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
             cachedDtTime_ = currentTime_;
         }
         return std::min(cachedDt_, finalTime_ - currentTime_);
@@ -135,13 +136,13 @@ public:
     bool dump_diagnostics(double timestamp, double timestep) override
     {
         if (dMan)
-            return dMan->dump(timestamp, timestep, coarseStepIndex_);
+            return dMan->dump(timestamp, timestep, stepIndex_);
         return false;
     }
     bool dump_restarts(double timestamp, double timestep) override
     {
         if (rMan)
-            return rMan->dump(timestamp, timestep, coarseStepIndex_);
+            return rMan->dump(timestamp, timestep, stepIndex_);
         return false;
     }
 
@@ -208,10 +209,10 @@ private:
     double cachedDtTime_       = std::numeric_limits<double>::lowest();
     std::size_t fineDumpLvlMax = 0;
     // single source of truth for "how many coarse steps have run", passed into dMan/rMan dump()
-    // so write_niter_period/niter_period cadence tracks real advance() calls (not calls to
+    // so write_step_period/step_period cadence tracks real advance() calls (not calls to
     // dump(), which may be irregular e.g. under Python's auto_dump=False); restored from the
     // restart file on restart so the cadence phase survives a restart instead of resetting to 0.
-    std::size_t coarseStepIndex_ = 0;
+    std::size_t stepIndex_ = 0;
     bool isInitialized         = false;
 
     bool allowEmergencyDumps = false;
@@ -470,8 +471,8 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
         finalTime_ += currentTime_; // final time is from timestep * timestep_nbr!
 
     // stored as a plain int in the dict (cppdict's add_int/to<int> convention), converted here
-    coarseStepIndex_ = static_cast<std::size_t>(
-        cppdict::get_value(dict, "simulation/restarts/restart_coarse_step", 0));
+    stepIndex_ = static_cast<std::size_t>(
+        cppdict::get_value(dict, "simulation/restarts/restart_step_index", 0));
 
 
     // we would need a different restart manager for mhd and hybrid if both models are used
@@ -584,7 +585,7 @@ double Simulator<opts>::advance(double dt)
 
         integrator_->advance(dt);
         currentTime_ = startTime_ + ((*timeStamper) += dt);
-        ++coarseStepIndex_;
+        ++stepIndex_;
     }
     catch (core::DictionaryException const& ex)
     {

@@ -469,8 +469,8 @@ namespace solver
          * arithmetic (projection + min), and the cross-rank reduction is done exactly once at the
          * end rather than once per level.
          */
-        double computeStableDt(SAMRAI::hier::PatchHierarchy& hierarchy, double const cfl,
-                               double const fourier)
+        double computeStableDt(SAMRAI::hier::PatchHierarchy& hierarchy,
+                               StabilityNumbers const& stability)
         {
             double dt0 = std::numeric_limits<double>::max();
 
@@ -490,7 +490,7 @@ namespace solver
 
                 // local per-level stable dt (solver applies cfl/fourier, no reduction yet)
                 auto const levelDt
-                    = getSolver_(iLevel).computeStableDt(getModel_(iLevel), *level, cfl, fourier);
+                    = getSolver_(iLevel).computeStableDt(getModel_(iLevel), *level, stability);
 
                 dt0 = std::min(dt0, levelDt * l0ProjectionFactor);
             }

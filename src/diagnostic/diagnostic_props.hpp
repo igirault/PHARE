@@ -37,9 +37,9 @@ struct DiagnosticProperties
 
     std::size_t nAttributes = 0, dumpIdx = 0;
 
-    // Dump every writeNiterPeriod coarse iterations (0 = disabled, use the timestamp arrays).
+    // Dump every writeStepPeriod coarse iterations (0 = disabled, use the timestamp arrays).
     // Iteration-based cadence is the only timestamp-free dump schedule valid under adaptive dt.
-    std::size_t writeNiterPeriod = 0;
+    std::size_t writeStepPeriod = 0;
 
     FileAttributes fileAttributes{};
 };

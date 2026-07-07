@@ -94,18 +94,11 @@ def warn_dump_period_vs_dt(sim, period, opt_name):
 
     A dump can only happen on a coarse step boundary, so if ``period`` is smaller than the
     (largest, level-0) ``dt`` several target times collapse into a single dump and fewer dumps
-    than target times are produced. Under adaptive dt the step is unknown ahead of time, so warn
-    whenever a time-based cadence is used and point at the dt-independent ``niter_period``.
+    than target times are produced.
     """
     import warnings
 
-    if getattr(sim, "time_step_type", "constant") == "adaptive":
-        warnings.warn(
-            f"{opt_name}={period} with adaptive time_step: whenever the adaptive dt exceeds "
-            f"{opt_name}, several target times fall in a single step and collapse into one dump "
-            f"(fewer dumps than target times). Use niter_period for a dt-independent cadence."
-        )
-    elif sim.time_step is not None and period < sim.time_step:
+    if sim.time_step is not None and period < sim.time_step:
         warnings.warn(
             f"{opt_name}={period} is smaller than the simulation time_step={sim.time_step}: "
             f"a dump happens at most once per step, so you will get fewer dumps than target times."

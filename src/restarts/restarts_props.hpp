@@ -14,9 +14,9 @@ struct RestartsProperties
 
     std::vector<double> writeTimestamps, elapsedTimestamps;
 
-    // write a restart every writeNiterPeriod coarse iterations (0 = disabled, use timestamps).
+    // write a restart every writeStepPeriod coarse iterations (0 = disabled, use timestamps).
     // Iteration cadence is the only timestamp-free option valid under adaptive dt.
-    std::size_t writeNiterPeriod = 0;
+    std::size_t writeStepPeriod = 0;
 
     FileAttributes fileAttributes{};
 };

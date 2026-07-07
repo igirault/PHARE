@@ -84,12 +84,12 @@ def validate(sim):
 
     # period-based cadence (mutually exclusive with an explicit timestamps array):
     #  - time_period  -> absolute target times (works for constant and adaptive dt)
-    #  - niter_period -> empty timestamps + a coarse-step cadence honoured by the C++ side
+    #  - step_period -> empty timestamps + a coarse-step cadence honoured by the C++ side
     #    (the only timestamp-free option valid under adaptive dt)
-    cadence = [k for k in ("timestamps", "time_period", "niter_period") if k in restart_options]
+    cadence = [k for k in ("timestamps", "time_period", "step_period") if k in restart_options]
     if len(cadence) > 1:
         raise RuntimeError(
-            "Error: restart_options timestamps, time_period, niter_period are mutually exclusive"
+            "Error: restart_options timestamps, time_period, step_period are mutually exclusive"
         )
     if "time_period" in restart_options:
         period = float(restart_options.pop("time_period"))
@@ -99,15 +99,15 @@ def validate(sim):
         init = sim.start_time()
         nbr = int(np.floor((sim.final_time - init) / period + 1e-9)) + 1
         restart_options["timestamps"] = init + period * np.arange(nbr)
-    elif "niter_period" in restart_options:
-        raw_period = restart_options.pop("niter_period")
+    elif "step_period" in restart_options:
+        raw_period = restart_options.pop("step_period")
         period_float = float(raw_period)
         if not period_float.is_integer():
-            raise RuntimeError("Error: restart_options niter_period must be an integer")
+            raise RuntimeError("Error: restart_options step_period must be an integer")
         period = int(period_float)
         if period <= 0:
-            raise RuntimeError("Error: restart_options niter_period must be > 0")
-        restart_options["write_niter_period"] = period
+            raise RuntimeError("Error: restart_options step_period must be > 0")
+        restart_options["write_step_period"] = period
 
     if "elapsed_timestamps" in restart_options:
         import datetime

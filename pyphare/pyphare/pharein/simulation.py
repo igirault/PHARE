@@ -140,7 +140,7 @@ def check_domain(**kwargs):
 # ------------------------------------------------------------------------------
 
 
-def normalize_time_step(**kwargs):
+def canonicalize_time_step(**kwargs):
     """
     Resolve the public 'time_step' option into the internal time_step_type / time_step_cfl /
     time_step_fourier attributes. 'time_step' may be:
@@ -220,7 +220,7 @@ def check_time(**kwargs):
      return time_step_nbr and time_step
     """
     time_step_type = kwargs.get("time_step_type", "constant")
-    assert time_step_type in ("constant", "adaptive")  # set by normalize_time_step
+    assert time_step_type in ("constant", "adaptive")  # set by canonicalize_time_step
     if time_step_type == "adaptive":
         return check_adaptive_time(**kwargs)
 
@@ -607,7 +607,7 @@ def check_restart_options(**kwargs):
         "elapsed_timestamps",
         "timestamps",
         "time_period",  # write a restart every time_period (built into timestamps)
-        "niter_period",  # write a restart every niter_period coarse steps (C++ cadence)
+        "step_period",  # write a restart every step_period coarse steps (C++ cadence)
         "mode",
         "restart_time",  # number or "auto"
         "keep_last",  # delete obsolete
@@ -851,7 +851,7 @@ def checker(func):
 
         kwargs["restart_options"] = check_restart_options(**kwargs)
 
-        kwargs = normalize_time_step(**kwargs)
+        kwargs = canonicalize_time_step(**kwargs)
         time_step_nbr, time_step, final_time = check_time(**kwargs)
         kwargs["time_step_nbr"] = time_step_nbr
         kwargs["time_step"] = time_step

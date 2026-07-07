@@ -66,7 +66,7 @@ void registerDiagnostics(DiagManager& dMan, initializer::PHAREDict const& diagsP
 class IDiagnosticsManager
 {
 public:
-    virtual bool dump(double timeStamp, double timeStep, std::size_t coarseStepIndex) = 0;
+    virtual bool dump(double timeStamp, double timeStep, std::size_t stepIndex) = 0;
     virtual void dump_level(std::size_t level, double timeStamp)                      = 0;
     inline virtual ~IDiagnosticsManager();
 };
@@ -80,7 +80,7 @@ class DiagnosticsManager : public IDiagnosticsManager
 public:
     using Model_t = typename Writer::Model_t;
 
-    bool dump(double timeStamp, double timeStep, std::size_t coarseStepIndex) override;
+    bool dump(double timeStamp, double timeStep, std::size_t stepIndex) override;
 
 
     void dump_level(std::size_t level, double timeStamp) override;
@@ -180,8 +180,8 @@ DiagnosticsManager<Writer>::addDiagDict(initializer::PHAREDict const& diagParams
 
     diagProps["flush_every"] = diagParams["flush_every"].template to<std::size_t>();
 
-    if (diagParams.contains("write_niter_period"))
-        diagProps.writeNiterPeriod = diagParams["write_niter_period"].template to<std::size_t>();
+    if (diagParams.contains("write_step_period"))
+        diagProps.writeStepPeriod = diagParams["write_step_period"].template to<std::size_t>();
 
     diagProps.computeTimestamps
         = diagParams["compute_timestamps"].template to<std::vector<double>>();
@@ -212,17 +212,17 @@ void DiagnosticsManager<Writer>::dump_level(std::size_t level, double timeStamp)
 
 template<typename Writer>
 bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep,
-                                      std::size_t coarseStepIndex)
+                                      std::size_t stepIndex)
 {
     std::vector<DiagnosticProperties*> activeDiagnostics;
     for (auto& diag : diagnostics_)
     {
-        // iteration-based cadence: fires (compute + write) every writeNiterPeriod coarse steps.
-        // Used by write_niter_period (the only timestamp-free option valid under adaptive dt).
-        // coarseStepIndex is the caller's (Simulator's) real coarse-step counter, restart-safe
+        // iteration-based cadence: fires (compute + write) every writeStepPeriod coarse steps.
+        // Used by write_step_period (the only timestamp-free option valid under adaptive dt).
+        // stepIndex is the caller's (Simulator's) real coarse-step counter, restart-safe
         // and independent of how many times dump() itself gets called.
         bool const niterNow
-            = diag.writeNiterPeriod > 0 and (coarseStepIndex % diag.writeNiterPeriod == 0);
+            = diag.writeStepPeriod > 0 and (stepIndex % diag.writeStepPeriod == 0);
 
         // needsCompute_ advances its own timestamp index (catch-up), so call it unconditionally
         bool const computeNow = needsCompute_(diag, timeStamp, timeStep);

@@ -102,7 +102,7 @@ public:
                 double const time) override;
 
     double computeStableDt(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           double const cfl, double const fourier) override;
+                           StabilityNumbers const& stability) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, IPhysicalModel_t& model,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -318,9 +318,12 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 template<typename HybridModel, typename AMR_Types>
 double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& model,
                                                           SAMRAI::hier::PatchLevel& level,
-                                                          double const cfl, double const /*fourier*/)
+                                                          StabilityNumbers const& stability)
 {
     PHARE_LOG_SCOPE(1, "SolverPPC::computeStableDt");
+
+    // hybrid uses only the advective (whistler) bucket; stability.fourier is unused here.
+    double const cfl = stability.cfl;
 
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
     auto& n           = hybridModel.state.ions.massDensity();

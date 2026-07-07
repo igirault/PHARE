@@ -22,6 +22,19 @@ namespace PHARE
 namespace solver
 {
     /**
+     * @brief StabilityNumbers bundles the dimensionless coefficients scaling each stability bucket
+     * used by computeStableDt. Each is normalized so that 1 is the stability limit independent of
+     * dimension (choose in (0, 1]):
+     *   - cfl: advective (hyperbolic, incl. Hall whistler when active)
+     *   - fourier: resistive (parabolic diffusion), Fourier number Fo = eta*dt/dx^2
+     */
+    struct StabilityNumbers
+    {
+        double cfl;
+        double fourier;
+    };
+
+    /**
      * @brief The ISolver is an interface for a solver used by the MultiPHysicsIntegrator.
      *
      * The main interest of this class is to provide the MultiPhysicsIntegrator with the method
@@ -127,17 +140,17 @@ namespace solver
          * is distributed over. The caller (MultiPhysicsIntegrator::computeStableDt) is
          * responsible for the single cross-rank reduction covering the whole multi-level cascade.
          *
-         * It combines two stability buckets, each scaled by its own coefficient (both normalized so
-         * that 1 is the stability limit independent of dimension; choose in (0, 1]):
-         *   - advective (hyperbolic, incl. Hall whistler when active), scaled by @p cfl
-         *   - resistive (parabolic diffusion), scaled by @p fourier (Fourier number Fo =
+         * It combines two stability buckets, each scaled by its own coefficient in @p stability
+         * (both normalized so that 1 is the stability limit independent of dimension):
+         *   - advective (hyperbolic, incl. Hall whistler when active), scaled by stability.cfl
+         *   - resistive (parabolic diffusion), scaled by stability.fourier (Fourier number Fo =
          *     eta*dt/dx^2)
          * and returns their min.
          *
          * If not overriden by the actual Solver implementation, returns a very big double.
          */
-        virtual double computeStableDt(IPhysicalModel_t& model, level_t& level, double const cfl,
-                                       double const fourier)
+        virtual double computeStableDt(IPhysicalModel_t& model, level_t& level,
+                                       StabilityNumbers const& stability)
         {
             return std::numeric_limits<double>::max();
         }
