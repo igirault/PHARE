@@ -267,8 +267,8 @@ namespace core
 
         field_type rho;
         VecFieldT V;
-        VecFieldT B1;
-        VecFieldT B;
+        VecFieldT B1; // the evolved perturbation field (the real conserved magnetic variable)
+        VecFieldT B;  // total-field scratch B = B0 + B1, recomputed on demand (tagging); NOT evolved
         field_type P;
 
         VecFieldT rhoV;
