@@ -98,6 +98,13 @@ public:
             if (it == scalarIds_.end())
                 throw core::PatchFieldAccessorError(
                     "PatchFieldAccessor: scalar quantity not registered");
+            // SAMRAI runs setPhysicalBoundaryConditions on temporary single-quantity
+            // interpolation patches too: a sibling read by a coupled BC is registered
+            // (in the id-map) but not allocated there. Surface that as the accessor error
+            // the strategy catches to fall back to a sibling-free Neumann fill.
+            if (!patch_.checkAllocated(it->second))
+                throw core::PatchFieldAccessorError(
+                    "PatchFieldAccessor: scalar quantity not allocated on patch");
             return *(&(scalar_field_data_type::getField(patch_, it->second)));
         }
 
@@ -107,6 +114,9 @@ public:
             if (it == vectorIds_.end())
                 throw core::PatchFieldAccessorError(
                     "PatchFieldAccessor: vector quantity not registered");
+            if (!patch_.checkAllocated(it->second))
+                throw core::PatchFieldAccessorError(
+                    "PatchFieldAccessor: vector quantity not allocated on patch");
             return vector_field_data_type::getTensorField(patch_, it->second);
         }
 
