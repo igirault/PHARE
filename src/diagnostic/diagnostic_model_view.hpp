@@ -263,21 +263,10 @@ public:
     template<typename OnScalar, typename OnVector, typename OnTensor>
     void forEachFluidQuantity(OnScalar&& onScalar, OnVector&& onVector, OnTensor&& onTensor) const
     {
-        for (auto const& pop : this->model_.state.ions)
-        {
-            std::string const tree{"/ions/pop/" + pop.name() + "/"};
-            std::string const group{"fluid_" + pop.name()};
-            onScalar(FluidQtyInfo{tree, "density", group});
-            onScalar(FluidQtyInfo{tree, "charge_density", group});
-            onVector(FluidQtyInfo{tree, "flux", group});
-            onTensor(FluidQtyInfo{tree, "momentum_tensor", group});
-        }
-
-        std::string const tree{"/ions/"};
-        onScalar(FluidQtyInfo{tree, "charge_density", "ion"});
-        onScalar(FluidQtyInfo{tree, "mass_density", "ion"});
-        onVector(FluidQtyInfo{tree, "bulkVelocity", "ion"});
-        onTensor(FluidQtyInfo{tree, "momentum_tensor", "ion"});
+        fluidCatalogue_(
+            *this, [&](auto const& q, auto&&) { onScalar(q); },
+            [&](auto const& q, auto&&) { onVector(q); },
+            [&](auto const& q, auto&&) { onTensor(q); });
     }
 
     /** Dispatch the active fluid diagnostic to its per-patch data. All hybrid
@@ -290,42 +279,21 @@ public:
                                   double const /*time*/, bool const /*compute_derived*/,
                                   OnScalar&& onScalar, OnVector&& onVector, OnTensor&& onTensor)
     {
-        auto& ions = this->model_.state.ions;
+        bool found = false;
 
-        auto tryQty = [&](std::string const& tree, char const* name, std::string const& group,
-                          auto&& data, auto& on) {
-            if (quantity == tree + name)
+        auto const tryOn = [&](auto const& q, auto& on, auto const& data) {
+            if (!found and quantity == q.path())
             {
-                on(FluidQtyInfo{tree, name, group}, data);
-                return true;
+                on(q, data());
+                found = true;
             }
-            return false;
         };
 
-        for (auto& pop : ions)
-        {
-            std::string const tree{"/ions/pop/" + pop.name() + "/"};
-            std::string const group{"fluid_" + pop.name()};
-            if (tryQty(tree, "density", group, pop.particleDensity(), onScalar))
-                return true;
-            if (tryQty(tree, "charge_density", group, pop.chargeDensity(), onScalar))
-                return true;
-            if (tryQty(tree, "flux", group, pop.flux(), onVector))
-                return true;
-            if (tryQty(tree, "momentum_tensor", group, pop.momentumTensor(), onTensor))
-                return true;
-        }
-
-        std::string const tree{"/ions/"};
-        if (tryQty(tree, "charge_density", "ion", ions.chargeDensity(), onScalar))
-            return true;
-        if (tryQty(tree, "mass_density", "ion", ions.massDensity(), onScalar))
-            return true;
-        if (tryQty(tree, "bulkVelocity", "ion", ions.velocity(), onVector))
-            return true;
-        if (tryQty(tree, "momentum_tensor", "ion", ions.momentumTensor(), onTensor))
-            return true;
-        return false;
+        fluidCatalogue_(
+            *this, [&](auto const& q, auto const& data) { tryOn(q, onScalar, data); },
+            [&](auto const& q, auto const& data) { tryOn(q, onVector, data); },
+            [&](auto const& q, auto const& data) { tryOn(q, onTensor, data); });
+        return found;
     }
 
 
@@ -460,6 +428,41 @@ protected:
         std::map<int, std::shared_ptr<SAMRAI::xfer::RefineSchedule>> MTschedules;
     };
 
+    /** Single source of truth for the hybrid fluid catalogue: every quantity is
+     *  enumerated once as (FluidQtyInfo, data-getter). Getters are lazy — only
+     *  invoked by consumers that need patch data (visitActiveFluidQuantity) —
+     *  so enumeration stays safe for null/remote patches and per-level setup.
+     *  Static over Self to serve both const (forEach) and non-const (visit). */
+    template<typename Self, typename OnScalar, typename OnVector, typename OnTensor>
+    static void fluidCatalogue_(Self& self, OnScalar&& onScalar, OnVector&& onVector,
+                                OnTensor&& onTensor)
+    {
+        auto& ions = self.model_.state.ions;
+
+        for (auto& pop : ions)
+        {
+            std::string const tree{"/ions/pop/" + pop.name() + "/"};
+            std::string const group{"fluid_" + pop.name()};
+            onScalar(FluidQtyInfo{tree, "density", group},
+                     [&]() -> auto& { return pop.particleDensity(); });
+            onScalar(FluidQtyInfo{tree, "charge_density", group},
+                     [&]() -> auto& { return pop.chargeDensity(); });
+            onVector(FluidQtyInfo{tree, "flux", group}, [&]() -> auto& { return pop.flux(); });
+            onTensor(FluidQtyInfo{tree, "momentum_tensor", group},
+                     [&]() -> auto& { return pop.momentumTensor(); });
+        }
+
+        std::string const tree{"/ions/"};
+        onScalar(FluidQtyInfo{tree, "charge_density", "ion"},
+                 [&]() -> auto& { return ions.chargeDensity(); });
+        onScalar(FluidQtyInfo{tree, "mass_density", "ion"},
+                 [&]() -> auto& { return ions.massDensity(); });
+        onVector(FluidQtyInfo{tree, "bulkVelocity", "ion"},
+                 [&]() -> auto& { return ions.velocity(); });
+        onTensor(FluidQtyInfo{tree, "momentum_tensor", "ion"},
+                 [&]() -> auto& { return ions.momentumTensor(); });
+    }
+
     std::vector<MTAlgo> MTAlgos;
     Field tmpField_{"PHARE_sumField", core::HybridQuantity::Scalar::rho};
     VecField tmpVec_{"PHARE_sumVec", core::HybridQuantity::Vector::V};
@@ -548,17 +551,14 @@ public:
     template<typename OnScalar, typename OnVector, typename OnTensor>
     void forEachFluidQuantity(OnScalar&& onScalar, OnVector&& onVector, OnTensor&&) const
     {
-        std::string const tree{"/mhd/"};
-        std::string const group{"mhd"};
-
-        onScalar(FluidQtyInfo{tree, "rho", group});
-        onVector(FluidQtyInfo{tree, "rhoV", group});
-        onScalar(FluidQtyInfo{tree, "Etot", group});
+        fluidPrimaries_(
+            *this, [&](auto const& q, auto&&) { onScalar(q); },
+            [&](auto const& q, auto&&) { onVector(q); });
 
         this->forEachDerivedQuantity(
             core::DerivedCategory::fluid,
-            [&](std::string const& name) { onScalar(FluidQtyInfo{tree, name, group}); },
-            [&](std::string const& name) { onVector(FluidQtyInfo{tree, name, group}); });
+            [&](std::string const& name) { onScalar(FluidQtyInfo{mhdTree_, name, mhdGroup_}); },
+            [&](std::string const& name) { onVector(FluidQtyInfo{mhdTree_, name, mhdGroup_}); });
     }
 
     /** Dispatch the active fluid diagnostic to its per-patch data: primaries
@@ -570,33 +570,31 @@ public:
                                   double const time, bool const compute_derived,
                                   OnScalar&& onScalar, OnVector&& onVector, OnTensor&&)
     {
-        std::string const tree{"/mhd/"};
-        std::string const group{"mhd"};
-        auto const isActive = [&](std::string const& name) { return quantity == tree + name; };
+        bool found = false;
 
-        if (isActive("rho"))
-        {
-            onScalar(FluidQtyInfo{tree, "rho", group}, this->model_.state.rho);
+        auto const tryOn = [&](auto const& q, auto& on, auto const& data) {
+            if (!found and quantity == q.path())
+            {
+                on(q, data());
+                found = true;
+            }
+        };
+
+        fluidPrimaries_(
+            *this, [&](auto const& q, auto const& data) { tryOn(q, onScalar, data); },
+            [&](auto const& q, auto const& data) { tryOn(q, onVector, data); });
+        if (found)
             return true;
-        }
-        if (isActive("rhoV"))
-        {
-            onVector(FluidQtyInfo{tree, "rhoV", group}, this->model_.state.rhoV);
-            return true;
-        }
-        if (isActive("Etot"))
-        {
-            onScalar(FluidQtyInfo{tree, "Etot", group}, this->model_.state.Etot);
-            return true;
-        }
+
+        auto const isActive = [&](std::string const& name) { return quantity == mhdTree_ + name; };
 
         return this->visitActiveDerivedQuantity(
             core::DerivedCategory::fluid, isActive, layout, time, compute_derived,
             [&](std::string const& name, auto& field) {
-                onScalar(FluidQtyInfo{tree, name, group}, field);
+                onScalar(FluidQtyInfo{mhdTree_, name, mhdGroup_}, field);
             },
             [&](std::string const& name, auto& vecF) {
-                onVector(FluidQtyInfo{tree, name, group}, vecF);
+                onVector(FluidQtyInfo{mhdTree_, name, mhdGroup_}, vecF);
             });
     }
 
@@ -636,6 +634,24 @@ public:
     }
 
 protected:
+    static inline std::string const mhdTree_{"/mhd/"};
+    static inline std::string const mhdGroup_{"mhd"};
+
+    /** Single source of truth for the MHD fluid primaries: each enumerated once
+     *  as (FluidQtyInfo, data-getter); getters are lazy so enumeration stays
+     *  safe for null/remote patches. Static over Self to serve both const
+     *  (forEach) and non-const (visit). */
+    template<typename Self, typename OnScalar, typename OnVector>
+    static void fluidPrimaries_(Self& self, OnScalar&& onScalar, OnVector&& onVector)
+    {
+        onScalar(FluidQtyInfo{mhdTree_, "rho", mhdGroup_},
+                 [&]() -> auto& { return self.model_.state.rho; });
+        onVector(FluidQtyInfo{mhdTree_, "rhoV", mhdGroup_},
+                 [&]() -> auto& { return self.model_.state.rhoV; });
+        onScalar(FluidQtyInfo{mhdTree_, "Etot", mhdGroup_},
+                 [&]() -> auto& { return self.model_.state.Etot; });
+    }
+
     Field tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
     VecField tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
 
