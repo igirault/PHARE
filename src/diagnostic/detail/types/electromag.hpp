@@ -50,22 +50,14 @@ public:
         DiagnosticProperties&, Attributes&,
         std::unordered_map<std::size_t, std::vector<std::pair<std::string, Attributes>>>&,
         std::size_t maxLevel) override;
-
-private:
-    auto isActiveDiag(DiagnosticProperties const& diagnostic, std::string const& tree,
-                      std::string var)
-    {
-        return diagnostic.quantity == tree + var;
-    };
 };
 
 
 template<typename H5Writer>
 void ElectromagDiagnosticWriter<H5Writer>::createFiles(DiagnosticProperties& diagnostic)
 {
-    std::string const tree{"/"};
     auto const create
-        = [&](std::string const& name) { checkCreateFileFor_(diagnostic, fileData_, tree, name); };
+        = [&](auto const& q) { checkCreateFileFor_(diagnostic, fileData_, q.tree, q.name); };
     this->h5Writer_.modelView().forEachEmQuantity(create, create);
 }
 
@@ -108,8 +100,8 @@ void ElectromagDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& 
     h5Writer.modelView().visitActiveEmQuantity(
         diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
         /*compute_derived=*/false, //
-        [&](std::string const& name, auto& field) { infoScalar(field, name, attr); },
-        [&](std::string const& name, auto& vecF) { infoVF(vecF, name, attr); });
+        [&](auto const& q, auto& field) { infoScalar(field, q.name, attr); },
+        [&](auto const& q, auto& vecF) { infoVF(vecF, q.name, attr); });
 }
 
 
@@ -150,16 +142,15 @@ void ElectromagDiagnosticWriter<H5Writer>::initDataSets(
     auto const initPatch = [&](auto& level, auto& attr, std::string patchID = "") {
         bool null = patchID.empty();
         std::string path{h5Writer.getPatchPathAddTimestamp(level, patchID)};
-        std::string const tree{"/"};
 
         h5Writer.modelView().forEachEmQuantity(
-            [&](std::string const& name) {
-                if (isActiveDiag(diagnostic, tree, name))
-                    initScalar(path, attr, name, null);
+            [&](auto const& q) {
+                if (diagnostic.quantity == q.path())
+                    initScalar(path, attr, q.name, null);
             },
-            [&](std::string const& name) {
-                if (isActiveDiag(diagnostic, tree, name))
-                    initVF(path, attr, name, null);
+            [&](auto const& q) {
+                if (diagnostic.quantity == q.path())
+                    initVF(path, attr, q.name, null);
             });
     };
 
@@ -179,11 +170,11 @@ void ElectromagDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnosti
     h5Writer.modelView().visitActiveEmQuantity(
         diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
         /*compute_derived=*/true, //
-        [&](std::string const& name, auto& field) {
-            h5file.template write_data_set_flat<GridLayout::dimension>(path + name, field.data());
+        [&](auto const& q, auto& field) {
+            h5file.template write_data_set_flat<GridLayout::dimension>(path + q.name, field.data());
         },
-        [&](std::string const& name, auto& vecF) {
-            h5Writer.writeTensorFieldAsDataset(h5file, path + name, vecF);
+        [&](auto const& q, auto& vecF) {
+            h5Writer.writeTensorFieldAsDataset(h5file, path + q.name, vecF);
         });
 }
 

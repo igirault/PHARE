@@ -35,12 +35,6 @@ private:
     };
 
     std::unordered_map<std::string, Info> mem;
-
-    auto isActiveDiag(DiagnosticProperties const& diagnostic, std::string const& tree,
-                      std::string var)
-    {
-        return diagnostic.quantity == tree + var;
-    };
 };
 
 
@@ -58,12 +52,12 @@ void ElectromagDiagnosticWriter<H5Writer>::setup(DiagnosticProperties& diagnosti
         std::optional<std::size_t> ret;
 
         modelView.forEachEmQuantity(
-            [&](std::string const& name) {
-                if (!ret and isActiveDiag(diagnostic, "/", name))
+            [&](auto const& q) {
+                if (!ret and diagnostic.quantity == q.path())
                     ret = initializer.initFieldFileLevel(level);
             },
-            [&](std::string const& name) {
-                if (!ret and isActiveDiag(diagnostic, "/", name))
+            [&](auto const& q) {
+                if (!ret and diagnostic.quantity == q.path())
                     ret = initializer.template initTensorFieldFileLevel<1>(level);
             });
 
@@ -102,8 +96,8 @@ void ElectromagDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnosti
                 modelView.visitActiveEmQuantity(
                     diagnostic.quantity, layout, this->h5Writer_.timestamp(),
                     /*compute_derived=*/true, //
-                    [&](std::string const&, auto& field) { writer.writeField(field, layout); },
-                    [&](std::string const&, auto& vecF) {
+                    [&](auto const&, auto& field) { writer.writeField(field, layout); },
+                    [&](auto const&, auto& vecF) {
                         writer.template writeTensorField<1>(vecF, layout);
                     });
             };
