@@ -250,7 +250,7 @@ class Run:
         if not all_primal:
             return self._get(hier, time, merged, interp)
 
-        h = compute_hier_from(_compute_to_primal, hier, value="mhdDivB")
+        h = compute_hier_from(_compute_to_primal, hier, value="divB")
         return ScalarField(h)
 
     def GetMHDJ(self, time, merged=False, interp="nearest", all_primal=True, **kwargs):

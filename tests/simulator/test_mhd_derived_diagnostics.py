@@ -186,7 +186,7 @@ class MHDDerivedDiagnosticsTest(SimulatorTest):
             for patch in divB.level(ilvl).patches:
                 found_patches += 1
                 np.testing.assert_allclose(
-                    interior(patch.patch_datas["mhdDivB"]), 0.0, atol=1e-11
+                    interior(patch.patch_datas["divB"]), 0.0, atol=1e-11
                 )
         self.assertGreater(found_patches, 0)
 
@@ -225,6 +225,15 @@ class MHDDerivedDiagnosticsTest(SimulatorTest):
                 self.assertTrue(
                     np.isfinite(interior(patch.patch_datas["mhdEtot"])).all()
                 )
+
+    def test_divB_moved_to_electromag_diagnostics(self):
+        # /mhd/divB moved to the electromag tree: requesting it as an MHD
+        # (fluid) diagnostic must fail loudly at configuration time, with a
+        # message pointing at ElectromagDiagnostics.
+        ph.global_vars.sim = None
+        config("phareh5", out_dir_h5)
+        with self.assertRaisesRegex(ValueError, "ElectromagDiagnostics"):
+            ph.MHDDiagnostics(quantity="divB", write_timestamps=timestamps)
 
     def test_derived_quantities_vtkhdf_smoke(self):
         ph.global_vars.sim = None

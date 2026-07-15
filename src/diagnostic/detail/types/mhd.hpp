@@ -55,22 +55,14 @@ public:
         DiagnosticProperties&, Attributes&,
         std::unordered_map<std::size_t, std::vector<std::pair<std::string, Attributes>>>&,
         std::size_t maxLevel) override;
-
-private:
-    auto isActiveDiag(DiagnosticProperties& diagnostic, std::string const& tree,
-                      std::string const& name) const
-    {
-        return diagnostic.quantity == tree + name;
-    }
 };
 
 template<typename H5Writer>
 void MHDDiagnosticWriter<H5Writer>::createFiles(DiagnosticProperties& diagnostic)
 {
-    std::string const tree{"/mhd/"};
     auto const create
-        = [&](std::string const& name) { checkCreateFileFor_(diagnostic, fileData_, tree, name); };
-    this->h5Writer_.modelView().forEachFluidQuantity(create, create);
+        = [&](auto const& q) { checkCreateFileFor_(diagnostic, fileData_, q.tree, q.name); };
+    this->h5Writer_.modelView().forEachFluidQuantity(create, create, create);
 }
 
 template<typename H5Writer>
@@ -108,12 +100,13 @@ void MHDDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& diagnos
             infoDS(vecF.getComponent(type), name + "_" + id, attr);
     };
 
-    auto& attr = patchAttributes[lvlPatchID]["mhd"];
+    auto& attr = patchAttributes[lvlPatchID];
     h5Writer.modelView().visitActiveFluidQuantity(
         diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
         /*compute_derived=*/false, //
-        [&](std::string const& name, auto& field) { infoDS(field, name, attr); },
-        [&](std::string const& name, auto& vecF) { infoVF(vecF, name, attr); });
+        [&](auto const& q, auto& field) { infoDS(field, q.name, attr[q.group]); },
+        [&](auto const& q, auto& vecF) { infoVF(vecF, q.name, attr[q.group]); },
+        [](auto const&, auto&) { /* MHD has no rank-2 fluid quantities */ });
 }
 
 template<typename H5Writer>
@@ -154,16 +147,16 @@ void MHDDiagnosticWriter<H5Writer>::initDataSets(
         bool null        = patchID.empty();
         std::string path = h5Writer.getPatchPathAddTimestamp(lvl, patchID) + "/";
 
-        std::string const tree{"/mhd/"};
         h5Writer.modelView().forEachFluidQuantity(
-            [&](std::string const& name) {
-                if (isActiveDiag(diagnostic, tree, name))
-                    initDS(path, attr["mhd"], name, null);
+            [&](auto const& q) {
+                if (diagnostic.quantity == q.path())
+                    initDS(path, attr[q.group], q.name, null);
             },
-            [&](std::string const& name) {
-                if (isActiveDiag(diagnostic, tree, name))
-                    initVF(path, attr["mhd"], name, null);
-            });
+            [&](auto const& q) {
+                if (diagnostic.quantity == q.path())
+                    initVF(path, attr[q.group], q.name, null);
+            },
+            [](auto const&) { /* MHD has no rank-2 fluid quantities */ });
     };
 
     initDataSets_(patchIDs, patchAttributes, maxLevel, initPatch);
@@ -203,8 +196,9 @@ void MHDDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
     h5Writer.modelView().visitActiveFluidQuantity(
         diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
         /*compute_derived=*/true, //
-        [&](std::string const& name, auto& field) { writeDS(path + name, field); },
-        [&](std::string const& name, auto& vecF) { writeTF(path + name, vecF); });
+        [&](auto const& q, auto& field) { writeDS(path + q.name, field); },
+        [&](auto const& q, auto& vecF) { writeTF(path + q.name, vecF); },
+        [](auto const&, auto&) { /* MHD has no rank-2 fluid quantities */ });
 }
 
 template<typename H5Writer>

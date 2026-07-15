@@ -182,7 +182,8 @@ void FluidDiagnosticWriter<H5Writer>::getDataSetInfo(DiagnosticProperties& diagn
 
     auto& attr = patchAttributes[lvlPatchID];
     h5Writer.modelView().visitActiveFluidQuantity(
-        diagnostic.quantity, //
+        diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
+        /*compute_derived=*/false, //
         [&](auto const& q, auto& field) { infoDS(field, q.name, attr[q.group]); },
         [&](auto const& q, auto& vecF) { infoVF(vecF, q.name, attr[q.group]); },
         [&](auto const& q, auto& tensorF) { infoTF(tensorF, q.name, attr[q.group]); });
@@ -260,7 +261,8 @@ void FluidDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
     std::string const path = h5Writer.patchPath() + "/";
 
     h5Writer.modelView().visitActiveFluidQuantity(
-        diagnostic.quantity, //
+        diagnostic.quantity, h5Writer.patchLayout(), h5Writer.timestamp(),
+        /*compute_derived=*/true, //
         [&](auto const& q, auto& field) { writeDS(path + q.name, field); },
         [&](auto const& q, auto& vecF) { writeTF(path + q.name, vecF); },
         [&](auto const& q, auto& tensorF) { writeTF(path + q.name, tensorF); });

@@ -42,16 +42,13 @@ def diagnostics_checker(func):
         if len(wrong_kwds) > 0:
             raise RuntimeError("Error: invalid arguments - " + " ".join(wrong_kwds))
 
-        try:
-            # just take mandatory arguments from the dict
-            # since if we arrived here we are sure they are there
+        # just take mandatory arguments from the dict
+        # since if we arrived here we are sure they are there
+        kwargs["path"] = kwargs.get("path", "./")
 
-            kwargs["path"] = kwargs.get("path", "./")
-
-            return func(diagnostics_object, name, **kwargs)
-
-        except ValueError as msg:
-            print(msg)
+        # validation errors (e.g. invalid quantity) must propagate: swallowing
+        # them here used to leave the diagnostic silently unregistered
+        return func(diagnostics_object, name, **kwargs)
 
     return wrapper
 
@@ -227,6 +224,13 @@ class MHDDiagnostics(Diagnostics):
         )
 
     def _setSubTypeAttributes(self, **kwargs):
+        if kwargs["quantity"] == "divB":
+            # divB moved out of the fluid tree: it is written to EM_divB.h5
+            # (readable with Run.GetMHDdivB, unchanged signature)
+            raise ValueError(
+                "Error: 'divB' is an electromag diagnostic, "
+                "use ElectromagDiagnostics(quantity='divB')"
+            )
         if kwargs["quantity"] not in MHDDiagnostics.mhd_quantities:
             error_msg = "Error: '{}' not a valid mhd diagnostics : " + ", ".join(
                 MHDDiagnostics.mhd_quantities

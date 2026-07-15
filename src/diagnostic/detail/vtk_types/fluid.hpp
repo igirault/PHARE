@@ -22,7 +22,6 @@ class FluidDiagnosticWriter : public H5TypeWriter<H5Writer>
     using Super              = H5TypeWriter<H5Writer>;
     using VTKFileWriter      = Super::VTKFileWriter;
     using VTKFileInitializer = Super::VTKFileInitializer;
-    using Model_t            = H5Writer::ModelView::Model_t;
     using GridLayout         = H5Writer::GridLayout;
 
 public:
@@ -42,7 +41,7 @@ private:
             = std::vector<std::size_t>(amr::MAX_LEVEL_IDX + 1);
     };
 
-    struct HybridFluidInitializer
+    struct FluidInitializer
     {
         std::optional<std::size_t> operator()(auto const ilvl);
 
@@ -51,46 +50,13 @@ private:
         VTKFileInitializer& file_initializer;
     };
 
-    struct MhdFluidInitializer
-    {
-        std::optional<std::size_t> operator()(auto const ilvl);
-
-        FluidDiagnosticWriter* writer;
-        DiagnosticProperties& diagnostic;
-        VTKFileInitializer& file_initializer;
-    };
-
-    struct HybridFluidWriter
+    struct FluidWriter
     {
         void operator()(auto const& layout);
 
         FluidDiagnosticWriter* writer;
         DiagnosticProperties& diagnostic;
         VTKFileWriter& file_writer;
-    };
-
-    struct MhdFluidWriter
-    {
-        void operator()(auto const& layout);
-
-        FluidDiagnosticWriter* writer;
-        DiagnosticProperties& diagnostic;
-        VTKFileWriter& file_writer;
-    };
-
-    struct HybridFluidComputer
-    {
-        void operator()();
-
-        FluidDiagnosticWriter* writer;
-        DiagnosticProperties& diagnostic;
-    };
-
-
-    auto static isActiveDiag(DiagnosticProperties const& diagnostic, std::string const& tree,
-                             std::string const& var)
-    {
-        return diagnostic.quantity == tree + var;
     };
 
     std::unordered_map<std::string, Info> mem;
@@ -100,7 +66,7 @@ private:
 
 template<typename H5Writer>
 std::optional<std::size_t>
-FluidDiagnosticWriter<H5Writer>::HybridFluidInitializer::operator()(auto const ilvl)
+FluidDiagnosticWriter<H5Writer>::FluidInitializer::operator()(auto const ilvl)
 {
     auto& modelView = writer->h5Writer_.modelView();
     std::optional<std::size_t> ret;
@@ -120,36 +86,11 @@ FluidDiagnosticWriter<H5Writer>::HybridFluidInitializer::operator()(auto const i
 }
 
 
-
-template<typename H5Writer>
-std::optional<std::size_t>
-FluidDiagnosticWriter<H5Writer>::MhdFluidInitializer::operator()(auto const ilvl)
-{
-    auto& modelView = writer->h5Writer_.modelView();
-
-    std::string const tree{"/mhd/"};
-    std::optional<std::size_t> ret;
-
-    modelView.forEachFluidQuantity(
-        [&](std::string const& name) {
-            if (!ret and isActiveDiag(diagnostic, tree, name))
-                ret = file_initializer.initFieldFileLevel(ilvl);
-        },
-        [&](std::string const& name) {
-            if (!ret and isActiveDiag(diagnostic, tree, name))
-                ret = file_initializer.template initTensorFieldFileLevel<1>(ilvl);
-        });
-
-    return ret;
-}
-
-
 template<typename H5Writer>
 void FluidDiagnosticWriter<H5Writer>::setup(DiagnosticProperties& diagnostic)
 {
     PHARE_LOG_SCOPE(3, "FluidDiagnosticWriter<H5Writer>::setup");
 
-    using Model_t   = H5Writer::ModelView::Model_t;
     auto& modelView = this->h5Writer_.modelView();
 
     VTKFileInitializer initializer{diagnostic, this};
@@ -159,17 +100,7 @@ void FluidDiagnosticWriter<H5Writer>::setup(DiagnosticProperties& diagnostic)
     auto& info = mem[diagnostic.quantity];
 
     auto const init = [&](auto const ilvl) -> std::optional<std::size_t> {
-        //
-
-        if constexpr (solver::is_hybrid_model_v<Model_t>)
-            if (auto ret = HybridFluidInitializer{this, diagnostic, initializer}(ilvl))
-                return ret;
-
-        if constexpr (solver::is_mhd_model_v<Model_t>)
-            if (auto ret = MhdFluidInitializer{this, diagnostic, initializer}(ilvl))
-                return ret;
-
-        return std::nullopt;
+        return FluidInitializer{this, diagnostic, initializer}(ilvl);
     };
 
     modelView.onLevels(
@@ -191,31 +122,16 @@ void FluidDiagnosticWriter<H5Writer>::setup(DiagnosticProperties& diagnostic)
 
 
 template<typename H5Writer>
-void FluidDiagnosticWriter<H5Writer>::HybridFluidWriter::operator()(auto const& layout)
-{
-    auto& modelView = writer->h5Writer_.modelView();
-
-    modelView.visitActiveFluidQuantity(
-        diagnostic.quantity, //
-        [&](auto const&, auto& field) { file_writer.writeField(field, layout); },
-        [&](auto const&, auto& vecF) { file_writer.template writeTensorField<1>(vecF, layout); },
-        [&](auto const&, auto&) { /* rank-2 (momentum_tensor) not supported by VTKHDF writer */ });
-}
-
-
-
-template<typename H5Writer>
-void FluidDiagnosticWriter<H5Writer>::MhdFluidWriter::operator()(auto const& layout)
+void FluidDiagnosticWriter<H5Writer>::FluidWriter::operator()(auto const& layout)
 {
     auto& modelView = writer->h5Writer_.modelView();
 
     modelView.visitActiveFluidQuantity(
         diagnostic.quantity, layout, writer->h5Writer_.timestamp(),
         /*compute_derived=*/true, //
-        [&](std::string const&, auto& field) { file_writer.writeField(field, layout); },
-        [&](std::string const&, auto& vecF) {
-            file_writer.template writeTensorField<1>(vecF, layout);
-        });
+        [&](auto const&, auto& field) { file_writer.writeField(field, layout); },
+        [&](auto const&, auto& vecF) { file_writer.template writeTensorField<1>(vecF, layout); },
+        [&](auto const&, auto&) { /* rank-2 (momentum_tensor) not supported by VTKHDF writer */ });
 }
 
 
@@ -235,24 +151,12 @@ void FluidDiagnosticWriter<H5Writer>::write(DiagnosticProperties& diagnostic)
             VTKFileWriter writer{diagnostic, this, info.offset_per_level[ilvl]};
 
             auto const write_quantity = [&](auto& layout, auto const&, auto const) {
-                if constexpr (solver::is_hybrid_model_v<Model_t>)
-                    HybridFluidWriter{this, diagnostic, writer}(layout);
-
-                if constexpr (solver::is_mhd_model_v<Model_t>)
-                    MhdFluidWriter{this, diagnostic, writer}(layout);
+                FluidWriter{this, diagnostic, writer}(layout);
             };
 
             modelView.visitHierarchy(write_quantity, ilvl, ilvl);
         },
         this->h5Writer_.minLevel, this->h5Writer_.maxLevel);
-}
-
-
-
-template<typename H5Writer>
-void FluidDiagnosticWriter<H5Writer>::HybridFluidComputer::operator()()
-{
-    // to implement
 }
 
 

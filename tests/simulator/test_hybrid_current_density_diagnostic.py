@@ -137,7 +137,7 @@ class HybridCurrentDensityDiagnosticTest(SimulatorTest):
         for ilvl in hier.levels():
             for patch in hier.level(ilvl).patches:
                 found_patches += 1
-                data = interior(patch.patch_datas["mhdDivB"])
+                data = interior(patch.patch_datas["divB"])
                 self.assertTrue(np.isfinite(data).all(), "divB has non-finite values")
                 self.assertTrue(np.abs(data).max() < 1e-10, "divB is not ~0")
         self.assertGreater(found_patches, 0)
