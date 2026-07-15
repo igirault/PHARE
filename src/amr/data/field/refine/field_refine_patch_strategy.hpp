@@ -141,7 +141,6 @@ public:
         , all_vector_ids_{}
         , old_scalar_ids_{}
         , old_vector_ids_{}
-        , applyRegridFallback_{false}
     {
     }
 
@@ -171,14 +170,6 @@ public:
         old_scalar_ids_ = std::move(old_scalar_ids);
         old_vector_ids_ = std::move(old_vector_ids);
     }
-
-    /**
-     * @brief Toggle regrid-fallback mode. When set, @c setPhysicalBoundaryConditions applies each
-     * boundary's regrid fallback condition instead of its normal one (and skips quantities with no
-     * fallback). The messenger raises this only around the magnetic regrid fill, where the normal
-     * B condition cannot yet produce the outside-domain ghosts.
-     */
-    void setRegridFallback(bool const on) { applyRegridFallback_ = on; }
 
     /**
      * @brief Apply physical boundary conditions via SAMRAI callback.
@@ -263,21 +254,14 @@ public:
                 if (!masterBoundary)
                     throw std::runtime_error("Boundary not found.");
 
-                // get the boundary condition for the current physical quantity. While a fine level
-                // is being (re)filled at regrid or init, prefer the regrid fallback where one is
-                // registered: for B at inflow the normal condition is None (driven by the Dirichlet
-                // E through constrained transport, which has not run yet), so the outside-domain
-                // ghosts would otherwise be left at the NaN sentinel. Where no fallback is
-                // registered (e.g. open/outflow B) fall back to the normal condition, which for
-                // those is a divergence-free transverse Neumann extrapolation from the freshly
-                // (re)filled fine interior.
-                std::shared_ptr<boundary_condition_type> bc;
-                if (applyRegridFallback_)
-                    bc = masterBoundary->getRegridFallbackCondition(
-                        scalarOrTensorField.physicalQuantity());
-                if (!bc)
-                    bc = masterBoundary->getFieldCondition(
-                        scalarOrTensorField.physicalQuantity());
+                // get the boundary condition for the current physical quantity. The same normal
+                // condition is applied during the regular advance and while a fine level is
+                // (re)filled at regrid/init: the value-prescribed inflow conditions (e.g. the
+                // divergence-free transverse Dirichlet B) produce valid outside-domain ghosts
+                // without needing the fine interior, and the extrapolating ones (e.g. open/outflow
+                // B) read the freshly (re)filled interior.
+                std::shared_ptr<boundary_condition_type> bc
+                    = masterBoundary->getFieldCondition(scalarOrTensorField.physicalQuantity());
                 if (!bc)
                     throw std::runtime_error("Field boundary condition not found.");
 
@@ -357,7 +341,6 @@ protected:
     vector_id_map_type all_vector_ids_;
     scalar_id_map_type old_scalar_ids_;
     vector_id_map_type old_vector_ids_;
-    bool applyRegridFallback_;
 };
 
 } // namespace PHARE::amr

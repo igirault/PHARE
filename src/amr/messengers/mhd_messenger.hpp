@@ -46,16 +46,16 @@ namespace amr
         using patch_t     = amr_types::patch_t;
         using hierarchy_t = amr_types::hierarchy_t;
 
-        using IPhysicalModel    = MHDModel::Interface;
-        using FieldT            = MHDModel::field_type;
-        using VecFieldT         = MHDModel::vecfield_type;
-        using MHDStateT         = MHDModel::state_type;
-        using GridLayoutT       = MHDModel::gridlayout_type;
-        using GridT             = MHDModel::grid_type;
-        using ResourcesManagerT = MHDModel::resources_manager_type;
-        using BoundaryManagerT  = MHDModel::boundary_manager_type;
-        using FieldDataT        = FieldData<GridLayoutT, GridT, core::MHDQuantity::Scalar>;
-        using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::MHDQuantity>;
+        using IPhysicalModel     = MHDModel::Interface;
+        using FieldT             = MHDModel::field_type;
+        using VecFieldT          = MHDModel::vecfield_type;
+        using MHDStateT          = MHDModel::state_type;
+        using GridLayoutT        = MHDModel::gridlayout_type;
+        using GridT              = MHDModel::grid_type;
+        using ResourcesManagerT  = MHDModel::resources_manager_type;
+        using BoundaryManagerT   = MHDModel::boundary_manager_type;
+        using FieldDataT         = FieldData<GridLayoutT, GridT, core::MHDQuantity::Scalar>;
+        using VectorFieldDataT   = TensorFieldData<1, GridLayoutT, GridT, core::MHDQuantity>;
         using scalar_id_map_type = std::unordered_map<core::MHDQuantity::Scalar, int>;
         using vector_id_map_type = std::unordered_map<core::MHDQuantity::Vector, int>;
 
@@ -390,13 +390,6 @@ namespace amr
 
             auto& mhdModel = static_cast<MHDModel&>(model);
 
-            // Creating a new fine level touching a physical boundary has the same outside-domain B
-            // ghost problem as regrid (an inflow B is None, driven by the Dirichlet E via CT, which
-            // has not run yet). Raise regrid-fallback mode around the magnetic init fill so those
-            // ghosts get the fallback (e.g. the prescribed inflow field) instead of the NaN
-            // sentinel; boundaries without a fallback keep their normal condition.
-            auto regridFallbackGuard = scopedRegridFallback_();
-
             magInitRefineSchedules[levelNumber]->fillData(initDataTime);
             densityInitRefiners_.fill(levelNumber, initDataTime);
             momentumInitRefiners_.fill(levelNumber, initDataTime);
@@ -504,11 +497,13 @@ namespace amr
             elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticGhosts(VecFieldT& B, level_t const& level, double const fillTime)
+        void fillMagneticGhosts(VecFieldT& B, level_t const& level, double const fillTime,
+                                bool const setNaNs = true)
         {
             PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
 
-            setNaNsOnVecfieldGhosts(B, level);
+            if (setNaNs)
+                setNaNsOnVecfieldGhosts(B, level);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
             magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
@@ -668,10 +663,9 @@ namespace amr
             {
                 // some ghost lists (e.g. the electric field with its extra reflux entry) are
                 // longer than the per-sub-state id-map count; clamp to the last valid map.
-                auto const mi = allScalarIdMaps_.empty()
-                                    ? std::size_t{0}
-                                    : std::min(i, allScalarIdMaps_.size() - 1);
-                auto&& [id] = resourcesManager_->getIDsList(keys[i]);
+                auto const mi = allScalarIdMaps_.empty() ? std::size_t{0}
+                                                         : std::min(i, allScalarIdMaps_.size() - 1);
+                auto&& [id]   = resourcesManager_->getIDsList(keys[i]);
                 auto patchStrat
                     = std::make_shared<RefinePatchStrategyT>(*resourcesManager_, *boundaryManager_);
                 patchStrat->registerIDs(id, allScalarIdMaps_[mi], allVectorIdMaps_[mi],
@@ -688,12 +682,12 @@ namespace amr
             // Give the init refiners the model-state moment patch strategies (index 0 of each
             // ghost-strategy list: ghostX[0] == modelX == initX, carrying the full sibling id-maps
             // the coupled TotalEnergyFromPressure condition needs). The InitField schedule already
-            // fills interior + coarse-fine from the coarser level via createSchedule(level, nullptr,
-            // coarser, hierarchy, patchStrat) — the same call B uses in BalgoInit — and with a
-            // patch strategy it now also fills the physical-boundary ghosts. So a freshly created /
-            // regridded refined level touching a physical boundary carries valid moment ghosts
-            // before the first flux. Default (non-overwrite) fill pattern is kept: overwrite is a
-            // B/face-centered concern and corrupts the cell-centered moment interior fill.
+            // fills interior + coarse-fine from the coarser level via createSchedule(level,
+            // nullptr, coarser, hierarchy, patchStrat) — the same call B uses in BalgoInit — and
+            // with a patch strategy it now also fills the physical-boundary ghosts. So a freshly
+            // created / regridded refined level touching a physical boundary carries valid moment
+            // ghosts before the first flux. Default (non-overwrite) fill pattern is kept: overwrite
+            // is a B/face-centered concern and corrupts the cell-centered moment interior fill.
             std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> rhoInitStrat
                 = rhoPatchStrats.empty() ? nullptr : rhoPatchStrats[0];
             std::shared_ptr<SAMRAI::xfer::RefinePatchStrategy> momentumInitStrat
@@ -720,14 +714,6 @@ namespace amr
             auto magSchedule = BregridAlgo.createSchedule(
                 level, oldLevel, level->getNextCoarserHierarchyLevelNumber(), hierarchy,
                 &magneticRefinePatchStrategy_);
-
-            // Regrid fills the new fine level from the old level plus coarse interpolation, but the
-            // outside-domain B ghosts of patches touching a physical boundary cannot be produced
-            // that way (SAMRAI shears them off; the coarse boundary-ghost B is not communicable).
-            // Raise regrid-fallback mode so setPhysicalBoundaryConditions applies each boundary's
-            // regrid fallback B condition instead of the normal one. Guarded so an exception in
-            // fillData still clears the flag (the same instance is reused for the init fill).
-            auto regridFallbackGuard = scopedRegridFallback_();
 
             magSchedule->fillData(initDataTime);
         }
@@ -941,19 +927,6 @@ namespace amr
             = std::vector<std::shared_ptr<VectorFieldRefinePatchStrategyT>>;
         using MagneticRefinePatchStrategyList
             = std::vector<std::shared_ptr<MagneticRefinePatchStrategyT>>;
-
-        // RAII: enable regrid-fallback BC mode for the enclosing scope, clearing it on
-        // exit even if fillData throws. Reused by initLevel and magneticRegriding_.
-        [[nodiscard]] auto scopedRegridFallback_()
-        {
-            magneticRefinePatchStrategy_.setRegridFallback(true);
-            struct Guard
-            {
-                MagneticRefinePatchStrategyT& strat;
-                ~Guard() { strat.setRegridFallback(false); }
-            };
-            return Guard{magneticRefinePatchStrategy_};
-        }
 
         std::vector<scalar_id_map_type> allScalarIdMaps_;
         std::vector<vector_id_map_type> allVectorIdMaps_;

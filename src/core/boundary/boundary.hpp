@@ -116,63 +116,24 @@ public:
     }
 
     /**
-     * @brief Retrieve the *regrid fallback* field boundary condition for a physical quantity.
+     * @brief Register a prebuilt scalar field boundary condition for a quantity.
      *
-     * A regrid fallback is applied in place of the normal condition only while a fine level is
-     * being (re)filled at regrid time, when the outside-domain ghosts cannot yet be produced by
-     * the usual mechanism (e.g. an inflow B is normally driven by the constrained transport from
-     * the Dirichlet E, which has not run yet). In practice only the magnetic field registers one;
-     * every other quantity returns nullptr, and the caller then leaves the ghosts to the normal
-     * post-regrid fill.
-     *
-     * @return The registered regrid fallback, or nullptr if none was registered for the quantity.
+     * Overload of @c registerFieldCondition taking an already-constructed condition instead of
+     * factory arguments. Lets a caller build a condition once and use it both as a sub-BC of a
+     * composite condition and as the quantity's own main condition, avoiding a rebuild.
      */
-    template<typename TensorPhysicalQuantityT>
-    auto getRegridFallbackCondition(TensorPhysicalQuantityT quantity) const
+    void registerFieldCondition(scalar_quantity_type quantity,
+                                std::shared_ptr<scalar_field_condition_type> condition)
     {
-        if constexpr (std::same_as<TensorPhysicalQuantityT, typename PhysicalQuantityT::Scalar>)
-        {
-            auto it = regrid_fallback_scalar_conditions_.find(quantity);
-            return (it != regrid_fallback_scalar_conditions_.end()) ? it->second : nullptr;
-        }
-        else if constexpr (std::same_as<TensorPhysicalQuantityT,
-                                        typename PhysicalQuantityT::Vector>)
-        {
-            auto it = regrid_fallback_vector_conditions_.find(quantity);
-            return (it != regrid_fallback_vector_conditions_.end()) ? it->second : nullptr;
-        }
-        else
-        {
-            static_assert(dependant_false_<TensorPhysicalQuantityT>,
-                          "Tensoriality of the physical quantity not supported.");
-        }
+        scalar_field_conditions_[quantity] = std::move(condition);
     }
 
-    /**
-     * @brief Register a *regrid fallback* field boundary condition for a quantity. Mirrors
-     * @c registerFieldCondition but writes into the regrid fallback maps. See
-     * @c getRegridFallbackCondition for when it is applied.
-     */
-    template<FieldBoundaryConditionType type, typename TensorPhysicalQuantityT, typename... Args>
-    void registerRegridFallbackCondition(TensorPhysicalQuantityT quantity, Args&&... args)
+    /** @brief Register a prebuilt vector field boundary condition for a quantity. See the scalar
+     * overload above. */
+    void registerFieldCondition(vector_quantity_type quantity,
+                                std::shared_ptr<vector_field_condition_type> condition)
     {
-        if constexpr (std::same_as<TensorPhysicalQuantityT, scalar_quantity_type>)
-        {
-            regrid_fallback_scalar_conditions_[quantity]
-                = FieldBoundaryConditionFactory::create<type, FieldT, GridLayoutT>(
-                    std::forward<Args>(args)...);
-        }
-        else if constexpr (std::same_as<TensorPhysicalQuantityT, vector_quantity_type>)
-        {
-            regrid_fallback_vector_conditions_[quantity]
-                = FieldBoundaryConditionFactory::create<type, vector_field_type, GridLayoutT>(
-                    std::forward<Args>(args)...);
-        }
-        else
-        {
-            static_assert(dependant_false_<TensorPhysicalQuantityT>,
-                          "Tensoriality of the physical quantity not supported.");
-        }
+        vector_field_conditions_[quantity] = std::move(condition);
     }
 
     /**
@@ -201,10 +162,6 @@ private:
     _scalar_field_condition_map_type scalar_field_conditions_;
     /** The list of registered vector field boundary conditions on the boundary */
     _vector_field_condition_map_type vector_field_conditions_;
-    /** Regrid-time fallback conditions, applied instead of the normal ones only while a fine
-     * level is (re)filled at regrid. Mostly empty; only the magnetic field registers one. */
-    _scalar_field_condition_map_type regrid_fallback_scalar_conditions_;
-    _vector_field_condition_map_type regrid_fallback_vector_conditions_;
 };
 
 } // namespace PHARE::core
