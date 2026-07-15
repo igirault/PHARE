@@ -224,13 +224,6 @@ class MHDDiagnostics(Diagnostics):
         )
 
     def _setSubTypeAttributes(self, **kwargs):
-        if kwargs["quantity"] == "divB":
-            # divB moved out of the fluid tree: it is written to EM_divB.h5
-            # (readable with Run.GetMHDdivB, unchanged signature)
-            raise ValueError(
-                "Error: 'divB' is an electromag diagnostic, "
-                "use ElectromagDiagnostics(quantity='divB')"
-            )
         if kwargs["quantity"] not in MHDDiagnostics.mhd_quantities:
             error_msg = "Error: '{}' not a valid mhd diagnostics : " + ", ".join(
                 MHDDiagnostics.mhd_quantities

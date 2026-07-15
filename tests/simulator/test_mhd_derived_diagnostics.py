@@ -226,13 +226,12 @@ class MHDDerivedDiagnosticsTest(SimulatorTest):
                     np.isfinite(interior(patch.patch_datas["mhdEtot"])).all()
                 )
 
-    def test_divB_moved_to_electromag_diagnostics(self):
-        # /mhd/divB moved to the electromag tree: requesting it as an MHD
-        # (fluid) diagnostic must fail loudly at configuration time, with a
-        # message pointing at ElectromagDiagnostics.
+    def test_invalid_quantity_fails_at_configuration(self):
+        # validation errors must propagate (diagnostics_checker used to swallow
+        # them, leaving the diagnostic silently unregistered)
         ph.global_vars.sim = None
         config("phareh5", out_dir_h5)
-        with self.assertRaisesRegex(ValueError, "ElectromagDiagnostics"):
+        with self.assertRaisesRegex(ValueError, "not a valid mhd diagnostics"):
             ph.MHDDiagnostics(quantity="divB", write_timestamps=timestamps)
 
     def test_derived_quantities_vtkhdf_smoke(self):
