@@ -129,7 +129,7 @@ $$
 - the reference hyper-resistivity $\nu_0$
 
 $$
- \nu_0 = \mu v_0 \delta_0^3  = \frac{B_0 m_p}{e^3 n_0^2 \mu_0 }
+ \nu_0 = \mu_0 v_0 \delta_0^3  = \frac{B_0 m_p}{e^3 n_0^2 \mu_0 }
 $$
 
 By defining non-dimensional fields as $\tilde{\phi} = \frac{\phi}{\phi_0}$, we can obtain the following equations:
