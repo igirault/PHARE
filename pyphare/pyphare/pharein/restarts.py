@@ -86,7 +86,9 @@ def validate(sim):
     #  - time_period  -> absolute target times (works for constant and adaptive dt)
     #  - step_period -> empty timestamps + a coarse-step cadence honoured by the C++ side
     #    (the only timestamp-free option valid under adaptive dt)
-    cadence = [k for k in ("timestamps", "time_period", "step_period") if k in restart_options]
+    cadence = [
+        k for k in ("timestamps", "time_period", "step_period") if k in restart_options
+    ]
     if len(cadence) > 1:
         raise RuntimeError(
             "Error: restart_options timestamps, time_period, step_period are mutually exclusive"
@@ -95,7 +97,9 @@ def validate(sim):
         period = float(restart_options.pop("time_period"))
         if period <= 0:
             raise RuntimeError("Error: restart_options time_period must be > 0")
-        phare_utilities.warn_dump_period_vs_dt(sim, period, "restart_options time_period")
+        phare_utilities.warn_dump_period_vs_dt(
+            sim, period, "restart_options time_period"
+        )
         init = sim.start_time()
         nbr = int(np.floor((sim.final_time - init) / period + 1e-9)) + 1
         restart_options["timestamps"] = init + period * np.arange(nbr)
@@ -133,20 +137,21 @@ def validate(sim):
         timestamps = restart_options["timestamps"]
         if np.any(timestamps < init_time):
             raise RuntimeError(
-                f"Error: timestamp({sim.time_step_nbr}) cannot be less than simulation.init_time({init_time}))"
+                f"Error: timestamp({sim.time_step_nbr}) cannot be less than "
+                f"simulation.init_time({init_time}))"
             )
         if np.any(timestamps > sim.final_time):
             raise RuntimeError(
-                f"Error: timestamp({sim.time_step_nbr}) cannot be greater than simulation.final_time({sim.final_time}))"
+                f"Error: timestamp({sim.time_step_nbr}) cannot be greater than "
+                f"simulation.final_time({sim.final_time}))"
             )
         if not np.all(np.diff(timestamps) >= 0):
             raise RuntimeError(
                 "Error: restart_options timestamps not in ascending order)"
             )
-        if sim.time_step is not None and not np.all(
-            np.abs(
-                timestamps / sim.time_step - np.rint(timestamps / sim.time_step) < 1e-9
-            )
+        time_step = sim.time_step
+        if time_step is not None and not np.all(
+            np.abs(timestamps / time_step - np.rint(timestamps / time_step) < 1e-9)
         ):
             raise RuntimeError(
                 "Error: restart_options timestamps is inconsistent with simulation.time_step"

@@ -28,18 +28,18 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_constant_is_the_default(self):
         sim = ph.Simulation(time_step=0.001, time_step_nbr=10, **baseArgs)
-        self.assertEqual(sim.time_step_type, "constant")
+        self.assertEqual(sim.time_stepper.mode, "constant")
         self.assertEqual(sim.time_step, 0.001)
         self.assertEqual(sim.time_step_nbr, 10)
 
     def test_constant_final_time_and_step(self):
         sim = ph.Simulation(time_step=0.001, final_time=1.0, **baseArgs)
-        self.assertEqual(sim.time_step_type, "constant")
+        self.assertEqual(sim.time_stepper.mode, "constant")
         self.assertEqual(sim.time_step, 0.001)
 
     def test_constant_final_time_and_nbr_has_no_time_step_kwarg(self):
         sim = ph.Simulation(time_step_nbr=10, final_time=1.0, **baseArgs)
-        self.assertEqual(sim.time_step_type, "constant")
+        self.assertEqual(sim.time_stepper.mode, "constant")
         self.assertEqual(sim.time_step_nbr, 10)
 
     def test_constant_dict_with_value(self):
@@ -48,7 +48,7 @@ class TimeStepValidation(unittest.TestCase):
             time_step_nbr=10,
             **baseArgs,
         )
-        self.assertEqual(sim.time_step_type, "constant")
+        self.assertEqual(sim.time_stepper.mode, "constant")
         self.assertEqual(sim.time_step, 0.001)
         self.assertEqual(sim.time_step_nbr, 10)
 
@@ -68,8 +68,8 @@ class TimeStepValidation(unittest.TestCase):
             final_time=1.0,
             **baseArgs,
         )
-        self.assertEqual(sim.time_step_type, "adaptive")
-        self.assertEqual(sim.time_step_cfl, 0.4)
+        self.assertEqual(sim.time_stepper.mode, "adaptive")
+        self.assertEqual(sim.time_stepper.cfl, 0.4)
         self.assertEqual(sim.final_time, 1.0)
         # with adaptive dt these are unknown ahead of the run
         self.assertIsNone(sim.time_step)
@@ -79,7 +79,7 @@ class TimeStepValidation(unittest.TestCase):
         sim = ph.Simulation(
             time_step={"mode": "adaptive", "cfl": 0.4}, final_time=1.0, **baseArgs
         )
-        self.assertEqual(sim.time_step_fourier, 0.4)
+        self.assertEqual(sim.time_stepper.fourier, 0.4)
 
     def test_adaptive_fourier_explicit(self):
         sim = ph.Simulation(
@@ -87,13 +87,11 @@ class TimeStepValidation(unittest.TestCase):
             final_time=1.0,
             **baseArgs,
         )
-        self.assertEqual(sim.time_step_fourier, 0.2)
+        self.assertEqual(sim.time_stepper.fourier, 0.2)
 
     def test_adaptive_requires_cfl(self):
         with self.assertRaises(ValueError):
-            ph.Simulation(
-                time_step={"mode": "adaptive"}, final_time=1.0, **baseArgs
-            )
+            ph.Simulation(time_step={"mode": "adaptive"}, final_time=1.0, **baseArgs)
 
     def test_adaptive_requires_final_time(self):
         with self.assertRaises(ValueError):

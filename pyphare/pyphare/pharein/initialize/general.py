@@ -89,6 +89,28 @@ def add_vector_int(path, val):
     pp.add_vector_int(path, list(val))
 
 
+def dict_populator():
+    def add_size_t(path, val):
+        casted = int(val)
+        if casted < 0:
+            raise RuntimeError("pyphare.__init__::add_size_t received negative value")
+        pp.add_size_t(path, casted)
+
+    def add_vector_int(path, val):
+        pp.add_vector_int(path, list(val))
+
+    class DictPopulator:
+        def __init__(self):
+            self.add_int = add_int
+            self.add_bool = add_bool
+            self.add_double = add_double
+            self.add_size_t = add_size_t
+            self.add_vector_int = add_vector_int
+            self.add_string = pp.add_string
+
+    return DictPopulator()
+
+
 add_string = pp.add_string
 
 
@@ -118,16 +140,7 @@ def populateDict(sim):
 
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)
-    # mirror the public `time_step` dict shape (mode + per-mode params) on the C++ side
-    add_string("simulation/time_step/mode", sim.time_step_type)
-    if sim.time_step_type == "adaptive":
-        # dt is computed each step on the C++ side; bound the run by final_time
-        add_double("simulation/time_step/cfl", sim.time_step_cfl)
-        add_double("simulation/time_step/fourier", sim.time_step_fourier)
-        add_double("simulation/final_time", sim.final_time)
-    else:
-        add_double("simulation/time_step/value", sim.time_step)
-        add_int("simulation/time_step_nbr", sim.time_step_nbr)
+    sim.time_stepper.populate_dict(dict_populator())
 
     add_string("simulation/AMR/clustering", sim.clustering)
     add_vector_int("simulation/AMR/nesting_buffer", sim.nesting_buffer)

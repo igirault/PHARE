@@ -126,7 +126,8 @@ def validate_timestamps(clazz, key, **kwargs):
 
     if np.any(timestamps > sim.final_time):
         raise RuntimeError(
-            f"Error: timestamp({sim.time_step_nbr}) cannot be greater than simulation.final_time({sim.final_time}))"
+            f"Error: timestamp({sim.time_step_nbr}) cannot be greater than "
+            f"simulation.final_time({sim.final_time}))"
         )
     if not np.all(np.diff(timestamps) >= 0):
         raise RuntimeError(f"Error: {clazz}.{key} not in ascending order)")

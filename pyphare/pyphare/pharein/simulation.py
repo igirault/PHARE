@@ -7,6 +7,7 @@ from ..core import box as boxm
 from ..core import phare_utilities
 from ..core.box import Box
 from . import global_vars
+from . import timestepper
 
 # ------------------------------------------------------------------------------
 
@@ -138,146 +139,6 @@ def check_domain(**kwargs):
 
 
 # ------------------------------------------------------------------------------
-
-
-def canonicalize_time_step(**kwargs):
-    """
-    Resolve the public 'time_step' option into the internal time_step_type / time_step_cfl /
-    time_step_fourier attributes. 'time_step' may be:
-      - a scalar (or absent)                          -> constant step
-      - {'mode': 'constant', 'value': <dt>}           -> constant step (dict form, 'value' optional)
-      - {'mode': 'adaptive', 'cfl': <c>, 'fourier': <f>}  -> adaptive step ('fourier' defaults to 'cfl')
-    Mutates and returns kwargs so downstream check_time() sees the resolved internal keys.
-    """
-    ts = kwargs.get("time_step", None)
-
-    if not isinstance(ts, dict):  # scalar value or absent
-        kwargs["time_step_type"] = "constant"
-        return kwargs
-
-    valid_modes = ("constant", "adaptive")
-    mode = ts.get("mode")
-    if mode not in valid_modes:
-        raise ValueError(
-            f"Error: time_step dict requires 'mode' in {valid_modes}, got {mode!r}"
-        )
-
-    def _check_keys(allowed):
-        extra = set(ts) - allowed
-        if extra:
-            raise ValueError(
-                f"Error: invalid time_step keys for mode '{mode}': {sorted(extra)}, "
-                f"allowed {sorted(allowed)}"
-            )
-
-    if mode == "constant":
-        _check_keys({"mode", "value"})
-        kwargs["time_step_type"] = "constant"
-        if "value" in ts:
-            kwargs["time_step"] = ts["value"]
-        else:
-            del kwargs["time_step"]  # let final_time + time_step_nbr combo apply
-    else:  # adaptive
-        _check_keys({"mode", "cfl", "fourier"})
-        if "cfl" not in ts:
-            raise ValueError("Error: adaptive time_step requires 'cfl'")
-        kwargs["time_step_type"] = "adaptive"
-        kwargs["time_step_cfl"] = ts["cfl"]
-        kwargs["time_step_fourier"] = ts.get("fourier", ts["cfl"])
-        del kwargs["time_step"]
-
-    return kwargs
-
-
-def check_adaptive_time(**kwargs):
-    """
-    adaptive time stepping: dt is recomputed each step from a CFL constraint.
-    The user supplies 'final_time' and a 'cfl' (via the time_step dict); 'time_step_nbr' is not
-    allowed (imposing a step count with a variable dt is out of scope for now).
-    Returns (time_step_nbr, time_step, final_time) with the first two set to None.
-    """
-    if "final_time" not in kwargs:
-        raise ValueError("Error: adaptive time_step requires 'final_time'")
-    if "time_step" in kwargs or "time_step_nbr" in kwargs:
-        raise ValueError(
-            "Error: adaptive time_step is incompatible with a constant 'time_step' / 'time_step_nbr'"
-        )
-    if kwargs["time_step_cfl"] <= 0:
-        raise ValueError("Error: adaptive time_step 'cfl' must be > 0")
-    if kwargs["time_step_fourier"] <= 0:
-        raise ValueError("Error: adaptive time_step 'fourier' must be > 0")
-
-    start_time = (kwargs.get("restart_options") or {}).get("restart_time", 0)
-    if kwargs["final_time"] - start_time < 0:
-        raise RuntimeError("Simulation time cannot be negative - review inputs")
-
-    return None, None, kwargs["final_time"]
-
-
-def check_time(**kwargs):
-    """
-    check parameters relative to simulation duration and time resolution and raise exception if invalids
-     return time_step_nbr and time_step
-    """
-    time_step_type = kwargs.get("time_step_type", "constant")
-    assert time_step_type in ("constant", "adaptive")  # set by canonicalize_time_step
-    if time_step_type == "adaptive":
-        return check_adaptive_time(**kwargs)
-
-    final_and_dt = (
-        "final_time" in kwargs
-        and "time_step" in kwargs
-        and "time_step_nbr" not in kwargs
-    )
-    nsteps_and_dt = (
-        "time_step_nbr" in kwargs
-        and "time_step" in kwargs
-        and "final_time" not in kwargs
-    )
-    final_and_nsteps = (
-        "final_time" in kwargs
-        and "time_step_nbr" in kwargs
-        and "time_step" not in kwargs
-    )
-
-    if sum([final_and_dt, final_and_nsteps, nsteps_and_dt]) != 1:
-        raise ValueError(
-            "Error: Specify either 'final_time' and 'time_step' or 'time_step_nbr' and 'time_step'"
-            + " or 'final_time' and 'time_step_nbr'"
-        )
-
-    def _start_time():
-        if restart_options := kwargs.get("restart_options", {}):
-            return restart_options.get("restart_time", 0)
-        return 0
-
-    start_time = _start_time()
-
-    def _final_time():
-        if "final_time" in kwargs:
-            return kwargs["final_time"]
-        return start_time + kwargs["time_step"] * kwargs["time_step_nbr"]
-
-    final_time = _final_time()
-    total_time = final_time - start_time
-    if total_time < 0:
-        raise RuntimeError("Simulation time cannot be negative - review inputs")
-    if phare_utilities.fp_equal(total_time, 0):
-        return 0, 0, final_time
-
-    if final_and_dt:
-        time_step_nbr = int(total_time / kwargs["time_step"])
-        time_step = total_time / time_step_nbr
-
-    elif final_and_nsteps:
-        time_step = total_time / kwargs["time_step_nbr"]
-        time_step_nbr = kwargs["time_step_nbr"]
-
-    else:  # must be nsteps_and_dt
-        time_step = kwargs["time_step"]
-        time_step_nbr = kwargs["time_step_nbr"]
-
-    return time_step_nbr, time_step, final_time
 
 
 # ------------------------------------------------------------------------------
@@ -851,11 +712,11 @@ def checker(func):
 
         kwargs["restart_options"] = check_restart_options(**kwargs)
 
-        kwargs = canonicalize_time_step(**kwargs)
-        time_step_nbr, time_step, final_time = check_time(**kwargs)
-        kwargs["time_step_nbr"] = time_step_nbr
-        kwargs["time_step"] = time_step
-        kwargs["final_time"] = final_time
+        time_stepper = timestepper.resolve_time_stepper(**kwargs)
+        kwargs.pop("time_step", None)
+        kwargs.pop("time_step_nbr", None)
+        kwargs.pop("final_time", None)
+        kwargs["time_stepper"] = time_stepper
 
         kwargs["interp_order"] = check_interp_order(**kwargs)
         kwargs["refinement_ratio"] = 2
@@ -1156,29 +1017,15 @@ class Simulation(object):
         self.electrons = None
         self.load_balancer = None
 
-        # hard coded in C++ MultiPhysicsIntegrator::getMaxFinerLevelDt
-        self.nSubcycles = 4
-        self.stepDiff = 1 / self.nSubcycles
+        self.time_stepper.resolve_levels(self.max_nbr_levels)
 
-        levelNumbers = list(range(self.max_nbr_levels))
-        if self.time_step is None:  # adaptive: dt (and step counts) are unknown ahead of the run
-            self.level_time_steps = None
-            self.level_step_nbr = None
-        else:
-            self.level_time_steps = [
-                self.time_step * (self.stepDiff ** (ilvl)) for ilvl in levelNumbers
-            ]
-            self.level_step_nbr = [
-                self.nSubcycles ** levelNumbers[ilvl] * self.time_step_nbr
-                for ilvl in levelNumbers
-            ]
         validate_restart_options(self)
 
     def simulation_domain(self):
         return [dl * n for dl, n in zip(self.dl, self.cells)]
 
     def within_simulation_duration(self, time_period):
-        return time_period[0] >= 0 and time_period[1] < self.time_step_nbr
+        return self.time_stepper.within_simulation_duration(time_period)
 
     def within_simulation_extent(self, extent):
         domain = self.simulation_domain()
@@ -1192,9 +1039,7 @@ class Simulation(object):
         return self.restart_options.get("dir", "phare_outputs")
 
     def start_time(self):
-        if self.is_from_restart():
-            return self.restart_options["restart_time"]
-        return 0
+        return self.time_stepper.start_time
 
     def is_from_restart(self):
         if self.restart_options is not None and "restart_time" in self.restart_options:
@@ -1204,7 +1049,11 @@ class Simulation(object):
     def __getattr__(
         self, name
     ):  # stops pylint complaining about dynamic class attributes not existing
-        ...
+        # back-compat: sim.time_step / sim.final_time / sim.time_step_nbr / ... transparently
+        # fall through to sim.time_stepper's attribute of the same name
+        time_stepper = self.__dict__.get("time_stepper")
+        if time_stepper is not None and hasattr(time_stepper, name):
+            return getattr(time_stepper, name)
 
     # dill serialization uses __getattr__
     #  but without these it causes errors

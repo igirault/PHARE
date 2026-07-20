@@ -39,36 +39,45 @@ private:
     std::size_t idx_ = 0;
 };
 
-// Accumulates the (possibly varying) dt actually used at each step, for adaptive time stepping.
-class VariableTimeStamper : public ITimeStamper
+
+class KahanTimeStamper : public ITimeStamper
 {
 public:
-    VariableTimeStamper(double const& dt, double const& init_time = 0)
+    KahanTimeStamper(double const& dt, double const& init_time = 0)
         : dt_{dt}
-        , last_change_{init_time}
         , last_time_(init_time)
+        , error_compensation_(0.0)
     {
     }
 
     double operator+=(double const& new_dt) noexcept override
     {
         assert(new_dt > 0);
+        dt_ = new_dt;
 
-        if (new_dt != dt_) // not sure if safe, possibly
-        {
-            dt_          = new_dt;
-            last_change_ = last_time_;
-            n_same_      = 0;
-        }
-        return (last_time_ = last_change_ + (dt_ * ++n_same_));
+        // Kahan Summation Algorithm
+        // 1. Subtract the accumulated floating-point error from the new increment
+        double y = dt_ - error_compensation_;
+
+        // 2. Add the corrected increment to the running total.
+        // High-order bits are updated; low-order bits of 'y' may be lost here.
+        double temp = last_time_ + y;
+
+        // 3. Recover the exact low-order bits that were dropped in the addition
+        error_compensation_ = (temp - last_time_) - y;
+
+        // 4. Update the state
+        return (last_time_ = temp);
     }
 
 private:
-    std::size_t n_same_ = 0;
-    double dt_          = 0;
-    double last_change_ = 0;
-    double last_time_   = 0;
+    double dt_                 = 0;
+    double last_time_          = 0;
+    double error_compensation_ = 0; // Tracks the lost bits
 };
+
+
+
 
 struct TimeStamperFactory
 {
@@ -78,7 +87,7 @@ struct TimeStamperFactory
         if (time_step_dict.contains("mode")
             && time_step_dict["mode"].template to<std::string>() == "adaptive")
             // dt_ seed is irrelevant: the first (varying) dt resets it on the first step
-            return std::make_unique<VariableTimeStamper>(0.);
+            return std::make_unique<KahanTimeStamper>(0.);
 
         assert(time_step_dict.contains("value"));
         auto time_step  = time_step_dict["value"].template to<double>();
