@@ -1,13 +1,13 @@
 #ifndef PHARE_CORE_UTILITIES_TIMESTAMPS_HPP
 #define PHARE_CORE_UTILITIES_TIMESTAMPS_HPP
 
-#include <string>
-#include <cassert>
-#include <cstdint>
-
-#include "core/logger.hpp"
-#include "initializer/data_provider.hpp"
 #include "core/def.hpp"
+
+#include "initializer/data_provider.hpp"
+
+#include <cassert>
+#include <string>
+
 
 namespace PHARE::core
 {
@@ -22,21 +22,27 @@ struct ITimeStamper
 class ConstantTimeStamper : public ITimeStamper
 {
 public:
-    ConstantTimeStamper(double const& dt, std::size_t const& init_idx = 0)
+    ConstantTimeStamper(double const& dt, double const& init_time = 0)
         : dt_{dt}
-        , idx_{init_idx}
+        , last_time_{init_time}
     {
     }
 
     double operator+=([[maybe_unused]] double const& new_dt) noexcept override
     {
         assert(dt_ == new_dt); // binary comparison - should never fail in this case
-        return dt_ * ++idx_;
+        // idx_ * dt_ stays an exact multiplication (no cumulative float drift); last_time_ is a
+        // fixed seed (e.g. a restart time) added fresh each call, not accumulated iteratively.
+        return last_time_ + dt_ * ++idx_;
     }
 
+    // pure read - dt is fixed by config, nothing to (re)compute. See advance() below.
+    NO_DISCARD double dt() const noexcept { return dt_; }
+
 private:
-    double dt_       = 0;
-    std::size_t idx_ = 0;
+    double dt_        = 0;
+    double last_time_ = 0;
+    std::size_t idx_  = 0;
 };
 
 
@@ -70,6 +76,9 @@ public:
         return (last_time_ = temp);
     }
 
+    // pure read of the last dt cached by the last operator+=() - no computation, no mutation.
+    NO_DISCARD double dt() const noexcept { return dt_; }
+
 private:
     double dt_                 = 0;
     double last_time_          = 0;
@@ -77,23 +86,22 @@ private:
 };
 
 
-
-
 struct TimeStamperFactory
 {
     NO_DISCARD static std::unique_ptr<ITimeStamper> create(initializer::PHAREDict const& dict)
     {
         auto const& time_step_dict = dict["time_step"];
+        double const restart_time  = cppdict::get_value(dict, "restarts/restart_time", 0.);
+
         if (time_step_dict.contains("mode")
             && time_step_dict["mode"].template to<std::string>() == "adaptive")
             // dt_ seed is irrelevant: the first (varying) dt resets it on the first step
-            return std::make_unique<KahanTimeStamper>(0.);
+            return std::make_unique<KahanTimeStamper>(0., restart_time);
 
         assert(time_step_dict.contains("value"));
-        auto time_step  = time_step_dict["value"].template to<double>();
-        std::size_t idx = 0;
+        auto time_step = time_step_dict["value"].template to<double>();
 
-        return std::make_unique<ConstantTimeStamper>(time_step, idx);
+        return std::make_unique<ConstantTimeStamper>(time_step, restart_time);
     }
 };
 

@@ -26,7 +26,6 @@
 #include <stdexcept>
 #include <vector>
 #include <string>
-#include <limits>
 #include <algorithm>
 
 
@@ -103,25 +102,15 @@ public:
 
     NO_DISCARD double startTime() override { return startTime_; }
     NO_DISCARD double endTime() override { return finalTime_; }
-    NO_DISCARD double timeStep() override
-    {
-        if (timeStepType_ != "adaptive")
-            return dt_;
-
-        // recompute the CFL-stable dt once per coarse step (timeStep() is queried from several
-        // Python sites at the same currentTime_); clamp the final step to land on finalTime_.
-        if (cachedDtTime_ != currentTime_)
-        {
-            cachedDt_     = multiphysInteg_->computeStableDt(
-                *hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
-            cachedDtTime_ = currentTime_;
-        }
-        return std::min(cachedDt_, finalTime_ - currentTime_);
-    }
+    // pure query, no side effects: dt_ is kept up to date by advance(core::KahanTimeStamper)
+    // under adaptive dt (constant dt never changes it after construction) - this just reads it.
+    NO_DISCARD double timeStep() override { return dt_; }
     NO_DISCARD double currentTime() override { return currentTime_; }
 
     void initialize() override;
     double advance(double dt) override;
+    double advance(core::ConstantTimeStamper ts);
+    double advance(core::KahanTimeStamper ts);
 
     std::vector<int> const& domainBox() const override { return hierarchy_->domainBox(); }
     std::vector<double> const& cellWidth() const override { return hierarchy_->cellWidth(); }
@@ -197,23 +186,20 @@ private:
     int maxLevelNumber_;
     int maxMHDLevel_;
     double dt_;
-    std::string timeStepType_ = "constant";
-    double cfl_               = 0; // advective CFL coefficient (adaptive)
-    double fourier_           = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
-    int timeStepNbr_          = 0;
-    double startTime_         = 0;
-    double finalTime_         = 0;
-    double currentTime_       = 0;
-    // adaptive-dt memo: recompute the stable dt once per coarse step (per distinct currentTime_)
-    double cachedDt_           = 0;
-    double cachedDtTime_       = std::numeric_limits<double>::lowest();
+    std::string timeStepType_  = "constant";
+    double cfl_                = 0; // advective CFL coefficient (adaptive)
+    double fourier_            = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
+    int timeStepNbr_           = 0;
+    double startTime_          = 0;
+    double finalTime_          = 0;
+    double currentTime_        = 0;
     std::size_t fineDumpLvlMax = 0;
     // single source of truth for "how many coarse steps have run", passed into dMan/rMan dump()
     // so write_step_period/step_period cadence tracks real advance() calls (not calls to
     // dump(), which may be irregular e.g. under Python's auto_dump=False); restored from the
     // restart file on restart so the cadence phase survives a restart instead of resetting to 0.
     std::size_t stepIndex_ = 0;
-    bool isInitialized         = false;
+    bool isInitialized     = false;
 
     bool allowEmergencyDumps = false;
 
@@ -569,8 +555,6 @@ void Simulator<opts>::initialize()
 }
 
 
-
-
 template<auto opts>
 double Simulator<opts>::advance(double dt)
 {
@@ -612,9 +596,29 @@ double Simulator<opts>::advance(double dt)
         throw std::runtime_error("forcing error");
     }
 
-
-
     return dt;
+}
+
+// Per-timestepper: figure out the dt for the current step (recomputing only if this stamper
+// type actually needs to), then delegate to advance(double) - the primitive that does the
+// physics step + time accumulation, unchanged. `ts` is only used as an overload-selector tag
+// (a copy of whichever concrete stamper Python is holding): the persistent state that matters
+// (currentTime_, timeStamper) is only ever touched by advance(double) itself.
+template<auto opts>
+double Simulator<opts>::advance(core::ConstantTimeStamper ts)
+{
+    return advance(ts.dt()); // fixed by config - nothing to (re)compute
+}
+
+template<auto opts>
+double Simulator<opts>::advance(core::KahanTimeStamper ts)
+{
+    // adaptive: always recompute a fresh CFL-stable dt from the current state, and keep dt_ up
+    // to date so timeStep() (which must stay a pure read) can just return it.
+    double const dt
+        = multiphysInteg_->computeStableDt(*hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
+    dt_ = std::min(dt, finalTime_ - currentTime_);
+    return advance(dt_);
 }
 
 template<auto opts>

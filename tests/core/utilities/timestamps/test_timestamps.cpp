@@ -4,18 +4,18 @@
 
 using namespace PHARE::core;
 
-TEST(VariableTimeStamper, accumulatesConstantDt)
+TEST(KahanTimeStamper, accumulatesConstantDt)
 {
-    VariableTimeStamper stamper{0.1};
+    KahanTimeStamper stamper{0.1};
 
     EXPECT_DOUBLE_EQ(stamper += 0.1, 0.1);
     EXPECT_DOUBLE_EQ(stamper += 0.1, 0.2);
     EXPECT_DOUBLE_EQ(stamper += 0.1, 0.3);
 }
 
-TEST(VariableTimeStamper, staysContinuousWhenDtChanges)
+TEST(KahanTimeStamper, staysContinuousWhenDtChanges)
 {
-    VariableTimeStamper stamper{0.1};
+    KahanTimeStamper stamper{0.1};
 
     EXPECT_DOUBLE_EQ(stamper += 0.1, 0.1);
     EXPECT_DOUBLE_EQ(stamper += 0.1, 0.2);
@@ -29,11 +29,11 @@ TEST(VariableTimeStamper, staysContinuousWhenDtChanges)
     EXPECT_DOUBLE_EQ(stamper += 0.05, 0.7);
 }
 
-TEST(VariableTimeStamper, seedsFromANonZeroInitTime)
+TEST(KahanTimeStamper, seedsFromANonZeroInitTime)
 {
     // this is the restart case: TimeStamperFactory always seeds init_time at 0 and relies on the
     // first call resetting dt_, but the class itself supports a nonzero seed
-    VariableTimeStamper stamper{0.1, /*init_time=*/5.0};
+    KahanTimeStamper stamper{0.1, /*init_time=*/5.0};
 
     EXPECT_DOUBLE_EQ(stamper += 0.1, 5.1);
     EXPECT_DOUBLE_EQ(stamper += 0.1, 5.2);

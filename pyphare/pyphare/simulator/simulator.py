@@ -88,6 +88,7 @@ class Simulator:
         self.cpp_hier = None  # HERE
         self.cpp_sim = None  # BE
         self.cpp_dw = None  # DRAGONS, i.e. use weakrefs if you have to ref these.
+        self.cpp_time_stepper = None
         self.post_advance = kwargs.get("post_advance", None)
         self.initialized = False
         self.print_eol = "\n"
@@ -97,10 +98,6 @@ class Simulator:
         self.log_to_file = kwargs.get("log_to_file", True)
 
         self.auto_dump = auto_dump
-        # dt actually used by the last advance() (as opposed to timeStep(), which under
-        # adaptive dt recomputes a fresh CFL-stable projection from the *current* state -- see
-        # dump())
-        self._last_advance_dt = None
         import pyphare.simulator._simulator as _simulator
 
         _simulator.obj = self
@@ -125,7 +122,7 @@ class Simulator:
             self.cpp_lib = cpp.cpp_lib(self.simulation)
             self.cpp_hier = cpp.cpp_etc_lib().make_hierarchy()
             self.cpp_sim = make_cpp_simulator(self.cpp_lib, self.cpp_hier)
-
+            self.cpp_time_stepper = self.resolve_cpp_time_stepper()
             return self
         except Exception:
             import traceback
@@ -168,17 +165,13 @@ class Simulator:
         self._check_init()
         if self.simulation.dry_run:
             return self
-        if dt is None:
-            dt = self.timeStep()
 
         try:
-            self.cpp_sim.advance(dt)
+            self.cpp_sim.advance(dt or self.cpp_time_stepper)
         except (RuntimeError, TypeError, NameError, ValueError) as e:
             self._throw(f"Exception caught in simulator.py::advance: \n{e}")
         except KeyboardInterrupt as e:
             self._throw(f"KeyboardInterrupt in simulator.py::advance: \n{e}")
-
-        self._last_advance_dt = dt
 
         if self._auto_dump() and self.post_advance is not None:
             self.post_advance(self.cpp_sim.currentTime())
@@ -247,20 +240,7 @@ class Simulator:
 
         time = self.currentTime() if len(args) == 0 else args[0]
         if len(args) == 0:
-            # Use the dt that actually produced the current state (recorded by the last
-            # advance()), not a fresh timeStep() query: under adaptive dt, timeStep() recomputes
-            # the CFL-stable dt from the *current* (post-advance) state, which is the projection
-            # for the *next* step, not the size of the step just taken. Feeding that mismatched
-            # window into the diagnostics/restarts catch-up logic can misalign scheduled dumps,
-            # and it collapses to 0 on the very last step (currentTime()==endTime()), which would
-            # silently drop anything scheduled exactly at final_time. Before any advance() has
-            # run (e.g. the initial dump in initialize()), there is no "last advance dt" yet, so
-            # fall back to timeStep().
-            timestep = (
-                self._last_advance_dt
-                if self._last_advance_dt is not None
-                else self.timeStep()
-            )
+            timestep = self.timeStep()
         else:
             timestep = args[1]
 
@@ -285,7 +265,6 @@ class Simulator:
         self.cpp_sim = None
         self.cpp_hier = None
         self.initialized = False
-        self._last_advance_dt = None
         if "samrai" in life_cycles:
             type(life_cycles["samrai"]).reset()
         return self
@@ -329,3 +308,12 @@ class Simulator:
         if need_log_dir and cpp.mpi_rank() == 0:
             Path(".log").mkdir(exist_ok=True)
         cpp.mpi_barrier()
+
+    def resolve_cpp_time_stepper(self):
+        time_stepper = self.simulation.time_stepper
+        cpp_etc = cpp.cpp_etc_lib()
+        start_time = self.simulation.start_time()
+        if time_stepper.mode == "adaptive":
+            # dt seed is irrelevant: the first (varying) dt resets it on the first step
+            return cpp_etc.KahanTimeStamper(0.0, start_time)
+        return cpp_etc.ConstantTimeStamper(time_stepper.time_step, start_time)
