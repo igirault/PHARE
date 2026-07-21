@@ -19,7 +19,7 @@ namespace PHARE::restarts
 {
 struct NullOpRestartsManager : public IRestartsManager
 {
-    bool dump(double /*timeStamp*/, double /*timeStep*/, std::size_t /*stepIndex*/) override
+    bool dump(double /*timeStamp*/, double /*timeStep*/) override
     {
         throw std::runtime_error("NOOP");
     }

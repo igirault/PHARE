@@ -24,17 +24,6 @@ def _serialized_simulation_string(restart_file_dir):
     return cpp_etc_lib().serialized_simulation_string(restart_file_dir)
 
 
-def _restart_step_index(restart_file_dir):
-    """
-    the coarse-step count persisted in the restart file being resumed from, so
-    write_step_period/step_period cadence can continue its absolute schedule across a
-    restart instead of resetting to 0. Restart files predating this attribute default to 0.
-    """
-    from pyphare.cpp import cpp_etc_lib
-
-    return cpp_etc_lib().restart_step_index(restart_file_dir)
-
-
 # converts scalars to array of expected size
 # converts lists to arrays
 class py_fn_wrapper:
@@ -224,7 +213,6 @@ def populateDict(sim):
         add_string(name_path + "/" + "type", diag.type)
         add_string(name_path + "/" + "quantity", diag.quantity)
         add_size_t(name_path + "/" + "flush_every", diag.flush_every)
-        add_size_t(name_path + "/" + "write_step_period", diag.write_step_period)
         pp.add_array_as_vector(
             name_path + "/" + "write_timestamps", diag.write_timestamps
         )
@@ -306,10 +294,6 @@ def populateDict(sim):
             )
             add_string(restarts_path + "loadPath", restart_file_load_path)
             add_double(restarts_path + "restart_time", restart_time)
-            add_int(
-                restarts_path + "restart_step_index",
-                _restart_step_index(restart_file_load_path),
-            )
 
         if "mode" in restart_options:
             add_string(restarts_path + "mode", restart_options["mode"])
@@ -326,11 +310,6 @@ def populateDict(sim):
             pp.add_array_as_vector(
                 restarts_path + "write_timestamps", restart_options["timestamps"]
             )
-
-        add_size_t(
-            restarts_path + "write_step_period",
-            restart_options.get("write_step_period", 0),
-        )
 
         add_string(restarts_path + "serialized_simulation", serialized_sim)
     #### restarts added

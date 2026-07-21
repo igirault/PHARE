@@ -92,22 +92,6 @@ def check_mandatory_keywords(mandatory_kwd_list, **kwargs):
     return [mk[0] for mk in check if mk[1] is False]
 
 
-def warn_dump_period_vs_dt(sim, period, opt_name):
-    """Warn when a time-based dump cadence is finer than the simulation time step.
-
-    A dump can only happen on a coarse step boundary, so if ``period`` is smaller than the
-    (largest, level-0) ``dt`` several target times collapse into a single dump and fewer dumps
-    than target times are produced.
-    """
-    import warnings
-
-    if sim.time_step is not None and period < sim.time_step:
-        warnings.warn(
-            f"{opt_name}={period} is smaller than the simulation time_step={sim.time_step}: "
-            f"a dump happens at most once per step, so you will get fewer dumps than target times."
-        )
-
-
 def fp_equal(a, b, atol=1e-6):
     return math.isclose(a, b, abs_tol=atol)
 

@@ -19,44 +19,8 @@ def all_timestamps(sim):
 # ------------------------------------------------------------------------------
 
 
-# the three mutually exclusive ways to schedule dumps
-_DUMP_CADENCE_KEYS = ["write_timestamps", "write_step_period", "write_time_period"]
-
-
-def _resolve_dump_cadence(kwargs):
-    """Turn a write_time_period / write_step_period option into the data the rest of the pipeline
-    expects: an explicit `write_timestamps` array and a `write_step_period` (0 = disabled).
-
-    - write_time_period -> absolute target times np.arange(init, final, period); works for both
-      constant and adaptive dt (the C++ side matches by time within a dt tolerance).
-    - write_step_period -> empty write_timestamps + a niter period the C++ side honours by dumping
-      every N coarse steps; the only timestamp-free option valid under adaptive dt.
-    """
-    sim = global_vars.sim
-
-    if "write_time_period" in kwargs:
-        period = float(kwargs.pop("write_time_period"))
-        if period <= 0:
-            raise RuntimeError("Error: write_time_period must be > 0")
-        phare_utilities.warn_dump_period_vs_dt(sim, period, "write_time_period")
-        init = sim.start_time()
-        nbr = int(np.floor((sim.final_time - init) / period + 1e-9)) + 1
-        kwargs["write_timestamps"] = init + period * np.arange(nbr)
-        kwargs["write_step_period"] = 0
-    elif "write_step_period" in kwargs:
-        raw_period = kwargs.pop("write_step_period")
-        period_float = float(raw_period)
-        if not period_float.is_integer():
-            raise RuntimeError("Error: write_step_period must be an integer")
-        period = int(period_float)
-        if period <= 0:
-            raise RuntimeError("Error: write_step_period must be > 0")
-        kwargs["write_timestamps"] = np.array([])
-        kwargs["write_step_period"] = period
-    else:
-        kwargs["write_step_period"] = 0
-
-    return kwargs
+# the ways to schedule dumps (mutually exclusive)
+_DUMP_CADENCE_KEYS = ["write_timestamps"]
 
 
 def diagnostics_checker(func):
@@ -81,13 +45,6 @@ def diagnostics_checker(func):
                 + ", ".join(one_of_required)
             )
 
-        # write_timestamps / write_step_period / write_time_period are mutually exclusive
-        cadence_given = [k for k in _DUMP_CADENCE_KEYS if k in kwargs]
-        if len(cadence_given) > 1:
-            raise RuntimeError(
-                "Error: " + ", ".join(_DUMP_CADENCE_KEYS) + " are mutually exclusive"
-            )
-
         accepted_keywords = [
             "path",
             "population_name",
@@ -103,7 +60,6 @@ def diagnostics_checker(func):
 
         try:
             kwargs["path"] = kwargs.get("path", "./")
-            kwargs = _resolve_dump_cadence(kwargs)
 
             return func(diagnostics_object, name, **kwargs)
 
@@ -205,9 +161,6 @@ class Diagnostics(object):
         # later this parameter can evolve to allow for different timestamps
         # that will depend on the type of diagnostics.
         self.compute_timestamps = self.write_timestamps
-
-        # iteration-based dump cadence (0 = disabled); the C++ side dumps every N coarse steps.
-        self.write_step_period = kwargs.get("write_step_period", 0)
 
         self.attributes = kwargs.get("attributes", {})
 
