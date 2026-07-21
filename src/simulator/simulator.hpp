@@ -522,6 +522,18 @@ void Simulator<opts>::initialize()
             throw std::runtime_error("Error - Simulator has no integrator");
 
         integrator_->initialize();
+
+        // Prime dt_ for the *initial* dump, which fires before the first advance(): timeStep() is
+        // a pure read of dt_, and under adaptive dt dt_ is constructed to 0. A 0-width window makes
+        // the diagnostics/restarts catch-up drop anything scheduled at startTime_ (0 < 0 is false),
+        // so seed the first CFL-stable dt now that the hierarchy is populated. advance(KahanTime-
+        // Stamper) overwrites it every step thereafter.
+        if (timeStepType_ == "adaptive")
+        {
+            double const dt = multiphysInteg_->computeStableDt(
+                *hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
+            dt_ = std::min(dt, finalTime_ - currentTime_);
+        }
     }
     catch (core::DictionaryException const& ex)
     {
