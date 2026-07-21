@@ -141,6 +141,22 @@ PYBIND11_MODULE(cpp_etc, m)
         throw std::runtime_error("PHARE not built with highfive support");
     });
 
+    // read back the coarse-step count persisted by RestartsManager's writer, so
+    // write_step_period/step_period cadence can resume on restart instead of resetting to 0.
+    // Older restart files predating this attribute default to 0 (same as a fresh run).
+    m.def("restart_step_index", [&](std::string const& path) -> std::size_t {
+        _PHARE_WITH_HIGHFIVE({
+            auto const& restart_file = samrai_restart_file(path);
+            PHARE::hdf5::h5::HighFiveFile h5File{restart_file, HighFive::File::ReadOnly,
+                                                 /*para=*/false};
+            if (!h5File.file().getGroup("/phare").hasAttribute("step_index"))
+                return 0;
+            return h5File.read_attribute<std::size_t>("/phare", "step_index");
+        });
+
+        throw std::runtime_error("PHARE not built with highfive support");
+    });
+
 
     declareDim<1>(m);
     declareDim<2>(m);

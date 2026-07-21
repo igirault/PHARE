@@ -12,6 +12,7 @@ phare_python3_exec(9 validation           test_validation.py      ${CMAKE_CURREN
 phare_python3_exec(9 data-wrangler        data_wrangler.py        ${CMAKE_CURRENT_BINARY_DIR})
 add_no_mpi_python3_test(periodicity test_init_periodicity.py ${CMAKE_CURRENT_BINARY_DIR})
 add_no_mpi_python3_test(time_step test_time_step.py ${CMAKE_CURRENT_BINARY_DIR})
+add_no_mpi_python3_test(dump_cadence_validation test_dump_cadence_validation.py ${CMAKE_CURRENT_BINARY_DIR})
 
 if (useExceptionsInsteadOfMPIAbort)
   add_no_mpi_python3_test(exceptions test_exceptions.py ${CMAKE_CURRENT_BINARY_DIR})
