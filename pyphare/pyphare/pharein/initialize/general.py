@@ -142,6 +142,7 @@ def populateDict(sim):
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)
     sim.time_stepper.populate_dict(dict_populator())
 
+
     add_string("simulation/AMR/clustering", sim.clustering)
     add_vector_int("simulation/AMR/nesting_buffer", sim.nesting_buffer)
     add_int("simulation/AMR/tag_buffer", sim.tag_buffer)

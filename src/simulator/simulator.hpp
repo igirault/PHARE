@@ -457,6 +457,7 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
         throw std::runtime_error("NO HIERARCHY!");
 
     currentTime_ = restart_time(dict);
+
     if (timeStepType_ == "adaptive")
         // Python serializes final_time as the absolute simulation end time; no offset needed.
         finalTime_ = dict["simulation"]["final_time"].template to<double>();
@@ -466,7 +467,6 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     // stored as a plain int in the dict (cppdict's add_int/to<int> convention), converted here
     stepIndex_ = static_cast<std::size_t>(
         cppdict::get_value(dict, "simulation/restarts/restart_step_index", 0));
-
 
     // we would need a different restart manager for mhd and hybrid if both models are used
 
