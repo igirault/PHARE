@@ -1,1 +1,8 @@
 blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/PHAREHUB/PHARE/discussions
+    about: Ask usage questions, propose ideas, or discuss before opening an issue.
+  - name: Documentation
+    url: https://phare.readthedocs.io
+    about: Check the docs before reporting.
