@@ -108,9 +108,8 @@ public:
     NO_DISCARD double currentTime() override { return currentTime_; }
 
     void initialize() override;
-    double advance(double dt) override;
-    double advance(core::ConstantTimeStamper ts);
-    double advance(core::KahanTimeStamper ts);
+    double advance(double dt) override; // explicit dt (e.g. subcycle tests)
+    double advance();                   // pick dt from the configured time-stepping mode
 
     std::vector<int> const& domainBox() const override { return hierarchy_->domainBox(); }
     std::vector<double> const& cellWidth() const override { return hierarchy_->cellWidth(); }
@@ -182,6 +181,14 @@ private:
     std::vector<PHARE::amr::MessengerDescriptor> descriptors_;
     MessengerFactory messengerFactory_;
 
+
+    // CFL-stable dt for the current state, clamped so the step lands exactly on finalTime_.
+    NO_DISCARD double computeAdaptiveDt()
+    {
+        auto const stableDt = multiphysInteg_->computeStableDt(
+            *hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
+        return std::min(stableDt, finalTime_ - currentTime_);
+    }
 
     int maxLevelNumber_;
     int maxMHDLevel_;
@@ -522,6 +529,14 @@ void Simulator<opts>::initialize()
             throw std::runtime_error("Error - Simulator has no integrator");
 
         integrator_->initialize();
+
+        // Prime dt_ for the *initial* dump (fired before the first advance()): under adaptive dt
+        // timeStep() is a pure read of dt_, and dt_ is constructed to 0. A 0 window makes the
+        // diagnostics/restarts catch-up drop anything scheduled at startTime_ (0 < 0 is false), so
+        // seed it here with the first CFL-stable dt now that the hierarchy is populated. advance()
+        // overwrites it every step thereafter.
+        if (timeStepType_ == "adaptive")
+            dt_ = computeAdaptiveDt();
     }
     catch (core::DictionaryException const& ex)
     {
@@ -599,25 +614,15 @@ double Simulator<opts>::advance(double dt)
     return dt;
 }
 
-// Per-timestepper: figure out the dt for the current step (recomputing only if this stamper
-// type actually needs to), then delegate to advance(double) - the primitive that does the
-// physics step + time accumulation, unchanged. `ts` is only used as an overload-selector tag
-// (a copy of whichever concrete stamper Python is holding): the persistent state that matters
-// (currentTime_, timeStamper) is only ever touched by advance(double) itself.
+// No-arg advance: pick the dt for this step from the configured time-stepping mode, then delegate
+// to advance(double) - the primitive that does the physics step + time accumulation. Under
+// adaptive dt we recompute a fresh CFL-stable dt from the current state and keep dt_ up to date so
+// timeStep() stays a pure read; under constant dt, dt_ is fixed by config and never changes.
 template<auto opts>
-double Simulator<opts>::advance(core::ConstantTimeStamper ts)
+double Simulator<opts>::advance()
 {
-    return advance(ts.dt()); // fixed by config - nothing to (re)compute
-}
-
-template<auto opts>
-double Simulator<opts>::advance(core::KahanTimeStamper ts)
-{
-    // adaptive: always recompute a fresh CFL-stable dt from the current state, and keep dt_ up
-    // to date so timeStep() (which must stay a pure read) can just return it.
-    double const dt
-        = multiphysInteg_->computeStableDt(*hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
-    dt_ = std::min(dt, finalTime_ - currentTime_);
+    if (timeStepType_ == "adaptive")
+        dt_ = computeAdaptiveDt();
     return advance(dt_);
 }
 
