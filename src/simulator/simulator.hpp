@@ -125,13 +125,13 @@ public:
     bool dump_diagnostics(double timestamp, double timestep) override
     {
         if (dMan)
-            return dMan->dump(timestamp, timestep, stepIndex_);
+            return dMan->dump(timestamp, timestep);
         return false;
     }
     bool dump_restarts(double timestamp, double timestep) override
     {
         if (rMan)
-            return rMan->dump(timestamp, timestep, stepIndex_);
+            return rMan->dump(timestamp, timestep);
         return false;
     }
 
@@ -194,12 +194,7 @@ private:
     double finalTime_          = 0;
     double currentTime_        = 0;
     std::size_t fineDumpLvlMax = 0;
-    // single source of truth for "how many coarse steps have run", passed into dMan/rMan dump()
-    // so write_step_period/step_period cadence tracks real advance() calls (not calls to
-    // dump(), which may be irregular e.g. under Python's auto_dump=False); restored from the
-    // restart file on restart so the cadence phase survives a restart instead of resetting to 0.
-    std::size_t stepIndex_ = 0;
-    bool isInitialized     = false;
+    bool isInitialized         = false;
 
     bool allowEmergencyDumps = false;
 
@@ -457,10 +452,6 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     else
         finalTime_ += currentTime_; // final time is from timestep * timestep_nbr!
 
-    // stored as a plain int in the dict (cppdict's add_int/to<int> convention), converted here
-    stepIndex_ = static_cast<std::size_t>(
-        cppdict::get_value(dict, "simulation/restarts/restart_step_index", 0));
-
     // we would need a different restart manager for mhd and hybrid if both models are used
 
     if (find_model("HybridModel"))
@@ -581,7 +572,6 @@ double Simulator<opts>::advance(double dt)
 
         integrator_->advance(dt);
         currentTime_ = startTime_ + ((*timeStamper) += dt);
-        ++stepIndex_;
     }
     catch (core::DictionaryException const& ex)
     {

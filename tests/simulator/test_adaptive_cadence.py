@@ -1,7 +1,8 @@
 #
-# Runtime coverage for the period-based / adaptive-dt cadence options added alongside
-# adaptive time stepping: write_step_period (diagnostics), step_period (restarts), and the
-# catch-up scheduler that keeps a time-based cadence from freezing when dt > period.
+# Runtime coverage for the dump-cadence catch-up scheduler and adaptive-dt dumping:
+#  - the catch-up scheduler keeps a timestamp-based cadence from freezing when several
+#    scheduled times fall within a single coarse step (dt > gap between timestamps);
+#  - a diagnostic scheduled exactly at final_time still fires under adaptive dt.
 #
 # test_time_step.py only checks config-level validation (never runs the simulator); the tests
 # here actually run a few coarse steps and inspect the dumped h5 files.
@@ -25,19 +26,6 @@ def _h5_time_group_count(h5_filepath):
 
     with h5py.File(h5_filepath, "r") as h5_file:
         return len(h5_file[h5_time_grp_key].keys())
-
-
-def _restart_time_dirs(restart_dir):
-    """Time-stamped restart checkpoint directories (one per coarse step that wrote)."""
-    dirs = []
-    for path_object in Path(restart_dir).iterdir():
-        if path_object.is_dir():
-            try:
-                float(path_object.name)
-            except ValueError:
-                continue  # not a time-stamped restart directory, skip
-            dirs.append(path_object)
-    return dirs
 
 
 def setup_model(sim, ppc=10):
@@ -107,72 +95,21 @@ class AdaptiveCadenceTest(SimulatorTest):
         self.simulator = None
         ph.global_vars.sim = None
 
-    def test_write_step_period_under_adaptive_dt(self):
-        """write_step_period must fire on a fixed coarse-step cadence, independent of the
-        (varying, unknown ahead of time) adaptive dt."""
+    def test_write_timestamps_catch_up_does_not_freeze(self):
+        """Regression test for the dump-cadence-freeze bug: when several scheduled write
+        timestamps fall within a single coarse step, the scheduler must catch up (advance past
+        all of them) instead of consuming one and freezing. A timestamp array much finer than
+        the coarse step forces many due times per step; the cadence must keep firing every step
+        rather than stalling after the first."""
         n_advances = 4
-        period = 2
-
-        sim = self.simulation(**base_args(out + "/step_period"))
+        # a timestamp grid far finer than any plausible dt forces the catch-up loop to consume
+        # several scheduled times per step. final_time stays large enough that n_advances steps
+        # don't reach it. Fed directly as write_timestamps (no period option involved).
+        sim = self.simulation(**base_args(out + "/timestamps_catchup", final_time=1.0))
         setup_model(sim)
-        ph.ElectromagDiagnostics(quantity="B", write_step_period=period)
-
-        self.simulator = Simulator(sim).initialize()
-        for _ in range(n_advances):
-            self.simulator.advance()
-        self.simulator.reset()
-
-        # dump() is called once at init (iteration 0) and once per advance(): iterations
-        # 0..n_advances. A dump fires whenever iteration % period == 0.
-        expected_dumps = n_advances // period + 1
-
-        diag_dir = sim.diag_options["options"]["dir"]
-        diagInfo = next(iter(sim.diagnostics.values()))
-        h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
-        self.assertTrue(Path(h5_filepath).exists())
-        self.assertEqual(_h5_time_group_count(h5_filepath), expected_dumps)
-
-    def test_restart_step_period_under_adaptive_dt(self):
-        """restart_options step_period must fire on the same fixed coarse-step cadence."""
-        n_advances = 4
-        period = 2
-
-        sim = self.simulation(
-            **base_args(
-                out + "/restart_step_period",
-                restart_options=dict(mode="overwrite", step_period=period),
-            )
+        ph.ElectromagDiagnostics(
+            quantity="B", write_timestamps=np.arange(0.0, 1.0, 1e-4)
         )
-        setup_model(sim)
-
-        self.simulator = Simulator(sim).initialize()
-        for _ in range(n_advances):
-            self.simulator.advance()
-        self.simulator.reset()
-
-        expected_restarts = n_advances // period + 1
-        restart_dir = sim.restart_options["dir"]
-        restart_dirs = []
-        for path_object in Path(restart_dir).iterdir():
-            if path_object.is_dir():
-                try:
-                    restart_dirs.append(float(path_object.name))
-                except ValueError:
-                    ...  # not a time-stamped restart directory, skip
-        self.assertEqual(len(restart_dirs), expected_restarts)
-
-    def test_write_time_period_does_not_freeze_when_period_lt_dt(self):
-        """Regression test for the dump-cadence-freeze bug: a time-based cadence finer than
-        the coarse step must keep dumping every step (catch-up), not stop after the first."""
-        n_advances = 4
-        # write_time_period expands into an explicit np.arange(final_time / period) timestamps
-        # array, so final_time must stay large enough that n_advances steps don't reach it
-        # (~0.04 per step here) while period stays tiny enough to force catch-up every step.
-        sim = self.simulation(**base_args(out + "/time_period_catchup", final_time=1.0))
-        setup_model(sim)
-        # a period far smaller than any plausible adaptive dt forces the catch-up loop to
-        # consume several scheduled times per step
-        ph.ElectromagDiagnostics(quantity="B", write_time_period=1e-4)
 
         self.simulator = Simulator(sim).initialize()
         for _ in range(n_advances):
@@ -207,132 +144,6 @@ class AdaptiveCadenceTest(SimulatorTest):
         diagInfo = next(iter(sim.diagnostics.values()))
         h5_filepath = os.path.join(diag_dir, h5_filename_from(diagInfo))
         self.assertEqual(_h5_time_group_count(h5_filepath), 1)
-
-    def test_restart_persists_step_index(self):
-        """Regression test: the coarse-step count must be persisted into the restart file (as
-        the C++ side's write_step_period/step_period cadence relies on resuming from it, not
-        resetting to 0 on restart) and must be readable back via restart_step_index()."""
-        from pyphare.cpp import cpp_etc_lib
-
-        n_advances = 5
-
-        sim = self.simulation(
-            **base_args(
-                out + "/restart_persists_coarse_step",
-                restart_options=dict(mode="overwrite", timestamps=[0.0]),
-            )
-        )
-        setup_model(sim)
-
-        self.simulator = Simulator(sim, auto_dump=False).initialize()
-        for _ in range(n_advances):
-            self.simulator.advance()
-        self.simulator.dump()  # force a restart checkpoint at the current coarse step
-        self.simulator.reset()
-
-        restart_dir = sim.restart_options["dir"]
-        restart_time_dirs = [
-            p for p in Path(restart_dir).iterdir() if p.is_dir()
-        ]
-        self.assertEqual(len(restart_time_dirs), 1)
-        self.assertEqual(
-            cpp_etc_lib().restart_step_index(str(restart_time_dirs[0])), n_advances
-        )
-
-    def test_restart_resume_continues_step_index(self):
-        """Regression test for restart-safety of the coarse-step counter: a run resumed from a
-        checkpoint must *continue* counting steps from the persisted index, not reset to 0.
-        test_restart_persists_step_index only checks a single checkpoint's write+read; here a
-        second Simulator loads the checkpoint and advances further, and the new checkpoint's
-        index must reflect the resumed (not restarted-from-zero) count. If the resume reset the
-        counter, restart_step_index of the post-resume checkpoint would read n2 instead of
-        resume_step + n2, and the step-period cadence would misfire after every restart."""
-        from pyphare.cpp import cpp_etc_lib
-
-        n1 = 4  # first-run advances
-        period = 2  # restart step-period cadence
-        n2 = 2  # post-resume advances
-
-        # coarse step of the last checkpoint the first run writes (largest multiple of period)
-        resume_step = (n1 // period) * period
-
-        run_dir = out + "/restart_resume_step_index"
-
-        # first run: step-period restart cadence under adaptive dt
-        sim = self.simulation(
-            **base_args(
-                run_dir,
-                restart_options=dict(mode="overwrite", step_period=period),
-            )
-        )
-        setup_model(sim)
-        self.simulator = Simulator(sim).initialize()
-        for _ in range(n1):
-            self.simulator.advance()
-        self.simulator.reset()
-        self.simulator = None
-
-        restart_dir = sim.restart_options["dir"]
-        # under adaptive dt the checkpoint times are unknown ahead of the run, so recover the
-        # latest (largest-time) checkpoint dir post-hoc and resume from its exact time
-        first_run_dirs = _restart_time_dirs(restart_dir)
-        self.assertTrue(len(first_run_dirs) > 0)
-        latest_dir = max(first_run_dirs, key=lambda p: float(p.name))
-        self.assertEqual(
-            cpp_etc_lib().restart_step_index(str(latest_dir)), resume_step
-        )
-        restart_time = float(latest_dir.name)
-
-        # second run: resume from that checkpoint, keep the same step-period cadence
-        ph.global_vars.sim = None
-        sim = self.simulation(
-            **base_args(
-                run_dir,
-                restart_options=dict(
-                    mode="overwrite", step_period=period, restart_time=restart_time
-                ),
-            )
-        )
-        self.assertIn("restart_time", sim.restart_options)
-        setup_model(sim)
-        self.simulator = Simulator(sim).initialize()
-        for _ in range(n2):
-            self.simulator.advance()
-        self.simulator.dump()  # force a checkpoint at the resumed coarse step
-        self.simulator.reset()
-
-        # the newest checkpoint (latest time > restart_time) must carry the *continued* index
-        post_resume_dirs = [
-            p for p in _restart_time_dirs(restart_dir) if float(p.name) > restart_time
-        ]
-        self.assertTrue(len(post_resume_dirs) > 0)
-        newest_dir = max(post_resume_dirs, key=lambda p: float(p.name))
-        self.assertEqual(
-            cpp_etc_lib().restart_step_index(str(newest_dir)), resume_step + n2
-        )
-
-    def test_restart_time_period_does_not_freeze_when_period_lt_dt(self):
-        """Regression test mirroring the diagnostics catch-up test for the restart path: a
-        time-based restart cadence finer than the coarse step must keep writing a checkpoint
-        every step (catch-up), not freeze after the first."""
-        n_advances = 4
-        sim = self.simulation(
-            **base_args(
-                out + "/restart_time_period_catchup",
-                final_time=1.0,
-                restart_options=dict(mode="overwrite", time_period=1e-4),
-            )
-        )
-        setup_model(sim)
-
-        self.simulator = Simulator(sim).initialize()
-        for _ in range(n_advances):
-            self.simulator.advance()
-        self.simulator.reset()
-
-        # one checkpoint per step (init + each advance): a frozen cadence would give 1
-        restart_dir = sim.restart_options["dir"]
-        self.assertEqual(len(_restart_time_dirs(restart_dir)), n_advances + 1)
 
 
 if __name__ == "__main__":

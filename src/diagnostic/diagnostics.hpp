@@ -33,7 +33,7 @@ namespace PHARE::diagnostic
 {
 struct NullOpDiagnosticsManager : public IDiagnosticsManager
 {
-    bool dump(double /*timeStamp*/, double /*timeStep*/, std::size_t /*stepIndex*/) override
+    bool dump(double /*timeStamp*/, double /*timeStep*/) override
     {
         throw std::runtime_error("NOOP");
     }

@@ -23,7 +23,7 @@ namespace PHARE::restarts
 class IRestartsManager
 {
 public:
-    virtual bool dump(double timeStamp, double timeStep, std::size_t stepIndex) = 0;
+    virtual bool dump(double timeStamp, double timeStep) = 0;
     inline virtual ~IRestartsManager();
 };
 IRestartsManager::~IRestartsManager() {}
@@ -34,7 +34,7 @@ template<typename Writer>
 class RestartsManager : public IRestartsManager
 {
 public:
-    bool dump(double timeStamp, double timeStep, std::size_t stepIndex) override;
+    bool dump(double timeStamp, double timeStep) override;
 
 
 
@@ -54,10 +54,6 @@ public:
         auto restarts_are_written = core::any(
             core::generate([&](auto const& v) { return dict.contains(v); },
                            std::vector<std::string>{"write_timestamps", "elapsed_timestamps"}));
-        // step_period leaves no timestamp arrays; activate on a non-zero iteration cadence too.
-        if (dict.contains("write_step_period")
-            and dict["write_step_period"].template to<std::size_t>() > 0)
-            restarts_are_written = true;
         if (restarts_are_written) // else is only loading not saving restarts
             rMan->addRestartDict(dict);
         return rMan;
@@ -116,10 +112,6 @@ RestartsManager<Writer>::addRestartDict(initializer::PHAREDict const& params)
         restarts_properties_->writeTimestamps
             = params["write_timestamps"].template to<std::vector<double>>();
 
-    if (params.contains("write_step_period"))
-        restarts_properties_->writeStepPeriod
-            = params["write_step_period"].template to<std::size_t>();
-
     if (params.contains("elapsed_timestamps"))
     {
         restarts_properties_->elapsedTimestamps
@@ -140,25 +132,16 @@ RestartsManager<Writer>::addRestartDict(initializer::PHAREDict const& params)
 
 
 template<typename Writer>
-bool RestartsManager<Writer>::dump(double timeStamp, double timeStep,
-                                   std::size_t stepIndex)
+bool RestartsManager<Writer>::dump(double timeStamp, double timeStep)
 {
     if (!restarts_properties_)
         return false; // not active
 
-    // iteration-based cadence: write every writeStepPeriod coarse steps (the only timestamp-free
-    // option valid under adaptive dt). needsWrite_ is called unconditionally so its timestamp
-    // index still advances. stepIndex is the caller's (Simulator's) real coarse-step
-    // counter, restart-safe and independent of how many times dump() itself gets called.
-    bool const niterNow = restarts_properties_->writeStepPeriod > 0
-                          and (stepIndex % restarts_properties_->writeStepPeriod == 0);
-    bool const writeNow = needsWrite_(*restarts_properties_, timeStamp, timeStep);
-
-    if (!(writeNow || niterNow))
+    if (!needsWrite_(*restarts_properties_, timeStamp, timeStep))
         return false; // not needed now
 
     PHARE_LOG_SCOPE(3, "RestartsManager::dump");
-    writer_->dump(*restarts_properties_, timeStamp, stepIndex);
+    writer_->dump(*restarts_properties_, timeStamp);
     return true;
 }
 

@@ -66,8 +66,8 @@ void registerDiagnostics(DiagManager& dMan, initializer::PHAREDict const& diagsP
 class IDiagnosticsManager
 {
 public:
-    virtual bool dump(double timeStamp, double timeStep, std::size_t stepIndex) = 0;
-    virtual void dump_level(std::size_t level, double timeStamp)                      = 0;
+    virtual bool dump(double timeStamp, double timeStep)        = 0;
+    virtual void dump_level(std::size_t level, double timeStamp) = 0;
     inline virtual ~IDiagnosticsManager();
 };
 IDiagnosticsManager::~IDiagnosticsManager() {}
@@ -80,7 +80,7 @@ class DiagnosticsManager : public IDiagnosticsManager
 public:
     using Model_t = typename Writer::Model_t;
 
-    bool dump(double timeStamp, double timeStep, std::size_t stepIndex) override;
+    bool dump(double timeStamp, double timeStep) override;
 
 
     void dump_level(std::size_t level, double timeStamp) override;
@@ -180,9 +180,6 @@ DiagnosticsManager<Writer>::addDiagDict(initializer::PHAREDict const& diagParams
 
     diagProps["flush_every"] = diagParams["flush_every"].template to<std::size_t>();
 
-    if (diagParams.contains("write_step_period"))
-        diagProps.writeStepPeriod = diagParams["write_step_period"].template to<std::size_t>();
-
     diagProps.computeTimestamps
         = diagParams["compute_timestamps"].template to<std::vector<double>>();
 
@@ -211,26 +208,18 @@ void DiagnosticsManager<Writer>::dump_level(std::size_t level, double timeStamp)
 
 
 template<typename Writer>
-bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep,
-                                      std::size_t stepIndex)
+bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep)
 {
     std::vector<DiagnosticProperties*> activeDiagnostics;
     for (auto& diag : diagnostics_)
     {
-        // iteration-based cadence: fires (compute + write) every writeStepPeriod coarse steps.
-        // Used by write_step_period (the only timestamp-free option valid under adaptive dt).
-        // stepIndex is the caller's (Simulator's) real coarse-step counter, restart-safe
-        // and independent of how many times dump() itself gets called.
-        bool const niterNow
-            = diag.writeStepPeriod > 0 and (stepIndex % diag.writeStepPeriod == 0);
-
         // needsCompute_ advances its own timestamp index (catch-up), so call it unconditionally
         bool const computeNow = needsCompute_(diag, timeStamp, timeStep);
-        if (computeNow or niterNow)
+        if (computeNow)
             writer_->getDiagnosticWriterForType(diag.type)->compute(diag);
         // call needsWrite_ unconditionally so its timestamp index still advances
         bool const writeNow = needsWrite_(diag, timeStamp, timeStep);
-        if (writeNow or niterNow)
+        if (writeNow)
         {
             activeDiagnostics.emplace_back(&diag);
         }
