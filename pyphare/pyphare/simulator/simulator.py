@@ -88,6 +88,7 @@ class Simulator:
         self.cpp_hier = None  # HERE
         self.cpp_sim = None  # BE
         self.cpp_dw = None  # DRAGONS, i.e. use weakrefs if you have to ref these.
+        self.cpp_time_stepper = None
         self.post_advance = kwargs.get("post_advance", None)
         self.initialized = False
         self.print_eol = "\n"
@@ -121,6 +122,7 @@ class Simulator:
             self.cpp_lib = cpp.cpp_lib(self.simulation)
             self.cpp_hier = cpp.cpp_etc_lib().make_hierarchy()
             self.cpp_sim = make_cpp_simulator(self.cpp_lib, self.cpp_hier)
+            self.cpp_time_stepper = self.resolve_cpp_time_stepper()
             return self
         except Exception:
             import traceback
@@ -165,9 +167,7 @@ class Simulator:
             return self
 
         try:
-            # dt=None -> let the C++ side pick dt from the configured time-stepping mode
-            # (constant: fixed dt; adaptive: fresh CFL-stable dt recomputed each step)
-            self.cpp_sim.advance() if dt is None else self.cpp_sim.advance(dt)
+            self.cpp_sim.advance(dt or self.cpp_time_stepper)
         except (RuntimeError, TypeError, NameError, ValueError) as e:
             self._throw(f"Exception caught in simulator.py::advance: \n{e}")
         except KeyboardInterrupt as e:
@@ -308,3 +308,12 @@ class Simulator:
         if need_log_dir and cpp.mpi_rank() == 0:
             Path(".log").mkdir(exist_ok=True)
         cpp.mpi_barrier()
+
+    def resolve_cpp_time_stepper(self):
+        time_stepper = self.simulation.time_stepper
+        cpp_etc = cpp.cpp_etc_lib()
+        start_time = self.simulation.start_time()
+        if time_stepper.mode == "adaptive":
+            # dt seed is irrelevant: the first (varying) dt resets it on the first step
+            return cpp_etc.KahanTimeStamper(0.0, start_time)
+        return cpp_etc.ConstantTimeStamper(time_stepper.time_step, start_time)
