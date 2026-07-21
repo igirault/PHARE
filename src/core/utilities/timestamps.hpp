@@ -91,17 +91,19 @@ struct TimeStamperFactory
     NO_DISCARD static std::unique_ptr<ITimeStamper> create(initializer::PHAREDict const& dict)
     {
         auto const& time_step_dict = dict["time_step"];
-        double const restart_time  = cppdict::get_value(dict, "restarts/restart_time", 0.);
 
+        // init_time stays 0: the stamper accumulates a *delta* from the start of this run;
+        // Simulator::advance() adds startTime_ (== restart_time on restart) on top of it. Seeding
+        // the stamper with restart_time too would add it twice.
         if (time_step_dict.contains("mode")
             && time_step_dict["mode"].template to<std::string>() == "adaptive")
             // dt_ seed is irrelevant: the first (varying) dt resets it on the first step
-            return std::make_unique<KahanTimeStamper>(0., restart_time);
+            return std::make_unique<KahanTimeStamper>(0.);
 
         assert(time_step_dict.contains("value"));
         auto time_step = time_step_dict["value"].template to<double>();
 
-        return std::make_unique<ConstantTimeStamper>(time_step, restart_time);
+        return std::make_unique<ConstantTimeStamper>(time_step);
     }
 };
 
