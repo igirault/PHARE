@@ -90,7 +90,7 @@ public:
         {
             case BoundaryType::None: register_none_conditions_(boundary, quantities); break;
             case BoundaryType::Reflective:
-                register_reflective_conditions_(boundary, data, quantities);
+                register_reflective_conditions_(boundary, quantities);
                 break;
             case BoundaryType::SuperMagnetofastInflow:
                 if constexpr (HasInflowQuantities<PhysicalQuantityT>)
@@ -104,7 +104,7 @@ public:
             case BoundaryType::SuperMagnetofastOutflow:
             case BoundaryType::Open:
                 if constexpr (HasInflowQuantities<PhysicalQuantityT>)
-                    register_open_conditions_(boundary, data, quantities, thermo);
+                    register_open_conditions_(boundary, quantities, thermo);
                 else
                     throw std::runtime_error(
                         "'" + typeName
@@ -205,7 +205,6 @@ private:
 
     /** @brief Register boundary conditions to make a reflective boundary */
     static void register_reflective_conditions_(boundary_ptr_type& boundary,
-                                                PHARE::initializer::PHAREDict const& data,
                                                 _model_menu_type const& quantities)
     {
         for (auto const quantity : quantities.scalars)
@@ -243,7 +242,6 @@ private:
 
     /** @brief Register boundary conditions to make an open boundary */
     static void register_open_conditions_(boundary_ptr_type& boundary,
-                                          initializer::PHAREDict const& data,
                                           _model_menu_type const& quantities,
                                           std::shared_ptr<Thermo> thermo)
     {
