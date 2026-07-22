@@ -70,6 +70,7 @@ if (test AND ${PHARE_EXEC_LEVEL_MIN} GREATER 0) # 0 = no tests
   add_subdirectory(tests/functional/mhd_convergence)
   add_subdirectory(tests/functional/mhd_multidimensional_convergence)
   add_subdirectory(tests/functional/mhd_dispersion)
+  add_subdirectory(tests/functional/mhd_blast)
   add_subdirectory(tests/functional/mhd_harris)
   add_subdirectory(tests/functional/mhd_harris_3d)
   add_subdirectory(tests/functional/mhd_orszagtang)
