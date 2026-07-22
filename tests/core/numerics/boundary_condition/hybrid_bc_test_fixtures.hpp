@@ -65,17 +65,18 @@ struct NullFieldAccessorT : IPatchFieldAccessor<FieldT, HybridQuantity>
     {
         throw std::runtime_error("NullFieldAccessorT: getVecField() should not be called");
     }
+    bool hasField(HybridQuantity::Scalar) const override { return false; }
+    bool hasVecField(HybridQuantity::Vector) const override { return false; }
 };
 
 using NullFieldAccessor = NullFieldAccessorT<Field1D>;
 
 
-// Build a BC context bound to a single accessor; tests that don't care about the previous
-// substage state pass the same accessor for both new and old. time=0 by default.
+// Build a BC context bound to the accessor exposing the current substage state. time=0 by default.
 template<typename FieldT>
 auto makeCtx(NullFieldAccessorT<FieldT> const& acc, double time = 0.0)
 {
-    return PHARE::core::BoundaryConditionContext<FieldT, HybridQuantity>{acc, acc, time};
+    return PHARE::core::BoundaryConditionContext<FieldT, HybridQuantity>{acc, time};
 }
 
 

@@ -71,15 +71,10 @@ namespace amr
             , boundaryManager_{std::move(boundaryManager)}
             , firstLevel_{firstLevel}
         {
-            // moment ghosts are primitive quantities
+            // "old"-time scratch feeding the density/momentum/total-energy time refiners
             resourcesManager_->registerResources(rhoOld_);
-            resourcesManager_->registerResources(Vold_);
-            resourcesManager_->registerResources(Pold_);
-
             resourcesManager_->registerResources(rhoVold_);
             resourcesManager_->registerResources(EtotOld_);
-
-            resourcesManager_->registerResources(Jold_); // conditionally register
 
             // also magnetic fluxes ? or should we use static refiners instead ?
         }
@@ -89,13 +84,8 @@ namespace amr
         void allocate(SAMRAI::hier::Patch& patch, double const allocateTime) const override
         {
             resourcesManager_->allocate(rhoOld_, patch, allocateTime);
-            resourcesManager_->allocate(Vold_, patch, allocateTime);
-            resourcesManager_->allocate(Pold_, patch, allocateTime);
-
             resourcesManager_->allocate(rhoVold_, patch, allocateTime);
             resourcesManager_->allocate(EtotOld_, patch, allocateTime);
-
-            resourcesManager_->allocate(Jold_, patch, allocateTime);
         }
 
 
@@ -414,23 +404,16 @@ namespace amr
             for (auto& patch : level)
             {
                 auto dataOnPatch = resourcesManager_->setOnPatch(
-                    *patch, mhdModel.state.rho, mhdModel.state.V, mhdModel.state.P,
-                    mhdModel.state.rhoV, mhdModel.state.Etot, mhdModel.state.J, rhoOld_, Vold_,
-                    Pold_, rhoVold_, EtotOld_, Jold_);
+                    *patch, mhdModel.state.rho, mhdModel.state.rhoV, mhdModel.state.Etot, rhoOld_,
+                    rhoVold_, EtotOld_);
 
                 resourcesManager_->setTime(rhoOld_, *patch, currentTime);
-                resourcesManager_->setTime(Vold_, *patch, currentTime);
-                resourcesManager_->setTime(Pold_, *patch, currentTime);
                 resourcesManager_->setTime(rhoVold_, *patch, currentTime);
                 resourcesManager_->setTime(EtotOld_, *patch, currentTime);
-                resourcesManager_->setTime(Jold_, *patch, currentTime);
 
                 rhoOld_.copyData(mhdModel.state.rho);
-                Vold_.copyData(mhdModel.state.V);
-                Pold_.copyData(mhdModel.state.P);
                 rhoVold_.copyData(mhdModel.state.rhoV);
                 EtotOld_.copyData(mhdModel.state.Etot);
-                Jold_.copyData(mhdModel.state.J);
             }
         }
 
@@ -497,13 +480,11 @@ namespace amr
             elecGhostsRefiners_.fill(E, level.getLevelNumber(), fillTime);
         }
 
-        void fillMagneticGhosts(VecFieldT& B, level_t const& level, double const fillTime,
-                                bool const setNaNs = true)
+        void fillMagneticGhosts(VecFieldT& B, level_t const& level, double const fillTime)
         {
             PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
 
-            if (setNaNs)
-                setNaNsOnVecfieldGhosts(B, level);
+            setNaNsOnVecfieldGhosts(B, level);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
             magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
@@ -630,18 +611,6 @@ namespace amr
                     {core::MHDQuantity::Vector::E, resolveID(info->ghostElectric[i])},
                 };
             }
-
-            // Shadow id-map for the previous substage state. Only quantities for which the
-            // messenger keeps an `*Old_` buffer are exposed; other quantities will fall through
-            // to "not registered" in the accessor and throw on access.
-            oldScalarIdMap_ = {
-                {core::MHDQuantity::Scalar::rho, resolveID(rhoOld_.name())},
-                {core::MHDQuantity::Scalar::P, resolveID(Pold_.name())},
-                {core::MHDQuantity::Scalar::Etot, resolveID(EtotOld_.name())},
-            };
-            oldVectorIdMap_ = {
-                {core::MHDQuantity::Vector::rhoV, resolveID(rhoVold_.name())},
-            };
         }
 
 
@@ -671,8 +640,7 @@ namespace amr
                 auto&& [id] = resourcesManager_->getIDsList(keys[i]);
                 auto patchStrat
                     = std::make_shared<RefinePatchStrategyT>(*resourcesManager_, *boundaryManager_);
-                patchStrat->registerIDs(id, allScalarIdMaps_[i], allVectorIdMaps_[i],
-                                        oldScalarIdMap_, oldVectorIdMap_);
+                patchStrat->registerIDs(id, allScalarIdMaps_[i], allVectorIdMaps_[i]);
                 patchStrategies.push_back(patchStrat);
             }
         }
@@ -773,13 +741,8 @@ namespace amr
 
 
         FieldT rhoOld_{stratName + "rhoOld", core::MHDQuantity::Scalar::rho};
-        VecFieldT Vold_{stratName + "Vold", core::MHDQuantity::Vector::V};
-        FieldT Pold_{stratName + "Pold", core::MHDQuantity::Scalar::P};
-
         VecFieldT rhoVold_{stratName + "rhoVold", core::MHDQuantity::Vector::rhoV};
         FieldT EtotOld_{stratName + "EtotOld", core::MHDQuantity::Scalar::Etot};
-
-        VecFieldT Jold_{stratName + "Jold", core::MHDQuantity::Vector::J};
 
 
         using rm_t = typename MHDModel::resources_manager_type;
@@ -933,8 +896,6 @@ namespace amr
 
         std::vector<scalar_id_map_type> allScalarIdMaps_;
         std::vector<vector_id_map_type> allVectorIdMaps_;
-        scalar_id_map_type oldScalarIdMap_;
-        vector_id_map_type oldVectorIdMap_;
 
         MagneticRefinePatchStrategyT magneticRefinePatchStrategy_{*resourcesManager_,
                                                                   *boundaryManager_};

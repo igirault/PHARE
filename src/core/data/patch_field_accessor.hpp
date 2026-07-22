@@ -46,6 +46,13 @@ public:
     virtual ~IPatchFieldAccessor()                                       = default;
     virtual field_type& getField(scalar_quantity_type qty) const         = 0;
     virtual vectorfield_type getVecField(vector_quantity_type qty) const = 0;
+
+    // Non-throwing availability queries: true iff the quantity is registered *and* allocated on
+    // the current patch. Coupled BCs test these to decide whether their sibling reads will
+    // succeed (they don't on the temporary single-quantity interpolation patches), branching
+    // explicitly instead of driving control flow through a thrown PatchFieldAccessorError.
+    virtual bool hasField(scalar_quantity_type qty) const    = 0;
+    virtual bool hasVecField(vector_quantity_type qty) const = 0;
 };
 
 } // namespace PHARE::core

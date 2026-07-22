@@ -120,6 +120,18 @@ public:
             return vector_field_data_type::getTensorField(patch_, it->second);
         }
 
+        bool hasField(scalar_quantity_type qty) const override
+        {
+            auto it = scalarIds_.find(qty);
+            return it != scalarIds_.end() && patch_.checkAllocated(it->second);
+        }
+
+        bool hasVecField(vector_quantity_type qty) const override
+        {
+            auto it = vectorIds_.find(qty);
+            return it != vectorIds_.end() && patch_.checkAllocated(it->second);
+        }
+
     private:
         SAMRAI::hier::Patch const& patch_;
         scalar_id_map_type const& scalarIds_;
@@ -139,8 +151,6 @@ public:
         , data_id_{-1}
         , all_scalar_ids_{}
         , all_vector_ids_{}
-        , old_scalar_ids_{}
-        , old_vector_ids_{}
     {
     }
 
@@ -157,18 +167,13 @@ public:
      * @param field_id Integer ID from the SAMRAI variable database.
      * @param all_scalar_ids id-map of scalar fields exposed to BC appliers as the *current* state.
      * @param all_vector_ids id-map of vector fields exposed to BC appliers as the *current* state.
-     * @param old_scalar_ids id-map of scalar fields exposed as the *previous-substage* state.
-     * @param old_vector_ids id-map of vector fields exposed as the *previous-substage* state.
      */
     void registerIDs(int const field_id, scalar_id_map_type all_scalar_ids = {},
-                     vector_id_map_type all_vector_ids = {}, scalar_id_map_type old_scalar_ids = {},
-                     vector_id_map_type old_vector_ids = {})
+                     vector_id_map_type all_vector_ids = {})
     {
         data_id_        = field_id;
         all_scalar_ids_ = std::move(all_scalar_ids);
         all_vector_ids_ = std::move(all_vector_ids);
-        old_scalar_ids_ = std::move(old_scalar_ids);
-        old_vector_ids_ = std::move(old_vector_ids);
     }
 
     /**
@@ -213,13 +218,11 @@ public:
             };
         }();
 
-        // build two accessors: one for the current substage state, one for the previous one.
-        // State-aware BCs (e.g. NSCBC / LODI characteristic outflow) read from `accessor_old`,
-        // integrate over `dt`, and write into ghost cells reachable via `accessor_new`.
+        // accessor for the current substage state; BCs read siblings through it and write into
+        // ghost cells.
         patch_field_accessor_type fieldAccessor{patch, all_scalar_ids_, all_vector_ids_};
-        patch_field_accessor_type fieldAccessorOld{patch, old_scalar_ids_, old_vector_ids_};
-        core::BoundaryConditionContext<field_type, physical_quantity_type> const ctx{
-            fieldAccessor, fieldAccessorOld, fill_time};
+        core::BoundaryConditionContext<field_type, physical_quantity_type> const ctx{fieldAccessor,
+                                                                                     fill_time};
 
         // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
         SAMRAI::hier::Box const& patch_box = patch.getBox();
@@ -271,22 +274,22 @@ public:
                 // SAMRAI invokes this callback not only on the real level patches (which carry the
                 // full MHD state) but also on temporary, single-quantity patches it builds for
                 // cross-level (coarse->fine) interpolation. PHARE's coupled MHD conditions read
-                // sibling fields off the patch (energy BC: rho/P/rhoV/B); those
-                // siblings are not allocated on the interpolation temp patches and the accessor
-                // throws there. The temp-patch ghosts still feed the fine level via interpolation,
-                // so they must not be left at the NaN sentinel: fall back to a sibling-free
-                // zero-gradient (Neumann) fill for that quantity. The real level patches, which
-                // carry the full state, still receive the exact coupled condition.
-                //
-                // Only the missing-sibling case (PatchFieldAccessorError) is caught here; any other
-                // exception is a genuine fault and must propagate rather than be masked as a silent
-                // Neumann fill.
-                try
+                // sibling fields off the patch (energy BC: rho/P/rhoV/B); those siblings are not
+                // allocated on the interpolation temp patches. `bc->canApply(ctx)` reports up front
+                // (via the accessor's non-throwing availability queries) whether the condition's
+                // reads will succeed here, so the missing-sibling case is a deterministic branch
+                // rather than a thrown-and-caught exception on the hot path. The temp-patch ghosts
+                // still feed the fine level via interpolation, so they must not be left at the NaN
+                // sentinel: fall back to a sibling-free zero-gradient (Neumann) fill there. The
+                // real level patches carry the full state, so canApply is true and they receive the
+                // exact coupled condition. Value-prescribed conditions (default canApply == true)
+                // apply on temp patches too, since they read no siblings.
+                if (bc->canApply(ctx))
                 {
                     bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
                               ctx);
                 }
-                catch (core::PatchFieldAccessorError const& e)
+                else
                 {
                     PHARE_LOG_LINE_SS(
                         "Neumann fallback triggered in setPhysicalBoundaryConditions"
@@ -296,7 +299,7 @@ public:
                         << static_cast<int>(currentBoundaryLocation)
                         << " | masterBoundaryLocation=" << static_cast<int>(masterBoundaryLocation)
                         << " | fill_time=" << fill_time << " | patch_box=" << patch_box
-                        << " | localBox=" << localBox << " | reason=" << e.what());
+                        << " | localBox=" << localBox);
                     core::FieldNeumannBoundaryCondition<scalar_or_tensor_field_type,
                                                         gridlayout_type>
                         neumannFallback;
@@ -339,8 +342,6 @@ protected:
     int data_id_;
     scalar_id_map_type all_scalar_ids_;
     vector_id_map_type all_vector_ids_;
-    scalar_id_map_type old_scalar_ids_;
-    vector_id_map_type old_vector_ids_;
 };
 
 } // namespace PHARE::amr

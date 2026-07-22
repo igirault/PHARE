@@ -75,6 +75,17 @@ public:
         return FieldBoundaryConditionType::TotalEnergyFromPressure;
     }
 
+    // Coupled condition: reconstruct needs the ρ, P, ρv and B siblings. They are unallocated on
+    // the temporary single-quantity interpolation patches, so report false there and let the
+    // refine strategy pick its sibling-free fallback instead of throwing mid-reconstruction.
+    bool canApply(typename Super::boundary_condition_context_type const& ctx) const override
+    {
+        auto const& acc = ctx.accessor_new;
+        return acc.hasField(scalar_quantity_type::rho) && acc.hasField(scalar_quantity_type::P)
+               && acc.hasVecField(vector_quantity_type::rhoV)
+               && acc.hasVecField(vector_quantity_type::B);
+    }
+
     void apply(FieldT& EtotField, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
                Super::boundary_condition_context_type const& ctx) override

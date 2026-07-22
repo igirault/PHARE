@@ -63,6 +63,19 @@ public:
 
     virtual ~IFieldBoundaryCondition() = default;
 
+    /**
+     * @brief Whether this condition can be applied with the state currently reachable through
+     * @p ctx.
+     *
+     * Value-prescribed conditions read no siblings and always apply (default). Coupled conditions
+     * that read sibling fields (e.g. TotalEnergyFromPressure reads rho/P/rhoV/B) override this to
+     * report false when those siblings are absent — as on the temporary single-quantity patches
+     * SAMRAI builds for cross-level interpolation. The refine strategy then falls back to a
+     * sibling-free fill instead of applying a partial condition, and does so as an explicit branch
+     * rather than by catching a thrown accessor error.
+     */
+    virtual bool canApply(boundary_condition_context_type const& /*ctx*/) const { return true; }
+
 
     /**
      * @brief Enforce the boundary condition on the provided scalar/tensor @p scalarOrTensorField,
@@ -74,10 +87,8 @@ public:
      * @param boundaryLocation The location of the physical boundary.
      * @param localGhostBox The box containing the ghost cells/nodes to fill.
      * @param gridLayout The grid layout.
-     * @param ctx Bundle of context data: accessors to the current and previous substage states,
-     *            simulation time, and substage time step. State-aware BCs read the previous-state
-     *            accessor `ctx.accessor_old` and write into ghost cells reachable via
-     *            `ctx.accessor_new`; simple BCs only need `ctx.accessor_new` and `ctx.time`.
+     * @param ctx Bundle of context data: accessor to the current substage state and the
+     *            simulation time. BCs read siblings through `ctx.accessor_new` and use `ctx.time`.
      */
     virtual void apply(ScalarOrTensorFieldT& scalarOrTensorField,
                        BoundaryLocation const boundaryLocation,

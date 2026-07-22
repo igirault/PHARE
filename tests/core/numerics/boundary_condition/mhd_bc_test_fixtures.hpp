@@ -69,15 +69,25 @@ struct MHDPatchFieldAccessorTest : IPatchFieldAccessor<FieldMHD<dim>, MHDQuantit
             default: throw std::runtime_error("MHDPatchFieldAccessorTest: unsupported vector qty");
         }
     }
+
+    bool hasField(MHDQuantity::Scalar qty) const override
+    {
+        return qty == MHDQuantity::Scalar::rho || qty == MHDQuantity::Scalar::P
+               || qty == MHDQuantity::Scalar::Etot;
+    }
+
+    bool hasVecField(MHDQuantity::Vector qty) const override
+    {
+        return qty == MHDQuantity::Vector::rhoV || qty == MHDQuantity::Vector::B;
+    }
 };
 
 
-// Build a BC context bound to a single accessor; tests that don't care about the previous
-// substage state pass the same accessor for both new and old. time=0 by default.
+// Build a BC context bound to the accessor exposing the current substage state. time=0 by default.
 template<std::size_t dim>
 auto makeCtx(MHDPatchFieldAccessorTest<dim> const& acc, double time = 0.0)
 {
-    return BoundaryConditionContext<FieldMHD<dim>, MHDQuantity>{acc, acc, time};
+    return BoundaryConditionContext<FieldMHD<dim>, MHDQuantity>{acc, time};
 }
 
 
