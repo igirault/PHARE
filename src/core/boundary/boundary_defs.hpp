@@ -18,19 +18,10 @@ enum class BoundaryType {
     FixedPressureOutflow
 };
 
-/** @brief Possible codimension of a boundary. */
-enum class BoundaryCodim { One = 1, Two = 2, Three = 3 };
-
 //@{
-//! @name Definitions for boundary array sizes in 1d, 2d, or 3d:
-int const NUM_1D_NODES = 2;
-
-int const NUM_2D_EDGES = 4;
-int const NUM_2D_NODES = 4;
-
-int const NUM_3D_FACES = 6;
-int const NUM_3D_EDGES = 12;
-int const NUM_3D_NODES = 8;
+//! @name Definitions for boundary array sizes in 3d (used by the boundary-manager tests):
+constexpr int NUM_3D_EDGES = 12;
+constexpr int NUM_3D_NODES = 8;
 //@}
 
 /**
@@ -197,7 +188,7 @@ getAdjacentBoundaryLocations(Codim3BoundaryLocation location)
 }
 
 /**
- * @brief Get the BoundaryType from input keyword, and throw and error if the keyword does not
+ * @brief Get the BoundaryType from input keyword, and throw an error if the keyword does not
  * correspond to any known boundary type.
  */
 inline BoundaryType getBoundaryTypeFromString(std::string const& name)
@@ -219,8 +210,8 @@ inline BoundaryType getBoundaryTypeFromString(std::string const& name)
 }
 
 /**
- * @brief Get the BoundaryType from input keyword, and throw and error if the keyword foes not
- * correspond to any known boundary type.
+ * @brief Get the BoundaryLocation from input keyword, and throw an error if the keyword does not
+ * correspond to any known boundary location.
  */
 inline BoundaryLocation getBoundaryLocationFromString(std::string const& name)
 {
@@ -230,9 +221,10 @@ inline BoundaryLocation getBoundaryLocationFromString(std::string const& name)
         {"zlower", BoundaryLocation::ZLower}, {"zupper", BoundaryLocation::ZUpper},
     };
 
-    if (typeMap_.count(name))
-        return typeMap_.at(name);
-    throw std::runtime_error("Wrong boundary location name = " + name);
+    auto it = typeMap_.find(name);
+    if (it == typeMap_.end())
+        throw std::runtime_error("Wrong boundary location name = " + name);
+    return it->second;
 }
 
 /**

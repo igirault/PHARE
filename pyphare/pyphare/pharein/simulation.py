@@ -1,6 +1,7 @@
 import os
 import math
 import inspect
+import numbers
 from copy import deepcopy
 
 import numpy as np
@@ -310,8 +311,10 @@ def _normalize_inflow_scalar(location, key, val, ndim, positive=False):
     if callable(val):
         _check_inflow_callable_arity(location, key, val, ndim)
         return val
+    # numbers.Real accepts numpy scalars (np.int64/np.float64) as well as plain int/float,
+    # so a value from an integer numpy reduction is not spuriously rejected.
     if (
-        not isinstance(val, (int, float))
+        not isinstance(val, numbers.Real)
         or not math.isfinite(val)
         or (positive and not val > 0)
     ):
@@ -398,7 +401,7 @@ def _check_fixed_pressure_outflow_data(location, bc, ndim):
             f"Fixed-pressure outflow BC at '{location}' requires 'pressure' inside 'data'"
         )
     val = data["pressure"]
-    if not isinstance(val, (int, float)) or not math.isfinite(val) or not val > 0:
+    if not isinstance(val, numbers.Real) or not math.isfinite(val) or not val > 0:
         raise ValueError(
             f"'pressure' at fixed-pressure outflow boundary '{location}' must be a finite "
             f"positive scalar, got {val!r}"
@@ -498,6 +501,18 @@ def check_boundary_conditions(ndim, **kwargs):
             raise KeyError(
                 f"{location} is a physical boundary and should be provided with a valid "
                 f"type other than 'none'."
+            )
+
+    # conversely, a face whose direction is periodic (not physical) must not carry a boundary
+    # condition: a type other than 'none' there is silently ignored, so reject it explicitly.
+    for location in all_boundary_locations:
+        if (
+            location not in physical_boundary_locations
+            and boundary_conditions[location]["type"] != "none"
+        ):
+            raise ValueError(
+                f"{location} is not a physical boundary (its direction is periodic) and must "
+                f"have type 'none', got '{boundary_conditions[location]['type']}'"
             )
 
     # validate and normalise per-type data. Types absent from this table take no 'data' block

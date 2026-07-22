@@ -87,7 +87,7 @@ TEST(BoundaryManager, hasPriorityPolicyByBoundaryTypes)
         for (auto loc : adjacentLocations)
         {
             boundary_type& adjacentBoundary = *(bm.getBoundary(loc));
-            EXPECT_TRUE(masterBoundary >= adjacentBoundary);
+            EXPECT_TRUE(masterBoundary.getType() >= adjacentBoundary.getType());
         }
     }
 }

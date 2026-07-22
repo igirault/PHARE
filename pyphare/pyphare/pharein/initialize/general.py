@@ -139,7 +139,7 @@ def _add_inflow_vector(bc_path, data, key, ndim):
     add_bool(f"{bc_path}/data/{key}_is_function", is_fn)
     if is_fn:
         comps = [c if callable(c) else (lambda *a, _c=float(c): _c) for c in comps]
-    for axis, c in zip("xyz", comps):
+    for axis, c in zip("xyz", comps, strict=True):
         _add_bc_value(f"{bc_path}/data/{key}/{axis}", c, ndim)
 
 

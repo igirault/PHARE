@@ -333,9 +333,6 @@ public:
     }
 
 
-    static auto isNewFineFace(auto const& amrIdx, auto const dir) {}
-
-
 protected:
     ResMan& rm_;
     BoundaryManagerT& boundaryManager_;

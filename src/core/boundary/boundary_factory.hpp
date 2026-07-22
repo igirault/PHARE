@@ -107,8 +107,8 @@ public:
                     register_open_conditions_(boundary, data, quantities, thermo);
                 else
                     throw std::runtime_error(
-                        "Open boundary type is not supported for this physical "
-                        "model.");
+                        "'" + typeName
+                        + "' boundary type is not supported for this physical model.");
                 break;
             case BoundaryType::FreePressureInflow:
                 if constexpr (HasInflowQuantities<PhysicalQuantityT>)

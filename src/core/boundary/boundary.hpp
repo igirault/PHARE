@@ -43,7 +43,7 @@ public:
     Boundary(BoundaryType type, BoundaryLocation location)
         : type_{type}
         , location_{location} {};
-    ~Boundary() = default;
+    // rule of zero: no user-declared destructor, so moves stay implicitly available.
 
     inline BoundaryType getType() const { return type_; };
     inline BoundaryLocation getLocation() const { return location_; };
@@ -134,14 +134,6 @@ public:
                                 std::shared_ptr<vector_field_condition_type> condition)
     {
         vector_field_conditions_[quantity] = std::move(condition);
-    }
-
-    /**
-     * @brief Define comparison of boundaries based on the enum @c BoundaryType .
-     */
-    std::strong_ordering operator<=>(This const& other) const
-    {
-        return this->getType() <=> other.getType();
     }
 
 private:

@@ -304,7 +304,6 @@ auto griddingAlgorithmDatabase(PHARE::initializer::PHAREDict const& grid)
     {
         int lowerCell[dimension], upperCell[dimension];
         std::fill_n(lowerCell, dimension, 0);
-        initializer::parseDimXYZType<int, dimension>(grid, "nbr_cells", upperCell);
 
         upperCell[0] = grid["nbr_cells"]["x"].template to<int>() - 1;
 

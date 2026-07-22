@@ -135,14 +135,6 @@ public:
 private:
     using _boundary_map_type = std::unordered_map<BoundaryLocation, std::shared_ptr<boundary_type>>;
 
-    /** @brief Utility struct to group scalar and vector quantities together */
-    struct SimulationMenu
-    {
-        std::vector<typename PhysicalQuantityT::Scalar> const& scalars;
-        std::vector<typename PhysicalQuantityT::Vector> const& vectors;
-    };
-
-
     _boundary_map_type boundaries_;  //!< List of boundaries mapped by their location.
     PriorityPolicy priority_policy_; //!< How the master boundary is chosen at corners and edges.
     std::shared_ptr<Thermo> thermo_; //!< EOS object, nullptr for non-MHD models.
