@@ -26,7 +26,8 @@ template<typename GridLayoutT, typename Electromag, typename Ions, typename Elec
 class HybridModel : public IPhysicalModel<AMR_Types>
 {
 public:
-    static constexpr auto dimension = GridLayoutT::dimension;
+    static constexpr auto dimension    = GridLayoutT::dimension;
+    static constexpr auto interp_order = GridLayoutT::options.interp_order;
 
     using Interface              = IPhysicalModel<AMR_Types>;
     using amr_types              = AMR_Types;
@@ -85,7 +86,7 @@ public:
                 std::shared_ptr<resources_manager_type> const& _resourcesManager)
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict}
-        , resourcesManager{std::move(_resourcesManager)}
+        , resourcesManager{_resourcesManager}
     {
     }
 
