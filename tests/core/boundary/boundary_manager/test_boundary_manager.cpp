@@ -92,6 +92,59 @@ TEST(BoundaryManager, hasPriorityPolicyByBoundaryTypes)
     }
 }
 
+// --- validatePhysicalBoundariesDeclared (F09) ---------------------------------------------------
+
+namespace
+{
+// Build a grid sub-dict: per-direction boundary_type from `types` ("physical"/"periodic"), and a
+// boundary_conditions entry per (location -> type) in `bcs`.
+PHARE::initializer::PHAREDict makeGridDict(
+    std::array<std::string, 3> const& types,
+    std::vector<std::pair<std::string, std::string>> const& bcs)
+{
+    PHARE::initializer::PHAREDict grid;
+    grid["boundary_type"]["x"] = types[0];
+    grid["boundary_type"]["y"] = types[1];
+    grid["boundary_type"]["z"] = types[2];
+    for (auto const& [loc, type] : bcs)
+        grid["boundary_conditions"][loc]["type"] = type;
+    return grid;
+}
+} // namespace
+
+TEST(ValidatePhysicalBoundaries, acceptsDeclaredPhysicalFaces)
+{
+    auto grid = makeGridDict({"physical", "periodic", "periodic"},
+                             {{"xlower", "open"}, {"xupper", "open"}});
+    EXPECT_NO_THROW(validatePhysicalBoundariesDeclared<dimension>(grid));
+}
+
+TEST(ValidatePhysicalBoundaries, acceptsAllPeriodic)
+{
+    auto grid = makeGridDict({"periodic", "periodic", "periodic"}, {});
+    EXPECT_NO_THROW(validatePhysicalBoundariesDeclared<dimension>(grid));
+}
+
+TEST(ValidatePhysicalBoundaries, throwsWhenPhysicalFaceMissing)
+{
+    // physical x, but only xlower declared -> xupper missing
+    auto grid = makeGridDict({"physical", "periodic", "periodic"}, {{"xlower", "open"}});
+    EXPECT_THROW(validatePhysicalBoundariesDeclared<dimension>(grid), std::runtime_error);
+}
+
+TEST(ValidatePhysicalBoundaries, throwsWhenPhysicalFaceIsNone)
+{
+    auto grid = makeGridDict({"physical", "periodic", "periodic"},
+                             {{"xlower", "open"}, {"xupper", "none"}});
+    EXPECT_THROW(validatePhysicalBoundariesDeclared<dimension>(grid), std::runtime_error);
+}
+
+TEST(ValidatePhysicalBoundaries, noBoundaryTypeKeyIsSkipped)
+{
+    PHARE::initializer::PHAREDict grid; // minimal dict, no boundary_type
+    EXPECT_NO_THROW(validatePhysicalBoundariesDeclared<dimension>(grid));
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

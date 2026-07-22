@@ -97,6 +97,9 @@ public:
         // (magneticRefinePatchStrategy_), so it must never be null. When the config carries no
         // boundary_conditions (hand-built C++ test dicts), build it from an empty dict: the
         // manager then registers no boundaries and stays inert.
+        if (dict.contains("grid"))
+            core::validatePhysicalBoundariesDeclared<dimension>(dict["grid"]);
+
         auto const has_bcs = dict.contains("grid") && dict["grid"].contains("boundary_conditions");
         boundaryManager    = std::make_shared<boundary_manager_type>(
             has_bcs ? dict["grid"]["boundary_conditions"] : PHARE::initializer::PHAREDict{},

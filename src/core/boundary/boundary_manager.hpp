@@ -15,12 +15,55 @@
 #include <algorithm>
 #include <concepts>
 #include <memory>
+#include <array>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 
 namespace PHARE::core
 {
+/**
+ * @brief Fail early and by name if the grid declares a physical direction without a boundary
+ * condition on each of its two faces.
+ *
+ * Mirrors the Python DSL check for hand-built C++ dicts, which bypass it. Without this, a config
+ * with a physical direction but a missing / 'none' face builds a silently inert BoundaryManager;
+ * the mistake then surfaces only as an unattributed "Boundary not found." thrown from deep inside
+ * a SAMRAI RefineSchedule on the first ghost fill, far from its cause.
+ *
+ * @tparam dimension Number of spatial dimensions.
+ * @param grid  The grid sub-dict (carrying boundary_type/{x,y,z} and boundary_conditions).
+ */
+template<std::size_t dimension>
+inline void validatePhysicalBoundariesDeclared(initializer::PHAREDict const& grid)
+{
+    static constexpr std::array<char const*, 3> dirs{"x", "y", "z"};
+    if (!grid.contains("boundary_type"))
+        return; // no directions declared (minimal test dict): nothing to validate
+
+    for (std::size_t d = 0; d < dimension; ++d)
+    {
+        if (grid["boundary_type"][dirs[d]].template to<std::string>() != "physical")
+            continue;
+
+        for (auto const* side : {"lower", "upper"})
+        {
+            std::string const loc = std::string{dirs[d]} + side;
+            bool const declared
+                = grid.contains("boundary_conditions")
+                  && grid["boundary_conditions"].contains(loc)
+                  && grid["boundary_conditions"][loc].contains("type")
+                  && grid["boundary_conditions"][loc]["type"].template to<std::string>() != "none";
+            if (!declared)
+                throw std::runtime_error(
+                    "BoundaryManager: direction '" + std::string{dirs[d]}
+                    + "' is physical but boundary '" + loc
+                    + "' has no condition declared (expected grid/boundary_conditions/" + loc
+                    + "/type to be present and not 'none').");
+        }
+    }
+}
+
 /**
  * @brief Manage the lifecycle and retrieval of physical boundary conditions.
  *
