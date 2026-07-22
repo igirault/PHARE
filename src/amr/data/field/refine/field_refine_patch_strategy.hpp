@@ -110,6 +110,14 @@ public:
 
         vectorfield_type getVecField(vector_quantity_type qty) const override
         {
+            // Memoise per quantity: getTensorField rebuilds a TensorField (name concat + per
+            // component field wrappers) on every call, and a coupled BC reads the same siblings
+            // once per boundary box of the patch. The accessor lives for a single patch's
+            // setPhysicalBoundaryConditions call, so this cache is exactly "per patch and id".
+            // Returned copies still alias the patch buffers, so writes through them land in place.
+            if (auto cit = vecFieldCache_.find(qty); cit != vecFieldCache_.end())
+                return cit->second;
+
             auto it = vectorIds_.find(qty);
             if (it == vectorIds_.end())
                 throw core::PatchFieldAccessorError(
@@ -117,7 +125,9 @@ public:
             if (!patch_.checkAllocated(it->second))
                 throw core::PatchFieldAccessorError(
                     "PatchFieldAccessor: vector quantity not allocated on patch");
-            return vector_field_data_type::getTensorField(patch_, it->second);
+            auto vf = vector_field_data_type::getTensorField(patch_, it->second);
+            vecFieldCache_.emplace(qty, vf);
+            return vf;
         }
 
         bool hasField(scalar_quantity_type qty) const override
@@ -136,6 +146,7 @@ public:
         SAMRAI::hier::Patch const& patch_;
         scalar_id_map_type const& scalarIds_;
         vector_id_map_type const& vectorIds_;
+        mutable std::unordered_map<vector_quantity_type, vectorfield_type> vecFieldCache_;
     };
 
     using patch_field_accessor_type = PatchFieldAccessor;

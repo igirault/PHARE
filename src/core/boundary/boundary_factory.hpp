@@ -262,13 +262,16 @@ private:
                                                   GridLayoutT>()};
         auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
             FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT>()};
+
+        // The rho / rhoV / B sub-BCs built above for the energy reconstruction are stateless
+        // extrapolations, so they double as the quantities' own main conditions: register them
+        // by pointer rather than building a second identical object (matches the inflow builder).
         for (auto const quantity : quantities.scalars)
         {
             switch (quantity)
             {
                 case (PhysicalQuantityT::Scalar::rho):
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                        quantity);
+                    boundary->registerFieldCondition(quantity, rho_bc);
                     break;
                 case (PhysicalQuantityT::Scalar::Etot):
                     boundary->template registerFieldCondition<
@@ -285,16 +288,14 @@ private:
             switch (quantity)
             {
                 case (PhysicalQuantityT::Vector::B):
-                    boundary->template registerFieldCondition<
-                        FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                    boundary->registerFieldCondition(quantity, B_bc);
                     break;
                 case (PhysicalQuantityT::Vector::E):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
                         quantity);
                     break;
                 default:
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                        quantity);
+                    boundary->registerFieldCondition(quantity, rhoV_bc);
                     break;
             }
         }
@@ -530,13 +531,14 @@ private:
         auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
             FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT>()};
 
+        // Reuse the stateless rho / rhoV / B sub-BCs built for the energy reconstruction as the
+        // quantities' own main conditions instead of building second identical objects.
         for (auto const quantity : quantities.scalars)
         {
             switch (quantity)
             {
                 case (PhysicalQuantityT::Scalar::rho):
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                        quantity);
+                    boundary->registerFieldCondition(quantity, rho_bc);
                     break;
                 case (PhysicalQuantityT::Scalar::Etot):
                     boundary->template registerFieldCondition<
@@ -555,12 +557,10 @@ private:
             switch (quantity)
             {
                 case (PhysicalQuantityT::Vector::rhoV):
-                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
-                        quantity);
+                    boundary->registerFieldCondition(quantity, rhoV_bc);
                     break;
                 case (PhysicalQuantityT::Vector::B):
-                    boundary->template registerFieldCondition<
-                        FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                    boundary->registerFieldCondition(quantity, B_bc);
                     break;
                 case (PhysicalQuantityT::Vector::E):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
