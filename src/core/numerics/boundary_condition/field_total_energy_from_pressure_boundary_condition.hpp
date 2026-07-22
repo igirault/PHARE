@@ -10,6 +10,8 @@
 #include "core/numerics/thermo/thermo.hpp"
 
 #include <memory>
+#include <utility>
+#include <vector>
 
 namespace PHARE::core
 {
@@ -104,7 +106,14 @@ public:
         auto const etotFieldBox
             = gridLayout.toFieldBox(localGhostBox, EtotField.physicalQuantity());
 
-        // Step 1: fill P at mirror of each ghost cell from current conservative variables
+        // Step 1: reconstruct P at the interior mirror of each ghost cell from the current
+        // conservative variables, so the pressure sub-BC can extrapolate it into the ghosts.
+        // The mirror cells are interior domain cells; snapshot their pressure here and restore
+        // it after Step 3 so this boundary-fill routine leaves no second, unfloored source of
+        // truth for interior P behind (the primitive converter owns interior P). The boundary
+        // reflection is injective, so no interior cell appears twice.
+        std::vector<std::pair<Point<std::uint32_t, dimension>, double>> savedInteriorP;
+        savedInteriorP.reserve(etotFieldBox.size());
         for (auto const& index : etotFieldBox)
         {
             auto const mirrorIdx = gridLayout.boundaryMirrored(direction, side, centering, index);
@@ -124,6 +133,7 @@ public:
             double const e_int = internalEnergyFromTotalEnergy(EtotField(mirrorIdx), rho_m, vx, vy,
                                                                vz, bx, by, bz);
             thermo_->setState_DU(rho_m, e_int / rho_m);
+            savedInteriorP.emplace_back(mirrorIdx, PField(mirrorIdx));
             PField(mirrorIdx) = thermo_->pressure();
         }
 
@@ -152,6 +162,11 @@ public:
             double const e_int = thermo_->internalEnergy() * rho_g;
             EtotField(index) = totalEnergyFromInternalEnergy(e_int, rho_g, vx, vy, vz, bx, by, bz);
         }
+
+        // restore the interior pressure this BC borrowed for the reconstruction: the primitive
+        // converter is the single owner of interior P.
+        for (auto const& [mirrorIdx, oldP] : savedInteriorP)
+            PField(mirrorIdx) = oldP;
     }
 
 private:

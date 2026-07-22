@@ -129,6 +129,36 @@ TEST_F(EtotFromPressureBC1D, InteriorEtotUnchangedAfterBC)
         EXPECT_DOUBLE_EQ(EtotField(i), etot_val) << "interior index i=" << i;
 }
 
+TEST_F(EtotFromPressureBC1D, InteriorPressureUnchangedAfterBC)
+{
+    // Mark interior P with a value inconsistent with Etot, so the internal reconstruction of
+    // pressure at the mirror cells would produce a *different* number. A boundary fill must
+    // not leave that reconstructed value in the interior: interior P belongs to the primitive
+    // converter, not this BC.
+    auto pQty                = MHDQuantity::Scalar::P;
+    std::uint32_t ps         = layout.physicalStartIndex(pQty, Direction::X);
+    std::uint32_t pe         = layout.physicalEndIndex(pQty, Direction::X);
+    constexpr double pMarker = 123.456; // != reconstructed P_val
+    for (std::uint32_t i = ps; i <= pe; ++i)
+        PField(i) = pMarker;
+
+    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
+    auto rhoV_bc
+        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto thermo = std::make_shared<IdealGasThermo>(gamma);
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, thermo};
+
+    bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout, makeCtx(acc, 0.0));
+
+    for (std::uint32_t i = ps; i <= pe; ++i)
+        EXPECT_DOUBLE_EQ(PField(i), pMarker) << "interior P index i=" << i;
+}
+
 
 // ─── 2D ─────────────────────────────────────────────────────────────────────
 
