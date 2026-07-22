@@ -659,16 +659,19 @@ namespace amr
             std::vector<std::string> const& keys)
         {
             patchStrategies.reserve(keys.size());
+            // Every ghost-name list has exactly one entry per integrator sub-state (model state
+            // included), in lockstep with the per-sub-state id-maps built in buildFieldIdMaps_.
+            // A key list longer than the id-map count would silently pair a ghost field with the
+            // wrong sub-state's sibling ids, so require the invariant rather than papering over it.
+            if (keys.size() != allScalarIdMaps_.size() || keys.size() != allVectorIdMaps_.size())
+                throw std::runtime_error(
+                    "MHDMessenger: ghost list length does not match sub-state id-map count");
             for (std::size_t i = 0; i < keys.size(); ++i)
             {
-                // some ghost lists (e.g. the electric field with its extra reflux entry) are
-                // longer than the per-sub-state id-map count; clamp to the last valid map.
-                auto const mi = allScalarIdMaps_.empty() ? std::size_t{0}
-                                                         : std::min(i, allScalarIdMaps_.size() - 1);
-                auto&& [id]   = resourcesManager_->getIDsList(keys[i]);
+                auto&& [id] = resourcesManager_->getIDsList(keys[i]);
                 auto patchStrat
                     = std::make_shared<RefinePatchStrategyT>(*resourcesManager_, *boundaryManager_);
-                patchStrat->registerIDs(id, allScalarIdMaps_[mi], allVectorIdMaps_[mi],
+                patchStrat->registerIDs(id, allScalarIdMaps_[i], allVectorIdMaps_[i],
                                         oldScalarIdMap_, oldVectorIdMap_);
                 patchStrategies.push_back(patchStrat);
             }
