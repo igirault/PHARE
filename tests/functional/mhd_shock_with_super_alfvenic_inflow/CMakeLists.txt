@@ -10,5 +10,5 @@ endif()
 if(HighFive)
 
   ## These test use dump diagnostics so require HighFive!
-  phare_python3_exec(111, test-mhd_shock_with_super_alfvenic_inflow mhd_shock.py ${CMAKE_CURRENT_BINARY_DIR})
+  phare_python3_exec(21 test-mhd_shock_with_super_alfvenic_inflow mhd_shock.py ${CMAKE_CURRENT_BINARY_DIR})
 endif()

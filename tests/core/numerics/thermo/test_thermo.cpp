@@ -145,6 +145,46 @@ TEST_F(IdealGasThermoSetUP, temperatureMatchesSetDP)
 }
 
 
+// ---------------------------------------------------------------------------
+// IdealGasThermo — setState_DU
+//
+// This is the exact inversion the TotalEnergyFromPressure boundary condition depends on:
+// it reconstructs pressure from (density, specific internal energy). Left untested until now.
+// ---------------------------------------------------------------------------
+
+class IdealGasThermoSetDU : public ::testing::Test
+{
+protected:
+    IdealGasThermo thermo{heat_capacity_ratio};
+
+    void SetUp() override { thermo.setState_DU(rho, u_expected); }
+};
+
+TEST_F(IdealGasThermoSetDU, internalEnergyRoundTrips)
+{
+    EXPECT_DOUBLE_EQ(thermo.internalEnergy(), u_expected);
+}
+
+TEST_F(IdealGasThermoSetDU, pressureIsRecoveredFromDensityAndInternalEnergy)
+{
+    EXPECT_DOUBLE_EQ(thermo.pressure(), P);
+}
+
+TEST_F(IdealGasThermoSetDU, soundSpeedMatchesSetDP)
+{
+    IdealGasThermo ref{heat_capacity_ratio};
+    ref.setState_DP(rho, P);
+    EXPECT_DOUBLE_EQ(thermo.soundSpeed(), ref.soundSpeed());
+}
+
+TEST_F(IdealGasThermoSetDU, temperatureMatchesSetDP)
+{
+    IdealGasThermo ref{heat_capacity_ratio};
+    ref.setState_DP(rho, P);
+    EXPECT_DOUBLE_EQ(thermo.temperature(), ref.temperature());
+}
+
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
