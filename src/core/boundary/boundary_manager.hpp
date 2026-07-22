@@ -91,13 +91,14 @@ public:
      * @brief Retrieve the boundary for a specific location.
      *
      * @param location The location of the desired boundary.
-     * @return Shared pointer to the matching boundary, or nullptr if not found.
-     *
+     * @return Non-owning pointer to the matching boundary (owned by this manager), or nullptr if
+     *         not found. Returning a raw observer avoids an atomic refcount pair on every lookup
+     *         inside the per-boundary-box fill loop.
      */
-    std::shared_ptr<boundary_type> getBoundary(BoundaryLocation location) const
+    boundary_type* getBoundary(BoundaryLocation location) const
     {
         auto it = boundaries_.find(location);
-        return (it != boundaries_.end()) ? it->second : nullptr;
+        return (it != boundaries_.end()) ? it->second.get() : nullptr;
     }
 
     /** @brief Describes how the master boundary is chosen at corner and edges */

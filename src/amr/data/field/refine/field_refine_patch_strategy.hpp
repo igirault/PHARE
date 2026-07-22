@@ -263,8 +263,7 @@ public:
                 // masterBoundaryLocation = currentBoundaryLocation
                 core::BoundaryLocation const masterBoundaryLocation
                     = boundaryManager_.getMasterBoundaryLocation(currentBoundaryLocation);
-                std::shared_ptr<boundary_type> masterBoundary
-                    = boundaryManager_.getBoundary(masterBoundaryLocation);
+                auto* const masterBoundary = boundaryManager_.getBoundary(masterBoundaryLocation);
                 if (!masterBoundary)
                     throw std::runtime_error("Boundary not found.");
 

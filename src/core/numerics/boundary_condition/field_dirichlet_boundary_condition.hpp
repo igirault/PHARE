@@ -114,8 +114,11 @@ public:
                 // so the global physical coordinate of a local node is taken from
                 // fieldNodeCoordinates(field, ghostAMRlower + localIndex).
                 auto const ghostAMRlower = gridLayout.AMRGhostBoxFor(field).lower;
+                auto const nNodes = fieldBox.size();
                 tuple_fixed_type<std::vector<double>, dimension> coords{};
                 std::vector<_index_type> nodes;
+                nodes.reserve(nNodes);
+                for_N<dimension>([&](auto d) { std::get<d>(coords).reserve(nNodes); });
 
                 for (_index_type const& index : fieldBox)
                 {
