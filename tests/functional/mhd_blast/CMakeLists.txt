@@ -15,4 +15,16 @@ if(HighFive)
   phare_mpi_python3_exec(101 10 test-mhd-blast-reference blast_reference.py ${CMAKE_CURRENT_BINARY_DIR})
   phare_mpi_python3_exec(101 10 test-mhd-blast-blast1 blast_blast1.py ${CMAKE_CURRENT_BINARY_DIR})
   phare_mpi_python3_exec(101 10 test-mhd-blast-blast2 blast_blast2.py ${CMAKE_CURRENT_BINARY_DIR})
+
+  ## blast1/blast2 crash by design (negative pressure at low beta -> NaN abort).
+  ## Mark them expected-failure so CTest is GREEN when they crash and RED if one
+  ## ever completes (e.g. a Release build with the NaN check compiled out). Guard
+  ## matches phare_mpi_python3_exec's level condition so the tests exist here.
+  ## Note: the clean NaN abort requires a Debug build or -DPHARE_FORCE_DEBUG_DO.
+  if(101 GREATER_EQUAL ${PHARE_EXEC_LEVEL_MIN} AND 101 LESS_EQUAL ${PHARE_EXEC_LEVEL_MAX})
+    set_tests_properties(
+      py3_test-mhd-blast-blast1_mpi_n_10
+      py3_test-mhd-blast-blast2_mpi_n_10
+      PROPERTIES WILL_FAIL TRUE)
+  endif()
 endif()
