@@ -287,6 +287,9 @@ private:
         {
             switch (quantity)
             {
+                case (PhysicalQuantityT::Vector::rhoV):
+                    boundary->registerFieldCondition(quantity, rhoV_bc);
+                    break;
                 case (PhysicalQuantityT::Vector::B):
                     boundary->registerFieldCondition(quantity, B_bc);
                     break;
@@ -295,7 +298,8 @@ private:
                         quantity);
                     break;
                 default:
-                    boundary->registerFieldCondition(quantity, rhoV_bc);
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
                     break;
             }
         }

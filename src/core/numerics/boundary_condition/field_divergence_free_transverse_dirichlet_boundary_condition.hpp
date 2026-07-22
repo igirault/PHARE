@@ -3,6 +3,7 @@
 
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/numerics/boundary_condition/divergence_free_transverse_common.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_dirichlet_boundary_condition.hpp"
 
@@ -116,57 +117,10 @@ public:
             }
         });
 
-        // handle normal component: iterate ghost cells closest-to-farthest from physical domain
-        field_type& nField = [&]() -> field_type& {
-            switch (iNormal)
-            {
-                case 0: return std::get<0>(fields);
-                case 1: return std::get<1>(fields);
-                default: return std::get<2>(fields);
-            }
-        }();
-
-        auto apply_loop = [&](auto begin, auto end) {
-            for (auto it = begin; it != end; ++it)
-            {
-                _index const& index = *it;
-
-                // discrete div B = 0 requires the transverse differences to be scaled by
-                // their own mesh spacing and the normal update by the normal spacing:
-                //   Bn[i+1] = Bn[i] - dx_n * Σ_t ( Bt[t+1] - Bt[t] ) / dx_t
-                // omitting the spacings is only correct on cubic cells (dx = dy = dz).
-                double transverseDiv = 0.0;
-                for_N<dimension>([&](auto iTransverse) {
-                    if (static_cast<size_t>(iTransverse) != iNormal)
-                    {
-                        field_type& tField       = std::get<iTransverse>(fields);
-                        _index const upper_index = index.neighbor(iTransverse, 1);
-                        double const invDxT      = gridLayout.inverseMeshSize(
-                            static_cast<Direction>(static_cast<std::uint32_t>(iTransverse)));
-                        transverseDiv += (tField(upper_index) - tField(index)) * invDxT;
-                    }
-                });
-
-                double const dxN = gridLayout.meshSize()[iNormal];
-                if (side == Side::Upper)
-                {
-                    _index const index_to_set      = index.neighbor(iNormal, 1);
-                    _index const index_already_set = index;
-                    nField(index_to_set) = nField(index_already_set) - dxN * transverseDiv;
-                }
-                else
-                {
-                    _index const index_to_set      = index;
-                    _index const index_already_set = index.neighbor(iNormal, 1);
-                    nField(index_to_set) = nField(index_already_set) + dxN * transverseDiv;
-                }
-            }
-        };
-
-        if (side == Side::Upper)
-            apply_loop(localGhostBox.begin(), localGhostBox.end());
-        else
-            apply_loop(localGhostBox.rbegin(), localGhostBox.rend());
+        // set the normal component so the discrete divergence of B is zero, given the transverse
+        // ghosts filled above (shared with the transverse-Neumann condition).
+        applyDivergenceFreeNormalComponent<dimension>(fields, iNormal, side, gridLayout,
+                                                       localGhostBox);
     }
 
 private:

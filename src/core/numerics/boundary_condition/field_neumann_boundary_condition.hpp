@@ -60,12 +60,7 @@ public:
         if (static_cast<size_t>(direction) >= dimension)
             return;
 
-        auto fields = [&]() {
-            if constexpr (is_scalar)
-                return std::make_tuple(scalarOrTensorField);
-            else
-                return scalarOrTensorField.components();
-        }();
+        auto fields = Super::asComponentTuple(scalarOrTensorField);
 
         for_N<N>([&](auto i) {
             field_type& field = std::get<i>(fields);

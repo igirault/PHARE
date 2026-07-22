@@ -9,6 +9,8 @@
 #include "core/numerics/boundary_condition/boundary_condition_context.hpp"
 #include "core/utilities/box/box.hpp"
 
+#include <tuple>
+
 namespace PHARE::core
 {
 
@@ -95,6 +97,21 @@ public:
                        Box<std::uint32_t, dimension> const& localGhostBox,
                        GridLayoutT const& gridLayout, boundary_condition_context_type const& ctx)
         = 0;
+
+protected:
+    /**
+     * @brief Unwrap a scalar-or-tensor field into a tuple of its scalar component fields, so a
+     * single for_N<N> sweep handles the scalar (N==1) and vector cases identically. Shared by the
+     * leaf conditions (Dirichlet / Neumann / Symmetric / AntiSymmetric), which all iterate
+     * component-wise; the returned fields are lightweight views aliasing the same buffers.
+     */
+    static auto asComponentTuple(ScalarOrTensorFieldT& scalarOrTensorField)
+    {
+        if constexpr (is_scalar)
+            return std::make_tuple(scalarOrTensorField);
+        else
+            return scalarOrTensorField.components();
+    }
 };
 
 } // namespace PHARE::core
