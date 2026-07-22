@@ -152,7 +152,14 @@ struct DirichletBEnergySubBC1D : testing::Test
         // ghost Etot must be reconstructed from the Dirichlet-filled ghost B
         // (Neumann ghosts: rho, v, P mirror the constant interior)
         auto const etotQty = MHDQuantity::Scalar::Etot;
-        IdealGasThermo check_thermo{gamma};
+        // Closed-form ideal-MHD total energy, written out independently of the thermo /
+        // totalEnergyFromInternalEnergy production helpers the BC itself calls, so this checks the
+        // energy *formula* and not merely that the BC re-runs the same primitives:
+        //   Etot = P/(gamma-1) + 1/2 rho v^2 + 1/2 B^2
+        // The interior P/rho/v are constant (Neumann ghosts); only the face-centred ghost B varies,
+        // so the geometric face->cell projection is kept (it is layout, not the energy formula).
+        double const kinetic
+            = 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val);
         auto expectedEtotAt = [&](Point<std::uint32_t, 1> const& index) {
             double const bx = GridLayoutMHD1D::template project<GridLayoutMHD1D::faceXToCellCenter>(
                 Bvec[0], index);
@@ -160,10 +167,8 @@ struct DirichletBEnergySubBC1D : testing::Test
                 Bvec[1], index);
             double const bz = GridLayoutMHD1D::template project<GridLayoutMHD1D::faceZToCellCenter>(
                 Bvec[2], index);
-            check_thermo.setState_DP(rho_val, P_val);
-            double const e_int = check_thermo.internalEnergy() * rho_val;
-            return totalEnergyFromInternalEnergy(e_int, rho_val, vx_val, vy_val, vz_val, bx, by,
-                                                 bz);
+            double const magnetic = 0.5 * (bx * bx + by * by + bz * bz);
+            return P_val / (gamma - 1.0) + kinetic + magnetic;
         };
 
         for (auto const& box : {mhdLowerGhostCellBox(), mhdUpperGhostCellBox()})
