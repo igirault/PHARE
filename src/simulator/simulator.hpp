@@ -109,8 +109,8 @@ public:
 
     void initialize() override;
     double advance(double dt) override;
-    double advance(core::ConstantTimeStamper ts);
-    double advance(core::KahanTimeStamper ts);
+    double advance(core::ConstantTimeStamper const& ts);
+    double advance(core::KahanTimeStamper const& ts);
 
     std::vector<int> const& domainBox() const override { return hierarchy_->domainBox(); }
     std::vector<double> const& cellWidth() const override { return hierarchy_->cellWidth(); }
@@ -607,13 +607,13 @@ double Simulator<opts>::advance(double dt)
 // (a copy of whichever concrete stamper Python is holding): the persistent state that matters
 // (currentTime_, timeStamper) is only ever touched by advance(double) itself.
 template<auto opts>
-double Simulator<opts>::advance(core::ConstantTimeStamper ts)
+double Simulator<opts>::advance(core::ConstantTimeStamper const& ts)
 {
     return advance(ts.dt()); // fixed by config - nothing to (re)compute
 }
 
 template<auto opts>
-double Simulator<opts>::advance(core::KahanTimeStamper ts)
+double Simulator<opts>::advance(core::KahanTimeStamper const& ts)
 {
     // adaptive: always recompute a fresh CFL-stable dt from the current state, and keep dt_ up
     // to date so timeStep() (which must stay a pure read) can just return it.
