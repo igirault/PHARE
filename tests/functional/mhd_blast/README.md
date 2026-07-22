@@ -24,9 +24,22 @@ limiter) + SSPRK4_5 time integration, Rusanov flux, 10 MPI ranks.
 | blast2    | 1e4  | 2.51e-6  | 282.2787 | 0.001 | NaN / negative pressure       | t = 4e-7   |
 
 Both low-β runs abort at level 0 with
-`NaN detected in MHD field ... at time <t>` (`solver_mhd.hpp:394`), surfaced as a
-caught `SolverMHD::advanceLevel` exception; neither prints `completed`. The
-reference case (β≈2.5) runs cleanly to `t=0.01`.
+`NaN detected in MHD field at index ( ... ) on patch of origin ( ... ) on level 0
+at time <t>` (`solver_mhd.hpp:394`), surfaced as a caught
+`SolverMHD::advanceLevel` exception; neither prints `completed`. The reference
+case (β≈2.5) runs cleanly to `t=0.01`.
+
+**Build requirement:** the explicit NaN-detection exception lives inside a
+`PHARE_DEBUG_DO` block (`solver_mhd.hpp`), which is compiled out when `NDEBUG` is
+defined and `PHARE_FORCE_DEBUG_DO` is not. The clean early abort documented above
+therefore requires a Debug build (or `-DPHARE_FORCE_DEBUG_DO`). Without it the
+negative pressure still corrupts the solution (NaN sound speed), but the run may
+propagate NaNs silently instead of aborting cleanly.
+
+The isolation of β as the cause rests on the **reference ↔ blast1** pair: identical
+explosion/ambient pressure, jump ratio, grid, solver, and BCs — only `Ba` (β)
+differs. blast2 additionally raises `pe` (1e3→1e4), so it is a stronger-field
+corroboration ("fails harder, earlier"), not a β-only variation.
 
 For reference, the paper's limiter-free 3rd-order DG fails at t≈2.85e-4 (blast1)
 and t≈1.2e-5 (blast2); PHARE fails ~20–30× earlier under the same initial
