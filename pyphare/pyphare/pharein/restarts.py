@@ -162,6 +162,31 @@ def conserve_existing(sim):
 # ------------------------------------------------------------------------------
 
 
+def _boundary_conditions_signature(bc):
+    """Best-effort comparable projection of a boundary_conditions dict.
+
+    Callables (prescribed inflow drivers) are represented by their source text so that an
+    unchanged driver re-created by the restart script still compares equal, while an edited
+    one does not; everything else compares by value. Callables that can't be introspected
+    (builtins / C funcs) collapse to an opaque marker and are treated as equal.
+    """
+    import inspect
+
+    def proj(v):
+        if callable(v):
+            try:
+                return ("<callable>", inspect.getsource(v))
+            except (OSError, TypeError):
+                return ("<callable>", None)
+        if isinstance(v, dict):
+            return {k: proj(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return type(v)(proj(x) for x in v)
+        return v
+
+    return proj(bc or {})
+
+
 def is_restartable_compared_to(curr_sim, prev_sim):
     import operator
 
@@ -181,5 +206,17 @@ def is_restartable_compared_to(curr_sim, prev_sim):
         print("ERROR: Simulation not restartable - variable mismatch")
         for key, curr, prev, op in failed:
             print(f"{key} current({curr}) {op.__name__} previous({prev})")
+
+    # Boundary conditions are always re-serialised from the current sim, so a restart can
+    # silently run different boundary physics than the run it continues. This is not fatal
+    # (a driven run legitimately re-creates its inflow callables each script run), but a
+    # change is worth flagging: warn rather than block.
+    if _boundary_conditions_signature(
+        getattr(curr_sim, "boundary_conditions", None)
+    ) != _boundary_conditions_signature(getattr(prev_sim, "boundary_conditions", None)):
+        print(
+            "WARNING: restart boundary_conditions differ from the previous run; the "
+            "simulation may change its boundary physics mid-trajectory."
+        )
 
     return not failed

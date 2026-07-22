@@ -1,4 +1,6 @@
 import os
+import math
+import inspect
 from copy import deepcopy
 
 import numpy as np
@@ -277,19 +279,50 @@ def check_boundaries(ndim, **kwargs):
 _BOUNDARY_NORMAL_INDEX = {"x": 0, "y": 1, "z": 2}
 
 
-def _normalize_inflow_scalar(location, key, val, positive=False):
+def _check_inflow_callable_arity(location, key, fn, ndim):
+    """A space-time inflow callable takes ndim spatial args plus time: f(x[,y[,z]],t).
+
+    Verify that at config time rather than letting an arity mismatch surface as a TypeError
+    raised inside a pybind callback several frames below the C++ ghost-fill.
+    """
+    try:
+        params = list(inspect.signature(fn).parameters.values())
+    except (TypeError, ValueError):
+        return  # builtins / C callables can't be introspected: leave to runtime
+    if any(p.kind == p.VAR_POSITIONAL for p in params):
+        return  # f(*args): accepts any arity
+    npos = sum(
+        1
+        for p in params
+        if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    )
+    expected = ndim + 1
+    if npos != expected:
+        spatial = ",".join(["x", "y", "z"][:ndim])
+        raise ValueError(
+            f"'{key}' callable at inflow boundary '{location}' must take {expected} "
+            f"arguments f({spatial},t) for a {ndim}D simulation, but its signature takes {npos}"
+        )
+
+
+def _normalize_inflow_scalar(location, key, val, ndim, positive=False):
     """A prescribable inflow scalar: a float or a space-time callable f(x[,y[,z]],t)."""
     if callable(val):
+        _check_inflow_callable_arity(location, key, val, ndim)
         return val
-    if not isinstance(val, (int, float)) or (positive and val <= 0):
+    if (
+        not isinstance(val, (int, float))
+        or not math.isfinite(val)
+        or (positive and not val > 0)
+    ):
         raise ValueError(
-            f"'{key}' at inflow boundary '{location}' must be a "
+            f"'{key}' at inflow boundary '{location}' must be a finite "
             f"{'positive ' if positive else ''}scalar or a callable f(x,y,z,t), got {val!r}"
         )
     return float(val)
 
 
-def _normalize_inflow_vector(location, key, vec):
+def _normalize_inflow_vector(location, key, vec, ndim):
     """A prescribable inflow 3-vector: each component a float or a callable f(x[,y[,z]],t)."""
     try:
         comps = list(vec)
@@ -304,12 +337,16 @@ def _normalize_inflow_vector(location, key, vec):
             f"got a {len(comps)}-element sequence"
         )
     return [
-        c if callable(c) else _normalize_inflow_scalar(location, f"{key}[{i}]", c)
+        (
+            _check_inflow_callable_arity(location, f"{key}[{i}]", c, ndim) or c
+            if callable(c)
+            else _normalize_inflow_scalar(location, f"{key}[{i}]", c, ndim)
+        )
         for i, c in enumerate(comps)
     ]
 
 
-def _normalize_inflow_velocity(location, velocity):
+def _normalize_inflow_velocity(location, velocity, ndim):
     """Return velocity as a (vx, vy, vz) tuple, each component a float or a callable.
 
     A scalar constant is interpreted as the inward-normal speed: it is stored with a
@@ -326,10 +363,10 @@ def _normalize_inflow_velocity(location, velocity):
         v = [0.0, 0.0, 0.0]
         v[normal_idx] = sign * float(velocity)
         return tuple(v)
-    return tuple(_normalize_inflow_vector(location, "velocity", velocity))
+    return tuple(_normalize_inflow_vector(location, "velocity", velocity, ndim))
 
 
-def _check_inflow_data(location, bc):
+def _check_inflow_data(location, bc, ndim):
     """Validate the 'data' sub-dict for a super-magnetofast-inflow BC.
 
     density, pressure, velocity, and B may each be a constant or a space-time callable
@@ -338,14 +375,18 @@ def _check_inflow_data(location, bc):
     for key in ("density", "pressure", "velocity", "B"):
         if key not in data:
             raise KeyError(f"Inflow BC at '{location}' requires '{key}' inside 'data'")
-    data["density"] = _normalize_inflow_scalar(location, "density", data["density"], positive=True)
-    data["pressure"] = _normalize_inflow_scalar(location, "pressure", data["pressure"], positive=True)
-    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"] = _normalize_inflow_vector(location, "B", data["B"])
+    data["density"] = _normalize_inflow_scalar(
+        location, "density", data["density"], ndim, positive=True
+    )
+    data["pressure"] = _normalize_inflow_scalar(
+        location, "pressure", data["pressure"], ndim, positive=True
+    )
+    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"], ndim)
+    data["B"] = _normalize_inflow_vector(location, "B", data["B"], ndim)
     bc["data"] = data
 
 
-def _check_fixed_pressure_outflow_data(location, bc):
+def _check_fixed_pressure_outflow_data(location, bc, ndim):
     """Validate and normalise the 'data' sub-dict for a fixed-pressure-outflow BC.
 
     Only a prescribed exit pressure is required. All other flow variables (ρ, ρv, B)
@@ -357,15 +398,15 @@ def _check_fixed_pressure_outflow_data(location, bc):
             f"Fixed-pressure outflow BC at '{location}' requires 'pressure' inside 'data'"
         )
     val = data["pressure"]
-    if not isinstance(val, (int, float)) or val <= 0:
+    if not isinstance(val, (int, float)) or not math.isfinite(val) or not val > 0:
         raise ValueError(
-            f"'pressure' at fixed-pressure outflow boundary '{location}' must be a positive "
-            f"scalar, got {val!r}"
+            f"'pressure' at fixed-pressure outflow boundary '{location}' must be a finite "
+            f"positive scalar, got {val!r}"
         )
     bc["data"] = data
 
 
-def _check_free_pressure_inflow_data(location, bc):
+def _check_free_pressure_inflow_data(location, bc, ndim):
     """Free-pressure inflow: density, velocity, B prescribable (constant or callable);
     pressure is not prescribed (Neumann)."""
     data = bc.get("data", {})
@@ -374,9 +415,11 @@ def _check_free_pressure_inflow_data(location, bc):
             raise KeyError(
                 f"Free-pressure inflow BC at '{location}' requires '{key}' inside 'data'"
             )
-    data["density"] = _normalize_inflow_scalar(location, "density", data["density"], positive=True)
-    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"])
-    data["B"] = _normalize_inflow_vector(location, "B", data["B"])
+    data["density"] = _normalize_inflow_scalar(
+        location, "density", data["density"], ndim, positive=True
+    )
+    data["velocity"] = _normalize_inflow_velocity(location, data["velocity"], ndim)
+    data["B"] = _normalize_inflow_vector(location, "B", data["B"], ndim)
     bc["data"] = data
 
 
@@ -457,15 +500,25 @@ def check_boundary_conditions(ndim, **kwargs):
                 f"type other than 'none'."
             )
 
-    # validate and normalise per-type data
+    # validate and normalise per-type data. Types absent from this table take no 'data' block
+    # (open / reflective / none / super-magnetofast-outflow use zero-gradient/reflective fills
+    # with nothing to prescribe), so a 'data' dict handed to one of them is a mistake that would
+    # otherwise be silently discarded on serialisation — reject it here instead.
+    data_validators = {
+        "super-magnetofast-inflow": _check_inflow_data,
+        "free-pressure-inflow": _check_free_pressure_inflow_data,
+        "fixed-pressure-outflow": _check_fixed_pressure_outflow_data,
+    }
     for location in all_boundary_locations:
-        bc_type = boundary_conditions[location]["type"]
-        if bc_type == "super-magnetofast-inflow":
-            _check_inflow_data(location, boundary_conditions[location])
-        elif bc_type == "free-pressure-inflow":
-            _check_free_pressure_inflow_data(location, boundary_conditions[location])
-        elif bc_type == "fixed-pressure-outflow":
-            _check_fixed_pressure_outflow_data(location, boundary_conditions[location])
+        bc = boundary_conditions[location]
+        validator = data_validators.get(bc["type"])
+        if validator is not None:
+            validator(location, bc, ndim)
+        elif "data" in bc:
+            raise ValueError(
+                f"Boundary type '{bc['type']}' at '{location}' takes no 'data' block, but one "
+                f"was provided. Supported data-carrying types: {sorted(data_validators)}"
+            )
 
     return boundary_conditions
 
