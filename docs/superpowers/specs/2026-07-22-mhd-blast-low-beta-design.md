@@ -51,7 +51,11 @@ the paper's form.
 ## Numerical setup
 
 - MPI: 10 ranks per run.
-- Grid: **uniform single level**, `max_nbr_levels = 1`, no `refinement`. Isolates the
+- Grid: **uniform single level** via `max_mhd_level = 1` alone (no `refinement`
+  kwarg, no `max_nbr_levels`). Note: PHARE's DSL only accepts `max_nbr_levels`
+  when `refinement` is set (`simulation.py:622`), so the two cannot be combined;
+  `max_mhd_level = 1` with the default (`max_nbr_levels = 1`) already yields a
+  single level with no AMR machinery. Isolates the
   solver — failure is the scheme, not AMR ghost/reflux artifacts.
 - Resolution: 320×320 (paper). Domain modeled as `[0,1]²` with the circle centered at
   (0.5, 0.5); physics is translation-invariant, so identical to `[-0.5,0.5]²`.
