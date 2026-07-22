@@ -174,6 +174,104 @@ TEST_F(DivFreeTransverseNeumannBC2DAnisotropic, YBoundariesKillDivergenceOnAniso
 }
 
 
+// ════════════════════════════════════════════════════════════════════════════
+// 3D: exercises the normal-component update with two transverse divergence terms
+// (the 2D fixtures above only ever have one), on every face.
+// ════════════════════════════════════════════════════════════════════════════
+
+struct DivFreeTransverseNeumannBC3D : testing::Test
+{
+    GridLayoutMHD3D layout{{0.1, 0.1, 0.1},
+                           {nCellsMHDX3D, nCellsMHDY3D, nCellsMHDZ3D},
+                           {0.0, 0.0, 0.0}};
+
+    GridMHD3D rhoGrid{"rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD3D PGrid{"P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD3D EtotGrid{"Etot", MHDQuantity::Scalar::Etot,
+                       layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<3> Bvec{"B", layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    DivFreeTransverseNeumannBC3D()
+    {
+        // analytic node values everywhere, deliberately not divergence-free
+        auto fill = [&](auto& f, double a, double b, double c, double d) {
+            auto const shape = f.shape();
+            for (std::uint32_t i = 0; i < shape[0]; ++i)
+                for (std::uint32_t j = 0; j < shape[1]; ++j)
+                    for (std::uint32_t k = 0; k < shape[2]; ++k)
+                        f(i, j, k) = a * static_cast<double>(i) + b * static_cast<double>(j)
+                                     + c * static_cast<double>(k) + d;
+        };
+        fill(Bvec[0], 0.3, 0.7, -0.2, 1.0);
+        fill(Bvec[1], -0.2, 0.4, 0.5, 2.0);
+        fill(Bvec[2], 0.5, -0.6, 0.3, 3.0);
+    }
+
+    void applyAndCheck(BoundaryLocation loc, Box<std::uint32_t, 3> const& ghostBox)
+    {
+        Direction const direction = getDirection(loc);
+        Side const side           = getSide(loc);
+        std::size_t const iNormal = static_cast<std::size_t>(direction);
+
+        auto B = Bvec.super();
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D> bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+
+        // transverse components mirror the first interior value (zero normal gradient)
+        for (std::size_t comp = 0; comp < 3; ++comp)
+        {
+            if (comp == iNormal)
+                continue;
+            auto& bField         = Bvec[comp];
+            auto const qty       = MHDQuantity::componentsQuantities(MHDQuantity::Vector::B)[comp];
+            auto const centering = layout.centering(qty)[iNormal];
+            for (auto const& index : layout.toFieldBox(ghostBox, qty))
+            {
+                auto const mirror = layout.boundaryMirrored(direction, side, centering, index);
+                EXPECT_DOUBLE_EQ(bField(index), bField(mirror)) << "comp=" << comp;
+            }
+        }
+
+        // normal component set so the mesh-spaced discrete div B vanishes in every ghost cell
+        auto& Bx        = Bvec[0];
+        auto& By        = Bvec[1];
+        auto& Bz        = Bvec[2];
+        double const dx = layout.meshSize()[0];
+        double const dy = layout.meshSize()[1];
+        double const dz = layout.meshSize()[2];
+        for (auto const& cell : ghostBox)
+        {
+            double const div = (Bx(cell.neighbor(0, 1)) - Bx(cell)) / dx
+                             + (By(cell.neighbor(1, 1)) - By(cell)) / dy
+                             + (Bz(cell.neighbor(2, 1)) - Bz(cell)) / dz;
+            EXPECT_NEAR(div, 0.0, 1e-12) << "at " << static_cast<int>(loc);
+        }
+    }
+};
+
+TEST_F(DivFreeTransverseNeumannBC3D, XBoundariesKillDivergence)
+{
+    applyAndCheck(BoundaryLocation::XLower, mhd3DXLowerGhostBox());
+    applyAndCheck(BoundaryLocation::XUpper, mhd3DXUpperGhostBox());
+}
+
+TEST_F(DivFreeTransverseNeumannBC3D, YBoundariesKillDivergence)
+{
+    applyAndCheck(BoundaryLocation::YLower, mhd3DYLowerGhostBox());
+    applyAndCheck(BoundaryLocation::YUpper, mhd3DYUpperGhostBox());
+}
+
+TEST_F(DivFreeTransverseNeumannBC3D, ZBoundariesKillDivergence)
+{
+    applyAndCheck(BoundaryLocation::ZLower, mhd3DZLowerGhostBox());
+    applyAndCheck(BoundaryLocation::ZUpper, mhd3DZUpperGhostBox());
+}
+
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

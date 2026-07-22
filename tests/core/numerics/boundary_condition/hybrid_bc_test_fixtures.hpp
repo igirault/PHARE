@@ -176,6 +176,66 @@ struct FieldBC1D : testing::Test
 };
 
 
+// ─── 2D scalar field fixture ──────────────────────────────────────────────────
+
+struct FieldBC2D : testing::Test
+{
+    GridLayout2D layout{{0.1, 0.1}, {nCellsX2D, nCellsY2D}, {0.0, 0.0}};
+    NullFieldAccessorT<Field2D> acc;
+
+    static constexpr auto qty = HybridQuantity::Scalar::rho;
+    Grid2D grid{"rho", qty, layout.allocSize(qty)};
+    Field2D& field{*(&grid)};
+
+    FieldBC2D()
+    {
+        auto const shape = grid.shape();
+        for (std::uint32_t ix = 0; ix < shape[0]; ++ix)
+            for (std::uint32_t iy = 0; iy < shape[1]; ++iy)
+                field(ix, iy) = ghostSentinel;
+        std::uint32_t sx = layout.physicalStartIndex(qty, Direction::X);
+        std::uint32_t ex = layout.physicalEndIndex(qty, Direction::X);
+        std::uint32_t sy = layout.physicalStartIndex(qty, Direction::Y);
+        std::uint32_t ey = layout.physicalEndIndex(qty, Direction::Y);
+        for (std::uint32_t ix = sx; ix <= ex; ++ix)
+            for (std::uint32_t iy = sy; iy <= ey; ++iy)
+                field(ix, iy) = interiorValue;
+    }
+};
+
+
+// ─── 3D scalar field fixture ──────────────────────────────────────────────────
+
+struct FieldBC3D : testing::Test
+{
+    GridLayout3D layout{{0.1, 0.1, 0.1}, {nCellsX3D, nCellsY3D, nCellsZ3D}, {0.0, 0.0, 0.0}};
+    NullFieldAccessorT<Field3D> acc;
+
+    static constexpr auto qty = HybridQuantity::Scalar::rho;
+    Grid3D grid{"rho", qty, layout.allocSize(qty)};
+    Field3D& field{*(&grid)};
+
+    FieldBC3D()
+    {
+        auto const shape = grid.shape();
+        for (std::uint32_t ix = 0; ix < shape[0]; ++ix)
+            for (std::uint32_t iy = 0; iy < shape[1]; ++iy)
+                for (std::uint32_t iz = 0; iz < shape[2]; ++iz)
+                    field(ix, iy, iz) = ghostSentinel;
+        std::uint32_t sx = layout.physicalStartIndex(qty, Direction::X);
+        std::uint32_t ex = layout.physicalEndIndex(qty, Direction::X);
+        std::uint32_t sy = layout.physicalStartIndex(qty, Direction::Y);
+        std::uint32_t ey = layout.physicalEndIndex(qty, Direction::Y);
+        std::uint32_t sz = layout.physicalStartIndex(qty, Direction::Z);
+        std::uint32_t ez = layout.physicalEndIndex(qty, Direction::Z);
+        for (std::uint32_t ix = sx; ix <= ex; ++ix)
+            for (std::uint32_t iy = sy; iy <= ey; ++iy)
+                for (std::uint32_t iz = sz; iz <= ez; ++iz)
+                    field(ix, iy, iz) = interiorValue;
+    }
+};
+
+
 // ─── 1D VecField (B) fixture ──────────────────────────────────────────────────
 
 struct VecFieldBC1D : testing::Test
