@@ -46,9 +46,7 @@ def config(label):
         final_time=tmax,
         cells=cells,
         dl=dl,
-        refinement="tagging",
         max_mhd_level=1,
-        max_nbr_levels=1,
         hyper_resistivity=0.0,
         resistivity=0.0,
         diag_options={
