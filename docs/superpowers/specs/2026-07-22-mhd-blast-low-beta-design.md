@@ -50,13 +50,16 @@ the paper's form.
 
 ## Numerical setup
 
+- MPI: 10 ranks per run.
 - Grid: **uniform single level**, `max_nbr_levels = 1`, no `refinement`. Isolates the
   solver — failure is the scheme, not AMR ghost/reflux artifacts.
 - Resolution: 320×320 (paper). Domain modeled as `[0,1]²` with the circle centered at
   (0.5, 0.5); physics is translation-invariant, so identical to `[-0.5,0.5]²`.
-- Solver matches existing MHD functional tests: `reconstruction="Linear"`,
-  `limiter="VanLeer"`, `riemann="Rusanov"`, `mhd_timestepper="TVDRK2"`.
-  No Hall, no resistivity, no hyper-resistivity. `gamma=1.4`.
+- Solver: high-order `reconstruction="WENOZ"`, `limiter="None"`,
+  `riemann="Rusanov"`, `mhd_timestepper="SSPRK4_5"`. No Hall, no resistivity, no
+  hyper-resistivity. `gamma=1.4`. Requires adding the 2D permutation
+  `2,1,4,SSPRK4_5,WENOZ,None,Rusanov,false,false,false` to `res/sim/all.txt`
+  (one `cpp_*` module rebuild).
 - Boundaries: periodic (default; the shock does not reach the edge within tmax).
 - `time_step`: fixed, chosen per config below the ideal CFL limit; blast2 needs a
   smaller step (stronger fast speed ∝ Ba).
