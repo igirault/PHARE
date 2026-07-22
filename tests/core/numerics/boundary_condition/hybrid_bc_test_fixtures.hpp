@@ -246,6 +246,42 @@ struct VecFieldBC2DNonUniformBy : testing::Test
 };
 
 
+// ─── 2D VecField (B) fixture: anisotropic mesh (dx != dy) + non-uniform By ──────
+// Same as VecFieldBC2DNonUniformBy but with dy != dx, so a divergence-free stencil that
+// drops the mesh spacings produces a non-zero discrete div B — the F01 regression guard.
+
+struct VecFieldBC2DNonUniformByAnisotropic : testing::Test
+{
+    GridLayout2D layout{{0.1, 0.2}, {nCellsX2D, nCellsY2D}, {0.0, 0.0}};
+    NullFieldAccessorT<Field2D> acc;
+
+    static constexpr auto vecQty = HybridQuantity::Vector::B;
+    UsableTensorField<2, 1> B{"B", layout, vecQty};
+
+    VecFieldBC2DNonUniformByAnisotropic()
+    {
+        for (std::size_t comp = 0; comp < 3; ++comp)
+        {
+            auto& f    = B[comp];
+            auto shape = f.shape();
+            for (std::uint32_t ix = 0; ix < shape[0]; ++ix)
+                for (std::uint32_t iy = 0; iy < shape[1]; ++iy)
+                    f(ix, iy) = ghostSentinel;
+
+            auto qty         = HybridQuantity::componentsQuantities(vecQty)[comp];
+            std::uint32_t sx = layout.physicalStartIndex(qty, Direction::X);
+            std::uint32_t ex = layout.physicalEndIndex(qty, Direction::X);
+            std::uint32_t sy = layout.physicalStartIndex(qty, Direction::Y);
+            std::uint32_t ey = layout.physicalEndIndex(qty, Direction::Y);
+
+            for (std::uint32_t ix = sx; ix <= ex; ++ix)
+                for (std::uint32_t iy = sy; iy <= ey; ++iy)
+                    f(ix, iy) = comp == 1 ? static_cast<double>(iy) : interiorValue;
+        }
+    }
+};
+
+
 // ─── 3D VecField (B) fixture ──────────────────────────────────────────────────
 
 struct VecFieldBC3D : testing::Test

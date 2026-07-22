@@ -111,6 +111,69 @@ TEST_F(DivFreeTransverseNeumannBC2D, YUpperGhostsMirrorTransverseAndKillDivergen
 }
 
 
+// Anisotropic mesh (dx != dy): a div-free stencil that drops the mesh spacings leaves a
+// non-zero discrete div B here, even though it looks correct on the cubic fixtures above.
+// F01 regression guard for the Neumann variant.
+struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
+{
+    GridLayoutMHD2D layout{{0.1, 0.2}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
+
+    GridMHD2D rhoGrid{"rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD2D PGrid{"P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD2D EtotGrid{"Etot", MHDQuantity::Scalar::Etot,
+                       layout.allocSize(MHDQuantity::Scalar::Etot)};
+
+    UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B};
+
+    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+
+    DivFreeTransverseNeumannBC2DAnisotropic()
+    {
+        auto fill = [&](auto& f, double a, double b, double c) {
+            auto const shape = f.shape();
+            for (std::uint32_t i = 0; i < shape[0]; ++i)
+                for (std::uint32_t j = 0; j < shape[1]; ++j)
+                    f(i, j) = a * static_cast<double>(i) + b * static_cast<double>(j) + c;
+        };
+        fill(Bvec[0], 0.3, 0.7, 1.0);
+        fill(Bvec[1], -0.2, 0.4, 2.0);
+        fill(Bvec[2], 0.5, -0.6, 3.0);
+    }
+
+    void applyAndCheckSpaced(BoundaryLocation loc, Box<std::uint32_t, 2> const& ghostBox)
+    {
+        auto B = Bvec.super();
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D> bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+
+        auto& Bx        = Bvec[0];
+        auto& By        = Bvec[1];
+        double const dx = layout.meshSize()[0];
+        double const dy = layout.meshSize()[1];
+        for (auto const& cell : ghostBox)
+        {
+            double const div = (Bx(cell.neighbor(0, 1)) - Bx(cell)) / dx
+                             + (By(cell.neighbor(1, 1)) - By(cell)) / dy;
+            EXPECT_NEAR(div, 0.0, 1e-12)
+                << "cell=(" << cell[0] << "," << cell[1] << ") at " << static_cast<int>(loc);
+        }
+    }
+};
+
+TEST_F(DivFreeTransverseNeumannBC2DAnisotropic, XBoundariesKillDivergenceOnAnisotropicMesh)
+{
+    applyAndCheckSpaced(BoundaryLocation::XLower, mhd2DXLowerGhostBox());
+    applyAndCheckSpaced(BoundaryLocation::XUpper, mhd2DXUpperGhostBox());
+}
+
+TEST_F(DivFreeTransverseNeumannBC2DAnisotropic, YBoundariesKillDivergenceOnAnisotropicMesh)
+{
+    applyAndCheckSpaced(BoundaryLocation::YLower, mhd2DYLowerGhostBox());
+    applyAndCheckSpaced(BoundaryLocation::YUpper, mhd2DYUpperGhostBox());
+}
+
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

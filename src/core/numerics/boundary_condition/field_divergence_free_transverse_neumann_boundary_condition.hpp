@@ -106,27 +106,34 @@ public:
             {
                 _index const& index = *it;
 
+                // discrete div B = 0 requires the transverse differences to be scaled by
+                // their own mesh spacing and the normal update by the normal spacing:
+                //   Bn[i+1] = Bn[i] - dx_n * Σ_t ( Bt[t+1] - Bt[t] ) / dx_t
+                // omitting the spacings is only correct on cubic cells (dx = dy = dz).
                 double transverseDiv = 0.0;
                 for_N<dimension>([&](auto iTransverse) {
                     if (static_cast<size_t>(iTransverse) != iNormal)
                     {
                         field_type& tField       = std::get<iTransverse>(fields);
                         _index const upper_index = index.neighbor(iTransverse, 1);
-                        transverseDiv += tField(upper_index) - tField(index);
+                        double const invDxT      = gridLayout.inverseMeshSize(
+                            static_cast<Direction>(static_cast<std::uint32_t>(iTransverse)));
+                        transverseDiv += (tField(upper_index) - tField(index)) * invDxT;
                     }
                 });
 
+                double const dxN = gridLayout.meshSize()[iNormal];
                 if (side == Side::Upper)
                 {
                     _index const index_to_set      = index.neighbor(iNormal, 1);
                     _index const index_already_set = index;
-                    nField(index_to_set)           = nField(index_already_set) - transverseDiv;
+                    nField(index_to_set) = nField(index_already_set) - dxN * transverseDiv;
                 }
                 else
                 {
                     _index const index_to_set      = index;
                     _index const index_already_set = index.neighbor(iNormal, 1);
-                    nField(index_to_set)           = nField(index_already_set) + transverseDiv;
+                    nField(index_to_set) = nField(index_already_set) + dxN * transverseDiv;
                 }
             }
         };

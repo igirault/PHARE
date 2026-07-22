@@ -155,6 +155,34 @@ TEST_F(VecFieldBC2DNonUniformBy, DivergenceFreeTransverseDirichletKeepsXGhostDiv
 }
 
 
+// Anisotropic mesh (dx != dy): the div-free stencil must scale transverse differences by
+// their own spacing and the normal update by the normal spacing. A stencil that drops the
+// spacings leaves a non-zero discrete div B here (it is only correct on cubic cells).
+TEST_F(VecFieldBC2DNonUniformByAnisotropic,
+       DivergenceFreeTransverseDirichletKeepsXGhostDivergenceZeroOnAnisotropicMesh)
+{
+    FieldDivergenceFreeTransverseDirichletBoundaryCondition<VecField2D, GridLayout2D> bc{
+        std::array{123.0, 0.0, 11.0}};
+    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+
+    auto& Bx        = B[0];
+    auto& By        = B[1];
+    double const dx = layout.meshSize()[0];
+    double const dy = layout.meshSize()[1];
+    auto divB       = [&](auto const& index) {
+        return (Bx(index.template neighbor<0, 1>()) - Bx(index)) / dx
+             + (By(index.template neighbor<1, 1>()) - By(index)) / dy;
+    };
+    for (auto const& index : xLowerGhostCellBox2D())
+        EXPECT_NEAR(divB(index), 0.0, 1e-12)
+            << "lower divergence at (" << index[0] << ", " << index[1] << ")";
+    for (auto const& index : xUpperGhostCellBox2D())
+        EXPECT_NEAR(divB(index), 0.0, 1e-12)
+            << "upper divergence at (" << index[0] << ", " << index[1] << ")";
+}
+
+
 // ─── 3D VecField ─────────────────────────────────────────────────────────────
 
 TEST_F(VecFieldBC3D, DivergenceFreeTransverseDirichletAtZBoundaries)
