@@ -66,8 +66,9 @@ public:
 
         // Apply the physical electric-field boundary conditions on the freshly computed E
         // before Faraday consumes it on the ghost box: antisymmetric E at reflective walls
-        // (keeps the wall-normal B frozen through constrained transport), Dirichlet motional
-        // E = -v x B at inflow. This is the sole trigger of the outer E boundary conditions.
+        // keeps the wall-normal B frozen through constrained transport. Inflow faces leave E
+        // untouched (None): B is prescribed there directly through a divergence-free
+        // transverse Dirichlet ghost, so no motional E is needed to drive it.
         bc.fillElectricGhosts(state.E, level, newTime);
     }
 

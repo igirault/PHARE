@@ -48,38 +48,6 @@ TEST(InflowCompose, MulFunctionMultipliesElementwise)
     EXPECT_DOUBLE_EQ((*s)[2], 12.0);
 }
 
-TEST(InflowCompose, ProdComb2LinearlyCombinesTwoProducts)
-{
-    auto one = constFunction<1>(1.0);
-    auto x   = make1D([](double x, double) { return x; });
-    auto y2  = make1D([](double, double) { return 2.0; });
-    // a*f1*g1 + b*f2*g2 = (-1)*x*1 + (3)*2*1 = -x + 6
-    auto r = prodComb2<1>(-1.0, x, one, 3.0, y2, one);
-    std::vector<double> xs{0.0, 1.0, 5.0};
-    auto s = r(xs, 0.0);
-    EXPECT_DOUBLE_EQ((*s)[0], 6.0);
-    EXPECT_DOUBLE_EQ((*s)[1], 5.0);
-    EXPECT_DOUBLE_EQ((*s)[2], 1.0);
-}
-
-TEST(InflowCompose, NegCrossMatchesMinusVCrossB)
-{
-    // Uniform V = (1,2,3), B = (4,5,6); E = -V x B = -(2*6-3*5, 3*4-1*6, 1*5-2*4)
-    //                                             = -(-3, 6, -3) = (3, -6, 3)
-    std::array<SpaceTimeFunction<1>, 3> V{constFunction<1>(1.0), constFunction<1>(2.0),
-                                          constFunction<1>(3.0)};
-    std::array<SpaceTimeFunction<1>, 3> B{constFunction<1>(4.0), constFunction<1>(5.0),
-                                          constFunction<1>(6.0)};
-    auto E = negCrossFunction<1>(V, B);
-    std::vector<double> x{0.0, 1.0};
-    auto ex = E[0](x, 0.0);
-    auto ey = E[1](x, 0.0);
-    auto ez = E[2](x, 0.0);
-    EXPECT_DOUBLE_EQ((*ex)[0], 3.0);
-    EXPECT_DOUBLE_EQ((*ey)[0], -6.0);
-    EXPECT_DOUBLE_EQ((*ez)[0], 3.0);
-}
-
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

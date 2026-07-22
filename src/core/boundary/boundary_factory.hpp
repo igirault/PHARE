@@ -430,6 +430,10 @@ private:
                 case (PhysicalQuantityT::Vector::B):
                     boundary->registerFieldCondition(quantity, B_main);
                     break;
+                case (PhysicalQuantityT::Vector::E):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
+                    break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
                         quantity);
@@ -557,6 +561,10 @@ private:
                 case (PhysicalQuantityT::Vector::B):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
+                    break;
+                case (PhysicalQuantityT::Vector::E):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
+                        quantity);
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
