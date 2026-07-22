@@ -117,6 +117,28 @@ inline Box<std::uint32_t, 2> yUpperGhostCellBox2D()
 
 // ─── 3D ghost-cell boxes ─────────────────────────────────────────────────────
 
+inline Box<std::uint32_t, 3> xLowerGhostCellBox3D()
+{
+    return {{0u, 0u, 0u},
+            {ghostWidth - 1u, nCellsY3D + 2u * ghostWidth - 1u, nCellsZ3D + 2u * ghostWidth - 1u}};
+}
+inline Box<std::uint32_t, 3> xUpperGhostCellBox3D()
+{
+    return {{ghostWidth + nCellsX3D, 0u, 0u},
+            {2u * ghostWidth + nCellsX3D - 1u, nCellsY3D + 2u * ghostWidth - 1u,
+             nCellsZ3D + 2u * ghostWidth - 1u}};
+}
+inline Box<std::uint32_t, 3> yLowerGhostCellBox3D()
+{
+    return {{0u, 0u, 0u},
+            {nCellsX3D + 2u * ghostWidth - 1u, ghostWidth - 1u, nCellsZ3D + 2u * ghostWidth - 1u}};
+}
+inline Box<std::uint32_t, 3> yUpperGhostCellBox3D()
+{
+    return {{0u, ghostWidth + nCellsY3D, 0u},
+            {nCellsX3D + 2u * ghostWidth - 1u, 2u * ghostWidth + nCellsY3D - 1u,
+             nCellsZ3D + 2u * ghostWidth - 1u}};
+}
 inline Box<std::uint32_t, 3> zLowerGhostCellBox3D()
 {
     return {{0u, 0u, 0u},

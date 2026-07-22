@@ -196,6 +196,95 @@ TEST_F(VecFieldBC3D, AntiSymmetricAtZBoundaries)
 }
 
 
+TEST_F(VecFieldBC3D, AntiSymmetricAtXBoundaries)
+{
+    FieldAntiSymmetricBoundaryCondition<VecField3D, GridLayout3D> bc;
+    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+
+    // Bx: primal in X → Neumann
+    {
+        auto& Bx          = B[0];
+        auto bxQty        = HybridQuantity::Scalar::Bx;
+        std::uint32_t psx = layout.physicalStartIndex(bxQty, Direction::X);
+        std::uint32_t pex = layout.physicalEndIndex(bxQty, Direction::X);
+        std::uint32_t sy  = layout.physicalStartIndex(bxQty, Direction::Y);
+        std::uint32_t ey  = layout.physicalEndIndex(bxQty, Direction::Y);
+        std::uint32_t sz  = layout.physicalStartIndex(bxQty, Direction::Z);
+        std::uint32_t ez  = layout.physicalEndIndex(bxQty, Direction::Z);
+        for (std::uint32_t iy = sy; iy <= ey; ++iy)
+            for (std::uint32_t iz = sz; iz <= ez; ++iz)
+            {
+                EXPECT_DOUBLE_EQ(Bx(psx - 1, iy, iz), interiorValue);
+                EXPECT_DOUBLE_EQ(Bx(pex + 1, iy, iz), interiorValue);
+            }
+    }
+
+    // By, Bz: dual in X → Dirichlet(0)
+    for (std::size_t comp : {1u, 2u})
+    {
+        auto& f           = B[comp];
+        auto qty          = HybridQuantity::componentsQuantities(vecQty)[comp];
+        std::uint32_t psx = layout.physicalStartIndex(qty, Direction::X);
+        std::uint32_t pex = layout.physicalEndIndex(qty, Direction::X);
+        std::uint32_t sy  = layout.physicalStartIndex(qty, Direction::Y);
+        std::uint32_t ey  = layout.physicalEndIndex(qty, Direction::Y);
+        std::uint32_t sz  = layout.physicalStartIndex(qty, Direction::Z);
+        std::uint32_t ez  = layout.physicalEndIndex(qty, Direction::Z);
+        for (std::uint32_t iy = sy; iy <= ey; ++iy)
+            for (std::uint32_t iz = sz; iz <= ez; ++iz)
+            {
+                EXPECT_DOUBLE_EQ(f(psx - 1, iy, iz), -interiorValue) << "comp=" << comp;
+                EXPECT_DOUBLE_EQ(f(pex + 1, iy, iz), -interiorValue) << "comp=" << comp;
+            }
+    }
+}
+
+TEST_F(VecFieldBC3D, AntiSymmetricAtYBoundaries)
+{
+    FieldAntiSymmetricBoundaryCondition<VecField3D, GridLayout3D> bc;
+    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+
+    // By: primal in Y → Neumann
+    {
+        auto& By          = B[1];
+        auto byQty        = HybridQuantity::Scalar::By;
+        std::uint32_t psy = layout.physicalStartIndex(byQty, Direction::Y);
+        std::uint32_t pey = layout.physicalEndIndex(byQty, Direction::Y);
+        std::uint32_t sx  = layout.physicalStartIndex(byQty, Direction::X);
+        std::uint32_t ex  = layout.physicalEndIndex(byQty, Direction::X);
+        std::uint32_t sz  = layout.physicalStartIndex(byQty, Direction::Z);
+        std::uint32_t ez  = layout.physicalEndIndex(byQty, Direction::Z);
+        for (std::uint32_t ix = sx; ix <= ex; ++ix)
+            for (std::uint32_t iz = sz; iz <= ez; ++iz)
+            {
+                EXPECT_DOUBLE_EQ(By(ix, psy - 1, iz), interiorValue);
+                EXPECT_DOUBLE_EQ(By(ix, pey + 1, iz), interiorValue);
+            }
+    }
+
+    // Bx, Bz: dual in Y → Dirichlet(0)
+    for (std::size_t comp : {0u, 2u})
+    {
+        auto& f           = B[comp];
+        auto qty          = HybridQuantity::componentsQuantities(vecQty)[comp];
+        std::uint32_t psy = layout.physicalStartIndex(qty, Direction::Y);
+        std::uint32_t pey = layout.physicalEndIndex(qty, Direction::Y);
+        std::uint32_t sx  = layout.physicalStartIndex(qty, Direction::X);
+        std::uint32_t ex  = layout.physicalEndIndex(qty, Direction::X);
+        std::uint32_t sz  = layout.physicalStartIndex(qty, Direction::Z);
+        std::uint32_t ez  = layout.physicalEndIndex(qty, Direction::Z);
+        for (std::uint32_t ix = sx; ix <= ex; ++ix)
+            for (std::uint32_t iz = sz; iz <= ez; ++iz)
+            {
+                EXPECT_DOUBLE_EQ(f(ix, psy - 1, iz), -interiorValue) << "comp=" << comp;
+                EXPECT_DOUBLE_EQ(f(ix, pey + 1, iz), -interiorValue) << "comp=" << comp;
+            }
+    }
+}
+
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
