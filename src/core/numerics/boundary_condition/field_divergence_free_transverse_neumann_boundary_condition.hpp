@@ -68,6 +68,9 @@ public:
         Side const side           = getSide(boundaryLocation);
         size_t const iNormal      = static_cast<size_t>(direction);
 
+        if (iNormal >= dimension)
+            return;
+
         auto fields = vecField.components();
 
         assert(gridLayout.centering(vecField) == gridLayout.centering(tensor_quantity_type::B));

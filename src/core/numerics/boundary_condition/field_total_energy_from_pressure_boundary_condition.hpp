@@ -79,6 +79,10 @@ public:
     {
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
+
+        if (static_cast<size_t>(direction) >= dimension)
+            return;
+
         QtyCentering const centering
             = GridLayoutT::centering(EtotField.physicalQuantity())[static_cast<size_t>(direction)];
 
