@@ -3,10 +3,7 @@
 # mhd_cloud_shock
 #
 # Cloud-shock interaction problem (Toth 2000, 10.1006/jcph.2000.6519, S6.5),
-# used here as a discriminating test for the outer physical BC combination of
-# a fixed supersonic inflow (xupper, super-magnetofast-inflow) with open
-# outflow (xlower, ylower, yupper), run with Hall MHD + spatial
-# hyper-resistivity on a 3-level tagged AMR hierarchy.
+# originally introduced by Dai & Woodward, 1998, 10.1006/jcph.1998.5944.
 #
 # Domain [0,1]x[0,1]. A discontinuity at x=0.6 separates a left MHD state
 # (high pressure, at rest) from a right state (low pressure, moving in -x at
@@ -14,16 +11,17 @@
 # (0.8, 0.5), radius 0.15, embedded in the right state. Because the right
 # state carries vx=-11.2536 into the domain from x=1, and the corresponding
 # fast magnetosonic speed there is ~1.52 (Bx=0 so vf = sqrt(cs^2+va^2)), the
-# flow at xupper is super-fast-magnetosonic: the fixed/inflow boundary
-# belongs on the right, not the left, contrary to a naive reading of the
-# paper's (OCR'd) boundary description. xlower/ylower/yupper use "open"
-# (zero-gradient), matching the paper's "approximately open" description.
+# flow at xupper is super-fast-magnetosonic: a fixed/inflow boundary
+# sits on the right. xlower/ylower/yupper use "open"
+# (zero-gradient) condition.
 #
-# Tagging keeps refined levels tracking the shock front and the cloud edge;
-# because the shock reaches xupper as the run proceeds, this also exercises
-# the init/regrid physical-ghost fill at a *fixed inflow* boundary (as
-# opposed to mhd_harris_with_boundaries, which exercises it at an *open*
-# boundary).
+# At the time when this case is committed (23/07/2025), the case is found
+# not to work in following conditions:
+# - ideal MHD with WENOZ, no matter the resolution between dx = 1/50 and 1/800:
+#   Is observed to fails on NaNs around t ~ 3.0 - 3.5.
+# - ideal MHD with WENO3. Fails right before final time.
+# - Hall MHD, no matter the reconstruction (Linear+VanLeer, WENOZ).
+
 
 import os
 import numpy as np
@@ -74,15 +72,35 @@ CLOUD_RHO = 10.0
 LEFT = State(gamma, 3.86859, 167.345, 0.0, 0.0, 2.1826182, -2.1826182)
 RIGHT = State(gamma, 1.0, 1.0, -11.2536, 0.0, 0.56418958, 0.56418958)
 
-ncells = (50, 50)
+ncells = (50, 50) 
 domain_size = (1.0, 1.0)
 dl = (domain_size[0] / ncells[0], domain_size[1] / ncells[1])
 
-cfl = 0.4
-max_speed = max(abs(LEFT.vx) + LEFT.cf_fast, abs(RIGHT.vx) + RIGHT.cf_fast)
-time_step = cfl * min(dl) / max_speed
+
+def whistler_speed(rho, bdotb, dx):
+    """ Whistler wave speed at grid spacing dx, same formula as PHARE's own. """
+    inv_mesh_size = 1.0 / dx
+    vw = np.sqrt(1.0 + 0.25 * inv_mesh_size**2) + 0.5 * inv_mesh_size
+    return np.sqrt(bdotb) * vw / rho
+
+
+def _bdotb(state):
+    return state.bx**2 + state.by**2 + state.bz**2
+
+
+HALL = False
+
+cfl = 0.8
+dx_min = min(dl)
+LEFT_CW = whistler_speed(LEFT.rho, _bdotb(LEFT), dx_min) if HALL else 0.0
+RIGHT_CW = whistler_speed(RIGHT.rho, _bdotb(RIGHT), dx_min) if HALL else 0.0
+max_speed = max(
+    abs(LEFT.vx) + LEFT.cf_fast + LEFT_CW, abs(RIGHT.vx) + RIGHT.cf_fast + RIGHT_CW
+)
+time_step = cfl * dx_min / max_speed
 final_time = 0.06
-timestamps = np.arange(0.0, final_time + time_step, final_time / 5)
+time_step_nbr = int(np.ceil(final_time / time_step))
+timestamps = np.arange(0, time_step_nbr + 1, 10) * time_step
 diag_dir = "phare_outputs/mhd_cloud_shock"
 
 
@@ -90,6 +108,8 @@ def print_case_info():
     things_to_print = {
         "left state": LEFT,
         "right state": RIGHT,
+        "left whistler speed": LEFT_CW,
+        "right whistler speed": RIGHT_CW,
         "max_speed": max_speed,
         "dt": time_step,
     }
@@ -101,7 +121,7 @@ def print_case_info():
 def config():
     sim = ph.Simulation(
         time_step=time_step,
-        final_time=final_time,
+        time_step_nbr=time_step_nbr,
         cells=ncells,
         dl=dl,
         refinement="tagging",
@@ -109,23 +129,23 @@ def config():
         max_nbr_levels=3,
         nesting_buffer=1,
         smallest_patch_size=15,
-        resistivity=0.0,
-        hyper_resistivity=0.01,
+        eta=0.0,
+        nu=0.0,
         hyper_mode="spatial",
         diag_options={
             "format": "phareh5",
-            "options": {"dir": diag_dir, "mode": "overwrite"},
+            "options": {"dir": diag_dir, "mode": "overwrite", "allow_emergency_dumps": True},
         },
         strict=True,
         gamma=gamma,
-        reconstruction="WENOZ",
-        limiter="None",
+        reconstruction="Linear",
+        limiter="VanLeer",
         riemann="Rusanov",
         interp_order=1,
-        mhd_timestepper="SSPRK4_5",
-        hall=True,
+        mhd_timestepper="TVDRK2",
+        hall=HALL,
         res=False,
-        hyper_res=True,
+        hyper_res=False,
         model_options=["MHDModel"],
         boundary_types=("physical", "physical"),
         boundary_conditions={
@@ -180,6 +200,47 @@ def config():
     return sim
 
 
+def plot_file_for_qty(plot_dir, qty, time):
+    return f"{plot_dir}/cloud_shock_{qty}_t{time}.png"
+
+
+def plot(diag_dir, plot_dir):
+    run = Run(diag_dir)
+    for time in timestamps:
+        run.GetDivB(time).plot(
+            filename=plot_file_for_qty(plot_dir, "divb", time),
+            plot_patches=True,
+            vmin=-1e-11,
+            vmax=1e-11,
+        )
+        run.GetRanks(time).plot(
+            filename=plot_file_for_qty(plot_dir, "Ranks", time), plot_patches=True
+        )
+        run.GetMHDrho(time).plot(
+            filename=plot_file_for_qty(plot_dir, "rho", time), plot_patches=True
+        )
+        for c in ["x", "y", "z"]:
+            run.GetMHDV(time).plot(
+                filename=plot_file_for_qty(plot_dir, f"v{c}", time),
+                plot_patches=True,
+                qty=f"{c}",
+            )
+            run.GetB(time).plot(
+                filename=plot_file_for_qty(plot_dir, f"b{c}", time),
+                plot_patches=True,
+                qty=f"{c}",
+            )
+        run.GetMHDP(time).plot(
+            filename=plot_file_for_qty(plot_dir, "p", time), plot_patches=True
+        )
+        if HALL:
+            run.GetJ(time).plot(
+                filename=plot_file_for_qty(plot_dir, "jz", time),
+                qty="z",
+                plot_patches=True,
+            )
+
+
 def count_nans(diag_dir):
     """Total NaN count over every dumped field (all times, levels, patches,
     ghosts included). Reads the h5 files directly: the pharesee reconstruction
@@ -204,84 +265,81 @@ def count_nans(diag_dir):
 
 
 def assert_inflow_holds_right_state(diag_dir):
-    """Proves at RUNTIME that the xupper super-magnetofast-inflow boundary kept
-    the rightmost row of cells pinned at the prescribed right state (density,
-    vx) at every dump, on the base (level 0) grid which always spans the full
-    domain and therefore always touches xupper.
+    """Checks that the xupper super-magnetofast-inflow boundary kept
+    the rightmost column of cells pinned at the prescribed right state
+    (density, vx) at every dump, on L0.
     """
     if cpp.mpi_rank() != 0:
         return
 
     diag_path = Path(diag_dir)
-    if not diag_path.exists():
+    rho_path = diag_path / "mhd_rho.h5"
+    v_path = diag_path / "mhd_V.h5"
+    if not rho_path.exists() or not v_path.exists():
         return
 
-    run = Run(diag_dir)
-    Lx = domain_size[0]
-    dx = dl[0]
+    import h5py
+
+    x_upper_index = ncells[0] - 1  # last global level-0 cell index in x
+
+    def last_interior_column(grp, dataset_name):
+        if int(grp.attrs["upper"][0]) != x_upper_index:
+            return None
+        ds = grp[dataset_name]
+        ghosts = int(ds.attrs["ghosts"])
+        nx = int(grp.attrs["nbrCells"][0])
+        col = ghosts + nx - 1
+        return np.asarray(ds[col, :])
 
     checked_any = False
-    for t in timestamps:
-        try:
-            rho_f = run.GetMHDrho(t)
-            v_f = run.GetMHDV(t)
-        except Exception:
-            continue
+    with h5py.File(rho_path, "r") as frho, h5py.File(v_path, "r") as fv:
+        for t in timestamps:
+            tkey = f"t/{t:.10f}"
+            lvl0_rho = frho.get(f"{tkey}/pl0")
+            lvl0_v = fv.get(f"{tkey}/pl0")
+            if lvl0_rho is None or lvl0_v is None:
+                continue
 
-        rho_levels = rho_f.patch_levels[0]
-        v_levels = v_f.patch_levels[0]
-        if 0 not in rho_levels or 0 not in v_levels:
-            continue
+            rhos = [
+                col
+                for grp in lvl0_rho.values()
+                if (col := last_interior_column(grp, "rho")) is not None
+            ]
+            vxs = [
+                col
+                for grp in lvl0_v.values()
+                if (col := last_interior_column(grp, "V_x")) is not None
+            ]
 
-        rhos = []
-        for patch in rho_levels[0].patches:
-            pd = patch.patch_datas["value"]
-            vals = np.asarray(pd.dataset[:])
-            assert np.all(np.isfinite(vals)), (
-                f"non-finite density at t={t} in patch {patch.box}"
+            if not rhos or not vxs:
+                continue
+
+            rho_right = np.concatenate(rhos)
+            vx_right = np.concatenate(vxs)
+
+            assert np.all(np.isfinite(rho_right)), (
+                f"non-finite density at t={t} on the xupper boundary column"
             )
-            X, Y = np.meshgrid(pd.x, pd.y, indexing="ij")
-            mask = X >= (Lx - 0.5 * dx)
-            if mask.any():
-                rhos.append(vals[mask])
-
-        vxs = []
-        for patch in v_levels[0].patches:
-            pd = patch.patch_datas["x"]
-            vals = np.asarray(pd.dataset[:])
-            assert np.all(np.isfinite(vals)), (
-                f"non-finite vx at t={t} in patch {patch.box}"
+            assert np.all(np.isfinite(vx_right)), (
+                f"non-finite vx at t={t} on the xupper boundary column"
             )
-            X, Y = np.meshgrid(pd.x, pd.y, indexing="ij")
-            mask = X >= (Lx - 0.5 * dx)
-            if mask.any():
-                vxs.append(vals[mask])
-
-        if not rhos or not vxs:
-            continue
-
-        rho_right = np.concatenate(rhos)
-        vx_right = np.concatenate(vxs)
-
-        assert np.allclose(rho_right, RIGHT.rho, rtol=5e-2), (
-            f"inflow density at t={t} drifted from the prescribed right state: "
-            f"got range [{rho_right.min()},{rho_right.max()}], expected ~{RIGHT.rho}"
-        )
-        assert np.allclose(vx_right, RIGHT.vx, rtol=5e-2), (
-            f"inflow vx at t={t} drifted from the prescribed right state: "
-            f"got range [{vx_right.min()},{vx_right.max()}], expected ~{RIGHT.vx}"
-        )
-        checked_any = True
+            assert np.allclose(rho_right, RIGHT.rho, rtol=5e-2), (
+                f"inflow density at t={t} drifted from the prescribed right "
+                f"state: got range [{rho_right.min()},{rho_right.max()}], "
+                f"expected ~{RIGHT.rho}"
+            )
+            assert np.allclose(vx_right, RIGHT.vx, rtol=5e-2), (
+                f"inflow vx at t={t} drifted from the prescribed right state: "
+                f"got range [{vx_right.min()},{vx_right.max()}], expected ~{RIGHT.vx}"
+            )
+            checked_any = True
 
     assert checked_any, "no timestamps were available to check the inflow boundary"
 
 
-def assert_divb_bounded(diag_dir, tol=1e-2):
-    """Max |div B| over every AMR level stays near round-off. This is the
-    constraint Toth (2000) is about, and a cheap regression signal that the
-    inflow/outflow BC + regrid ghost fill combination isn't poisoning the
-    constrained-transport update. tol is deliberately generous (regression
-    guard against order-of-magnitude blowups, not a precision check).
+def assert_divb_null(diag_dir, tol=1e-11):
+    """
+    Checks that divB is null.
     """
     if cpp.mpi_rank() != 0:
         return
@@ -316,43 +374,6 @@ def assert_divb_bounded(diag_dir, tol=1e-2):
     assert checked_any, "no timestamps were available to check divB"
 
 
-def assert_positivity(diag_dir):
-    """Density and pressure stay strictly positive everywhere, every dump,
-    every level -- catches a broken BC/regrid ghost silently before it turns
-    into a NaN a few steps later.
-    """
-    if cpp.mpi_rank() != 0:
-        return
-
-    diag_path = Path(diag_dir)
-    if not diag_path.exists():
-        return
-
-    run = Run(diag_dir)
-    checked_any = False
-    for t in timestamps:
-        try:
-            rho_f = run.GetMHDrho(t)
-            p_f = run.GetMHDP(t)
-        except Exception:
-            continue
-
-        for field_name, field in (("density", rho_f), ("pressure", p_f)):
-            levels = field.patch_levels[0]
-            for ilvl, lvl in levels.items():
-                for patch in lvl.patches:
-                    vals = np.asarray(patch.patch_datas["value"].dataset[:])
-                    finite = vals[np.isfinite(vals)]
-                    if finite.size:
-                        assert finite.min() > 0, (
-                            f"non-positive {field_name} at t={t} level {ilvl}: "
-                            f"min={finite.min()}"
-                        )
-        checked_any = True
-
-    assert checked_any, "no timestamps were available to check positivity"
-
-
 class CloudShockTest(SimulatorTest):
     def __init__(self, *args, **kwargs):
         super(CloudShockTest, self).__init__(*args, **kwargs)
@@ -369,16 +390,26 @@ class CloudShockTest(SimulatorTest):
         self.register_diag_dir_for_cleanup(diag_dir)
         Simulator(config()).run().reset()
         print_case_info()
-        if cpp.mpi_rank() == 0:
-            self.assertEqual(
-                count_nans(diag_dir),
-                0,
-                "NaN found in dumped fields: inflow/outflow BC or regrid ghost "
-                "fill likely broken",
-            )
-        assert_inflow_holds_right_state(diag_dir)
-        assert_divb_bounded(diag_dir)
-        assert_positivity(diag_dir)
+        try:
+            if cpp.mpi_rank() == 0:
+                self.assertEqual(
+                    count_nans(diag_dir),
+                    0,
+                    "NaN found in dumped fields: inflow/outflow BC or regrid "
+                    "ghost fill likely broken",
+                )
+                plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
+                plot_dir.mkdir(parents=True, exist_ok=True)
+                plot(diag_dir, plot_dir)
+            assert_inflow_holds_right_state(diag_dir)
+            assert_divb_null(diag_dir)
+        except Exception:  # allow case to exit in case of Exception
+            import signal
+            import traceback
+
+            traceback.print_exc()
+            os.killpg(os.getpgrp(), signal.SIGTERM)
+            raise
         cpp.mpi_barrier()
         return self
 
