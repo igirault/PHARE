@@ -63,12 +63,10 @@ def _check_inflow_callable_arity(location, key, fn, ndim):
         1 for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
     )
     expected = ndim + 1
-    if npos > expected:
-        # Too few positional args is tolerated (e.g. a component that ignores unused
-        # spatial dims); too many can never be satisfied by the ndim+1 call site.
+    if npos != expected:
         spatial = ",".join(["x", "y", "z"][:ndim])
         raise ValueError(
-            f"'{key}' callable at inflow boundary '{location}' must take at most {expected} "
+            f"'{key}' callable at inflow boundary '{location}' must take exactly {expected} "
             f"arguments f({spatial},t) for a {ndim}D simulation, but its signature takes {npos}"
         )
 

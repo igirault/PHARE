@@ -112,7 +112,7 @@ class TestInflowOutflowData(unittest.TestCase):
             )
 
     def test_callable_B_component_accepted(self):
-        Bx = lambda x, t: 0.5
+        Bx = lambda x, y, t: 0.5
         resolved = self._resolve(
             xlower={
                 "type": "super-magnetofast-inflow",
@@ -126,6 +126,22 @@ class TestInflowOutflowData(unittest.TestCase):
             xupper={"type": "super-magnetofast-outflow"},
         )
         self.assertTrue(callable(resolved["xlower"].B[0]))
+
+    def test_callable_B_component_wrong_arity_rejected(self):
+        Bx = lambda x, t: 0.5  # 2 positional args, but a 2D sim needs f(x,y,t) = 3
+        with self.assertRaises(ValueError):
+            self._resolve(
+                xlower={
+                    "type": "super-magnetofast-inflow",
+                    "data": {
+                        "velocity": 2.0,
+                        "density": 1.0,
+                        "pressure": 1.0,
+                        "B": [Bx, 1.0, 0.0],
+                    },
+                },
+                xupper={"type": "super-magnetofast-outflow"},
+            )
 
     def test_free_pressure_inflow_and_fixed_pressure_outflow(self):
         resolved = self._resolve(
