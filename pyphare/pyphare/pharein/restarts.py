@@ -170,6 +170,7 @@ def _boundary_conditions_signature(bc):
     one does not; everything else compares by value. Callables that can't be introspected
     (builtins / C funcs) collapse to an opaque marker and are treated as equal.
     """
+    import dataclasses
     import inspect
 
     def proj(v):
@@ -178,6 +179,11 @@ def _boundary_conditions_signature(bc):
                 return ("<callable>", inspect.getsource(v))
             except (OSError, TypeError):
                 return ("<callable>", None)
+        if dataclasses.is_dataclass(v) and not isinstance(v, type):
+            return (
+                type(v).__name__,
+                {f.name: proj(getattr(v, f.name)) for f in dataclasses.fields(v)},
+            )
         if isinstance(v, dict):
             return {k: proj(x) for k, x in v.items()}
         if isinstance(v, (list, tuple)):
