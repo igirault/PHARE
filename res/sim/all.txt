@@ -34,6 +34,7 @@
 # --- one line per single-run functional test ---
 # mhd_harris (higher-order, kept)
 2,1,4,TVDRK3,WENOZ,None,Rusanov,true,false,true
+2,1,4,SSPRK4_5,WENOZ,None,Rusanov,true,false,true
 # mhd_harris_3d (higher-order, kept)
 3,1,6,TVDRK3,WENOZ,None,Rusanov,true,true,true
 # mhd_alfven2d, mhd_rotor, mhd_orszagtang (ideal)
