@@ -99,7 +99,7 @@ class TestSimulation(unittest.TestCase):
         global_vars.sim = None
         s = simulation.Simulation(**self._mhd_kwargs(boundary_types="periodic"))
         for loc in ("xlower", "xupper"):
-            self.assertEqual("none", s.boundary_conditions[loc]["type"])
+            self.assertEqual("none", s.boundary_conditions[loc].type)
         self.assertEqual("ideal_gas", s.eos)
 
     def test_physical_boundary_requires_type(self):
@@ -128,7 +128,7 @@ class TestSimulation(unittest.TestCase):
                 },
             )
         )
-        vx, vy, vz = s.boundary_conditions["xlower"]["data"]["velocity"]
+        vx, vy, vz = s.boundary_conditions["xlower"].velocity
         self.assertEqual((2.0, 0.0, 0.0), (vx, vy, vz))  # +x inward at lower
 
     def test_inflow_scalar_B_rejected(self):
