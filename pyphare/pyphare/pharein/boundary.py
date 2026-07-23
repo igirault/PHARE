@@ -9,8 +9,11 @@ checker() pipeline; it returns a dict[location] -> BoundaryCondition stored as
 Simulation.boundary_conditions.
 """
 
+import inspect
+import math
+import numbers
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 
 from ..core import phare_utilities
 
@@ -45,6 +48,162 @@ class SuperMagnetofastOutflowBC(BoundaryCondition):
     type = "super-magnetofast-outflow"
 
 
+_BOUNDARY_NORMAL_INDEX = {"x": 0, "y": 1, "z": 2}
+
+
+def _check_inflow_callable_arity(location, key, fn, ndim):
+    """A space-time inflow callable takes ndim spatial args plus time: f(x[,y[,z]],t)."""
+    try:
+        params = list(inspect.signature(fn).parameters.values())
+    except (TypeError, ValueError):
+        return  # builtins / C callables can't be introspected: leave to runtime
+    if any(p.kind == p.VAR_POSITIONAL for p in params):
+        return  # f(*args): accepts any arity
+    npos = sum(
+        1 for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    )
+    expected = ndim + 1
+    if npos > expected:
+        # Too few positional args is tolerated (e.g. a component that ignores unused
+        # spatial dims); too many can never be satisfied by the ndim+1 call site.
+        spatial = ",".join(["x", "y", "z"][:ndim])
+        raise ValueError(
+            f"'{key}' callable at inflow boundary '{location}' must take at most {expected} "
+            f"arguments f({spatial},t) for a {ndim}D simulation, but its signature takes {npos}"
+        )
+
+
+def _normalize_inflow_scalar(location, key, val, ndim, positive=False):
+    """A prescribable inflow scalar: a float or a space-time callable f(x[,y[,z]],t)."""
+    if callable(val):
+        _check_inflow_callable_arity(location, key, val, ndim)
+        return val
+    if (
+        not isinstance(val, numbers.Real)
+        or not math.isfinite(val)
+        or (positive and not val > 0)
+    ):
+        raise ValueError(
+            f"'{key}' at inflow boundary '{location}' must be a finite "
+            f"{'positive ' if positive else ''}scalar or a callable f(x,y,z,t), got {val!r}"
+        )
+    return float(val)
+
+
+def _normalize_inflow_vector(location, key, vec, ndim):
+    """A prescribable inflow 3-vector: each component a float or a callable f(x[,y[,z]],t)."""
+    try:
+        comps = list(vec)
+    except TypeError:
+        raise TypeError(
+            f"'{key}' at inflow boundary '{location}' must be a 3-vector (each component a "
+            f"float or a callable f(x,y,z,t)), got {vec!r}"
+        )
+    if len(comps) != 3:
+        raise ValueError(
+            f"'{key}' at inflow boundary '{location}' must be a 3-vector, "
+            f"got a {len(comps)}-element sequence"
+        )
+    return tuple(
+        (
+            _check_inflow_callable_arity(location, f"{key}[{i}]", c, ndim) or c
+            if callable(c)
+            else _normalize_inflow_scalar(location, f"{key}[{i}]", c, ndim)
+        )
+        for i, c in enumerate(comps)
+    )
+
+
+def _normalize_inflow_velocity(location, velocity, ndim):
+    """Return velocity as a (vx, vy, vz) tuple, each component a float or a callable.
+
+    A scalar constant is interpreted as the inward-normal speed: it is stored with a
+    positive sign for lower boundaries (flow enters in the +direction) and a
+    negative sign for upper boundaries (flow enters in the -direction).
+    """
+    if isinstance(velocity, (int, float)):
+        normal_idx = _BOUNDARY_NORMAL_INDEX[location[0]]
+        side = location[1:]
+        sign = 1.0 if side == "lower" else -1.0
+        v = [0.0, 0.0, 0.0]
+        v[normal_idx] = sign * float(velocity)
+        return tuple(v)
+    return _normalize_inflow_vector(location, "velocity", velocity, ndim)
+
+
+@dataclass
+class SuperMagnetofastInflowBC(BoundaryCondition):
+    type = "super-magnetofast-inflow"
+    density: object
+    pressure: object
+    velocity: object
+    B: object
+    location: InitVar[str]
+    ndim: InitVar[int]
+
+    def __post_init__(self, location, ndim):
+        self.density = _normalize_inflow_scalar(
+            location, "density", self.density, ndim, positive=True
+        )
+        self.pressure = _normalize_inflow_scalar(
+            location, "pressure", self.pressure, ndim, positive=True
+        )
+        self.velocity = _normalize_inflow_velocity(location, self.velocity, ndim)
+        self.B = _normalize_inflow_vector(location, "B", self.B, ndim)
+
+    def populate_dict(self, bc_path, ndim):
+        super().populate_dict(bc_path, ndim)
+        _add_inflow_scalar(bc_path, "density", self.density, ndim)
+        _add_inflow_scalar(bc_path, "pressure", self.pressure, ndim)
+        _add_inflow_vector(bc_path, "velocity", self.velocity, ndim)
+        _add_inflow_vector(bc_path, "B", self.B, ndim)
+
+
+@dataclass
+class FreePressureInflowBC(BoundaryCondition):
+    type = "free-pressure-inflow"
+    density: object
+    velocity: object
+    B: object
+    location: InitVar[str]
+    ndim: InitVar[int]
+
+    def __post_init__(self, location, ndim):
+        self.density = _normalize_inflow_scalar(
+            location, "density", self.density, ndim, positive=True
+        )
+        self.velocity = _normalize_inflow_velocity(location, self.velocity, ndim)
+        self.B = _normalize_inflow_vector(location, "B", self.B, ndim)
+
+    def populate_dict(self, bc_path, ndim):
+        super().populate_dict(bc_path, ndim)
+        _add_inflow_scalar(bc_path, "density", self.density, ndim)
+        _add_inflow_vector(bc_path, "velocity", self.velocity, ndim)
+        _add_inflow_vector(bc_path, "B", self.B, ndim)
+
+
+@dataclass
+class FixedPressureOutflowBC(BoundaryCondition):
+    type = "fixed-pressure-outflow"
+    pressure: float
+    location: InitVar[str] = ""
+
+    def __post_init__(self, location):
+        if (
+            not isinstance(self.pressure, numbers.Real)
+            or not math.isfinite(self.pressure)
+            or not self.pressure > 0
+        ):
+            raise ValueError(
+                f"'pressure' at fixed-pressure outflow boundary '{location}' must be a "
+                f"finite positive scalar, got {self.pressure!r}"
+            )
+
+    def populate_dict(self, bc_path, ndim):
+        super().populate_dict(bc_path, ndim)
+        _add_double(f"{bc_path}/data/pressure", self.pressure)
+
+
 # ------------------------------------------------------------------------------
 
 _TYPE_CTORS = {
@@ -52,9 +211,20 @@ _TYPE_CTORS = {
     "open": OpenBC,
     "reflective": ReflectiveBC,
     "super-magnetofast-outflow": SuperMagnetofastOutflowBC,
+    "super-magnetofast-inflow": SuperMagnetofastInflowBC,
+    "free-pressure-inflow": FreePressureInflowBC,
+    "fixed-pressure-outflow": FixedPressureOutflowBC,
 }
-_DATA_CARRYING = set()  # populated in Task 2
-_REQUIRED_DATA_KEYS = {}  # populated in Task 2
+_DATA_CARRYING = {
+    "super-magnetofast-inflow",
+    "free-pressure-inflow",
+    "fixed-pressure-outflow",
+}
+_REQUIRED_DATA_KEYS = {
+    "super-magnetofast-inflow": ("density", "pressure", "velocity", "B"),
+    "free-pressure-inflow": ("density", "velocity", "B"),
+    "fixed-pressure-outflow": ("pressure",),
+}
 
 
 def resolve_boundary_conditions(ndim, **kwargs):
@@ -128,9 +298,10 @@ def resolve_boundary_conditions(ndim, **kwargs):
                         f"Boundary type '{boundary_type}' at '{location}' requires '{key}' "
                         f"inside 'data'"
                     )
-            resolved[location] = _TYPE_CTORS[boundary_type](
-                **data, location=location, ndim=ndim
-            )
+            extra = {"location": location}
+            if boundary_type != "fixed-pressure-outflow":
+                extra["ndim"] = ndim
+            resolved[location] = _TYPE_CTORS[boundary_type](**data, **extra)
         else:
             if "data" in bc:
                 raise ValueError(
@@ -147,3 +318,73 @@ def _add_string(path, val):
     import pybindlibs.dictator as pp
 
     pp.add_string(path, val)
+
+
+def _add_bool(path, val):
+    import pybindlibs.dictator as pp
+
+    pp.add_bool(path, bool(val))
+
+
+def _add_double(path, val):
+    import pybindlibs.dictator as pp
+
+    pp.add_double(path, float(val))
+
+
+class _SpaceTimeFnWrapper:
+    """Wrap a user f(x[,y,z],t) so C++ sees vectors in, a C++ span out."""
+
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __call__(self, *args):
+        import numpy as np
+        from pyphare.core.phare_utilities import is_scalar
+        from pyphare.cpp import cpp_etc_lib
+
+        *xyz, t = args
+        xyz = [np.asarray(arg) for arg in xyz]
+        ret = self.fn(*xyz, float(t))
+        if isinstance(ret, list):
+            ret = np.asarray(ret)
+        if is_scalar(ret):
+            ret = np.full(len(xyz[-1]), ret)
+        return cpp_etc_lib().makePyArrayWrapper(ret)
+
+
+def _add_space_time_function(path, fn, ndim):
+    import pybindlibs.dictator as pp
+
+    {
+        1: pp.addSpaceTimeFunction1D,
+        2: pp.addSpaceTimeFunction2D,
+        3: pp.addSpaceTimeFunction3D,
+    }[ndim](path, _SpaceTimeFnWrapper(fn))
+
+
+def _add_bc_value(path, val, ndim):
+    if callable(val):
+        _add_space_time_function(path, val, ndim)
+    else:
+        _add_double(path, float(val))
+
+
+def _add_inflow_scalar(bc_path, key, val, ndim):
+    """Serialise a prescribable inflow scalar: a constant double or a space-time function,
+    tagged by '<key>_is_function'."""
+    _add_bool(f"{bc_path}/data/{key}_is_function", callable(val))
+    _add_bc_value(f"{bc_path}/data/{key}", val, ndim)
+
+
+def _add_inflow_vector(bc_path, key, vec, ndim):
+    """Serialise a prescribable inflow 3-vector: each component a constant double or a
+    space-time function, tagged by '<key>_is_function' (true if any component is callable).
+    """
+    comps = list(vec)
+    is_fn = any(callable(c) for c in comps)
+    _add_bool(f"{bc_path}/data/{key}_is_function", is_fn)
+    if is_fn:
+        comps = [c if callable(c) else (lambda *a, _c=float(c): _c) for c in comps]
+    for axis, c in zip("xyz", comps, strict=True):
+        _add_bc_value(f"{bc_path}/data/{key}/{axis}", c, ndim)

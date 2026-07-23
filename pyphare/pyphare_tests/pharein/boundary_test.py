@@ -62,5 +62,96 @@ class TestBoundaryStructural(unittest.TestCase):
         self.assertIsInstance(resolved["xupper"], boundary.ReflectiveBC)
 
 
+class TestInflowOutflowData(unittest.TestCase):
+    def _resolve(self, **bcs):
+        return boundary.resolve_boundary_conditions(
+            2,
+            boundary_types=("physical", "periodic"),
+            boundary_conditions=bcs,
+            model_options=["MHDModel"],
+        )
+
+    def test_inflow_velocity_scalar_normalized_signed(self):
+        resolved = self._resolve(
+            xlower={
+                "type": "super-magnetofast-inflow",
+                "data": {
+                    "velocity": 2.0,
+                    "density": 1.0,
+                    "pressure": 1.0,
+                    "B": [0.5, 1.0, 0.0],
+                },
+            },
+            xupper={"type": "super-magnetofast-outflow"},
+        )
+        self.assertEqual((2.0, 0.0, 0.0), resolved["xlower"].velocity)
+
+    def test_inflow_scalar_B_rejected(self):
+        with self.assertRaises((TypeError, ValueError)):
+            self._resolve(
+                xlower={
+                    "type": "super-magnetofast-inflow",
+                    "data": {
+                        "velocity": 2.0,
+                        "density": 1.0,
+                        "pressure": 1.0,
+                        "B": 0.5,
+                    },
+                },
+                xupper={"type": "super-magnetofast-outflow"},
+            )
+
+    def test_inflow_missing_data_key_raises_keyerror(self):
+        with self.assertRaises(KeyError):
+            self._resolve(
+                xlower={
+                    "type": "super-magnetofast-inflow",
+                    "data": {"velocity": 2.0, "density": 1.0, "B": [0.5, 1.0, 0.0]},
+                },
+                xupper={"type": "super-magnetofast-outflow"},
+            )
+
+    def test_callable_B_component_accepted(self):
+        Bx = lambda x, t: 0.5
+        resolved = self._resolve(
+            xlower={
+                "type": "super-magnetofast-inflow",
+                "data": {
+                    "velocity": 2.0,
+                    "density": 1.0,
+                    "pressure": 1.0,
+                    "B": [Bx, 1.0, 0.0],
+                },
+            },
+            xupper={"type": "super-magnetofast-outflow"},
+        )
+        self.assertTrue(callable(resolved["xlower"].B[0]))
+
+    def test_free_pressure_inflow_and_fixed_pressure_outflow(self):
+        resolved = self._resolve(
+            xlower={
+                "type": "free-pressure-inflow",
+                "data": {"velocity": 2.0, "density": 1.0, "B": [0.5, 1.0, 0.0]},
+            },
+            xupper={"type": "fixed-pressure-outflow", "data": {"pressure": 1.0}},
+        )
+        self.assertIsInstance(resolved["xlower"], boundary.FreePressureInflowBC)
+        self.assertEqual(1.0, resolved["xupper"].pressure)
+
+    def test_fixed_pressure_outflow_rejects_non_positive(self):
+        with self.assertRaises(ValueError):
+            self._resolve(
+                xlower={"type": "open"},
+                xupper={"type": "fixed-pressure-outflow", "data": {"pressure": -1.0}},
+            )
+
+    def test_data_block_rejected_on_no_data_type(self):
+        with self.assertRaises(ValueError):
+            self._resolve(
+                xlower={"type": "open", "data": {"density": 1.0}},
+                xupper={"type": "open"},
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
