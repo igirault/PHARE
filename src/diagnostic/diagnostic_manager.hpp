@@ -6,17 +6,18 @@
 
 #include "core/def.hpp"
 #include "core/logger.hpp"
-#include "core/utilities/cadence.hpp"
 #include "core/utilities/types.hpp"
+
+#include "diagnostic/diagnostic_props.hpp"
 
 #include "initializer/data_provider.hpp"
 
 #include "mpi/mpi_utils.hpp"
 
+#include <map>
 #include <memory>
 #include <stdexcept>
-
-#include "diagnostic_props.hpp"
+#include <utility>
 
 namespace PHARE::diagnostic
 {
@@ -120,6 +121,33 @@ public:
     DiagnosticsManager& operator=(DiagnosticsManager&&)      = delete;
 
 private:
+    // Returns true if nextTime < timeStamp + timeStep
+    NO_DISCARD bool needsAction_(double const nextTime, double const timeStamp,
+                                 double const timeStep) const
+    {
+        // casting to float to truncate double to avoid trailing imprecision
+        return static_cast<float>(nextTime - timeStamp) < static_cast<float>(timeStep);
+    }
+
+    // Advances id such as times[id] is past timeStamp + timeStep. If there is no such time, id =
+    // times.size() on return; returned value true if any encountered id needs action.
+    NO_DISCARD bool needsActionAndAdvance_(std::vector<double> const& times, std::size_t& id,
+                                           double const timeStamp, double const timeStep) const
+    {
+        bool acted = false;
+        while (id < times.size() and needsAction_(times[id], timeStamp, timeStep))
+        {
+            acted = true;
+            ++id;
+        }
+        return acted;
+    }
+
+    NO_DISCARD bool needsElapsedAction_(double const nextTime) const
+    {
+        return mpi::unix_timestamp_now() > nextTime;
+    }
+
     NO_DISCARD bool needsWrite_(DiagnosticProperties& diag, double timeStamp, double timeStep)
     {
         auto const& diag_key     = diag.type + diag.quantity;
@@ -127,12 +155,11 @@ private:
         auto& nextWriteElapsed   = nextWriteElapsed_[diag_key];
 
         auto const writeTimestampNow
-            = core::cadence_catch_up(diag.writeTimestamps, nextWriteTimestamp, timeStamp, timeStep);
+            = needsActionAndAdvance_(diag.writeTimestamps, nextWriteTimestamp, timeStamp, timeStep);
 
         auto const writeElapsedNow
             = nextWriteElapsed < diag.elapsedTimestamps.size()
-              and core::cadence_elapsed(diag.elapsedTimestamps[nextWriteElapsed]);
-
+              and needsElapsedAction_(diag.elapsedTimestamps[nextWriteElapsed]);
         if (writeElapsedNow)
             ++nextWriteElapsed;
 
@@ -142,7 +169,7 @@ private:
 
     NO_DISCARD bool needsCompute_(DiagnosticProperties& diag, double timeStamp, double timeStep)
     {
-        return core::cadence_catch_up(diag.computeTimestamps,
+        return needsActionAndAdvance_(diag.computeTimestamps,
                                       nextCompute_[diag.type + diag.quantity], timeStamp, timeStep);
     }
 
@@ -210,16 +237,10 @@ bool DiagnosticsManager<Writer>::dump(double timeStamp, double timeStep)
     std::vector<DiagnosticProperties*> activeDiagnostics;
     for (auto& diag : diagnostics_)
     {
-        // needsCompute_ advances its own timestamp index (catch-up), so call it unconditionally
-        bool const computeNow = needsCompute_(diag, timeStamp, timeStep);
-        if (computeNow)
+        if (needsCompute_(diag, timeStamp, timeStep))
             writer_->getDiagnosticWriterForType(diag.type)->compute(diag);
-        // call needsWrite_ unconditionally so its timestamp index still advances
-        bool const writeNow = needsWrite_(diag, timeStamp, timeStep);
-        if (writeNow)
-        {
+        if (needsWrite_(diag, timeStamp, timeStep))
             activeDiagnostics.emplace_back(&diag);
-        }
     }
 
     if (activeDiagnostics.size() > 0)
