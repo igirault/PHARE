@@ -16,7 +16,7 @@ def config_uni(**kwargs):
     sim = ph.Simulation(
         smallest_patch_size=20,
         largest_patch_size=20,
-        time_step={"mode": "adaptive", "cfl": 0.8},
+        time_step={"mode": "adaptive", "cfl_wave": 0.8},
         final_time=20.0,
         boundary_types="periodic",  # boundary condition, string or tuple, length == len(cell) == len(dl)
         cells=500,  # integer or tuple length == dimension
@@ -99,7 +99,7 @@ def config_td(**kwargs):
     sim = ph.Simulation(
         smallest_patch_size=20,
         largest_patch_size=20,
-        time_step={"mode": "adaptive", "cfl": 0.8},
+        time_step={"mode": "adaptive", "cfl_wave": 0.8},
         final_time=20.0,
         boundary_types="periodic",  # boundary condition, string or tuple, length == len(cell) == len(dl)
         cells=200,  # integer or tuple length == dimension

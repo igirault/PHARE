@@ -187,8 +187,8 @@ private:
     int maxMHDLevel_;
     double dt_;
     std::string timeStepType_  = "constant";
-    double cfl_                = 0; // advective CFL coefficient (adaptive)
-    double fourier_            = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
+    double cflWave_            = 0; // wave CFL coefficient (adaptive)
+    double cflDiffusive_       = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
     int timeStepNbr_           = 0;
     double startTime_          = 0;
     double finalTime_          = 0;
@@ -432,8 +432,8 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
     , dt_{cppdict::get_value(dict, "simulation/time_step/value", 0.)}
     , timeStepType_{cppdict::get_value(dict, "simulation/time_step/mode", std::string{"constant"})}
-    , cfl_{cppdict::get_value(dict, "simulation/time_step/cfl", 0.)}
-    , fourier_{cppdict::get_value(dict, "simulation/time_step/fourier", 0.)}
+    , cflWave_{cppdict::get_value(dict, "simulation/time_step/cfl_wave", 0.)}
+    , cflDiffusive_{cppdict::get_value(dict, "simulation/time_step/cfl_diffusive", 0.)}
     , timeStepNbr_{cppdict::get_value(dict, "simulation/time_step_nbr", 0)}
     , finalTime_{dict["simulation"]["final_time"].template to<double>()}
     , functors_{functors_setup(dict)}
@@ -509,15 +509,11 @@ void Simulator<opts>::initialize()
 
         integrator_->initialize();
 
-        // Prime dt_ for the *initial* dump, which fires before the first advance(): timeStep() is
-        // a pure read of dt_, and under adaptive dt dt_ is constructed to 0. A 0-width window makes
-        // the diagnostics/restarts catch-up drop anything scheduled at startTime_ (0 < 0 is false),
-        // so seed the first CFL-stable dt now that the hierarchy is populated. advance(KahanTime-
-        // Stamper) overwrites it every step thereafter.
+        // First dt_ for the init dump
         if (timeStepType_ == "adaptive")
         {
             double const dt = multiphysInteg_->computeStableDt(
-                *hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
+                *hierarchy_, solver::CFLNumbers{cflWave_, cflDiffusive_});
             dt_ = std::min(dt, finalTime_ - currentTime_);
         }
     }
@@ -596,11 +592,6 @@ double Simulator<opts>::advance(double dt)
     return dt;
 }
 
-// Per-timestepper: figure out the dt for the current step (recomputing only if this stamper
-// type actually needs to), then delegate to advance(double) - the primitive that does the
-// physics step + time accumulation, unchanged. `ts` is only used as an overload-selector tag
-// (a copy of whichever concrete stamper Python is holding): the persistent state that matters
-// (currentTime_, timeStamper) is only ever touched by advance(double) itself.
 template<auto opts>
 double Simulator<opts>::advance(core::ConstantTimeStamper const& ts)
 {
@@ -610,11 +601,9 @@ double Simulator<opts>::advance(core::ConstantTimeStamper const& ts)
 template<auto opts>
 double Simulator<opts>::advance(core::KahanTimeStamper const& ts)
 {
-    // adaptive: always recompute a fresh CFL-stable dt from the current state, and keep dt_ up
-    // to date so timeStep() (which must stay a pure read) can just return it.
-    double const dt
-        = multiphysInteg_->computeStableDt(*hierarchy_, solver::StabilityNumbers{cfl_, fourier_});
-    dt_ = std::min(dt, finalTime_ - currentTime_);
+    double const dt = multiphysInteg_->computeStableDt(*hierarchy_,
+                                                       solver::CFLNumbers{cflWave_, cflDiffusive_});
+    dt_             = std::min(dt, finalTime_ - currentTime_);
     return advance(dt_);
 }
 

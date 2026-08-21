@@ -101,7 +101,7 @@ public:
                 double const time) override;
 
     double computeStableDt(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           StabilityNumbers const& stability) override;
+                           CFLNumbers const& cflNumbers) override;
 
     void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber, IPhysicalModel_t& model,
                       IMessenger& fromCoarserMessenger, double const currentTime,
@@ -317,19 +317,17 @@ void SolverPPC<HybridModel, AMR_Types>::reflux(IPhysicalModel_t& model,
 template<typename HybridModel, typename AMR_Types>
 double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& model,
                                                           SAMRAI::hier::PatchLevel& level,
-                                                          StabilityNumbers const& stability)
+                                                          CFLNumbers const& cflNumbers)
 {
     PHARE_LOG_SCOPE(1, "SolverPPC::computeStableDt");
 
-    // hybrid uses only the advective (whistler) bucket; stability.fourier is unused here.
-    double const cfl = stability.cfl;
+    double const wave = cflNumbers.wave;
 
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
     auto& n           = hybridModel.state.ions.massDensity();
     auto& B           = hybridModel.state.electromag.B;
 
-    // whistler-only advective bucket (Hall term dominates hybrid stiffness):
-    // dt = cfl / sum_d c_whistler_d / dx_d, cfl normalized so 1 is the stability limit.
+    // whistler wave cfl criterion
     double dt = std::numeric_limits<double>::max();
 
     for (auto& patch : level)
@@ -355,13 +353,14 @@ double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& mode
 
             double invDtWhistler = 0;
             for (std::size_t d = 0; d < dimension; ++d)
-                invDtWhistler += core::compute_whistler_(1.0 / meshSize[d], rho, BdotB) / meshSize[d];
+                invDtWhistler
+                    += core::compute_whistler_(1.0 / meshSize[d], rho, BdotB) / meshSize[d];
 
-            dt = std::min(dt, cfl / invDtWhistler);
+            dt = std::min(dt, wave / invDtWhistler);
         });
     }
 
-    return dt; // LOCAL (per-rank) min; caller reduces once across ranks for the whole cascade
+    return dt;
 }
 
 

@@ -62,54 +62,54 @@ class TimeStepValidation(unittest.TestCase):
 
     # ---- adaptive (dict time_step) ---------------------------------------------------------
 
-    def test_adaptive_accepts_final_time_and_cfl(self):
+    def test_adaptive_accepts_final_time_and_cfl_wave(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl": 0.4},
+            time_step={"mode": "adaptive", "cfl_wave": 0.4},
             final_time=1.0,
             **baseArgs,
         )
         self.assertEqual(sim.time_stepper.mode, "adaptive")
-        self.assertEqual(sim.time_stepper.cfl, 0.4)
+        self.assertEqual(sim.time_stepper.cfl_wave, 0.4)
         self.assertEqual(sim.final_time, 1.0)
         # with adaptive dt these are unknown ahead of the run
         self.assertIsNone(sim.time_step)
         self.assertIsNone(sim.time_step_nbr)
 
-    def test_adaptive_fourier_defaults_to_cfl(self):
+    def test_adaptive_cfl_diffusive_defaults_to_cfl_wave(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl": 0.4}, final_time=1.0, **baseArgs
+            time_step={"mode": "adaptive", "cfl_wave": 0.4}, final_time=1.0, **baseArgs
         )
-        self.assertEqual(sim.time_stepper.fourier, 0.4)
+        self.assertEqual(sim.time_stepper.cfl_diffusive, 0.4)
 
-    def test_adaptive_fourier_explicit(self):
+    def test_adaptive_cfl_diffusive_explicit(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl": 0.4, "fourier": 0.2},
+            time_step={"mode": "adaptive", "cfl_wave": 0.4, "cfl_diffusive": 0.2},
             final_time=1.0,
             **baseArgs,
         )
-        self.assertEqual(sim.time_stepper.fourier, 0.2)
+        self.assertEqual(sim.time_stepper.cfl_diffusive, 0.2)
 
-    def test_adaptive_requires_cfl(self):
+    def test_adaptive_requires_cfl_wave(self):
         with self.assertRaises(ValueError):
             ph.Simulation(time_step={"mode": "adaptive"}, final_time=1.0, **baseArgs)
 
     def test_adaptive_requires_final_time(self):
         with self.assertRaises(ValueError):
-            ph.Simulation(time_step={"mode": "adaptive", "cfl": 0.4}, **baseArgs)
+            ph.Simulation(time_step={"mode": "adaptive", "cfl_wave": 0.4}, **baseArgs)
 
     def test_adaptive_rejects_time_step_nbr(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl": 0.4},
+                time_step={"mode": "adaptive", "cfl_wave": 0.4},
                 final_time=1.0,
                 time_step_nbr=10,
                 **baseArgs,
             )
 
-    def test_adaptive_rejects_non_positive_cfl(self):
+    def test_adaptive_rejects_non_positive_cfl_wave(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl": 0.0},
+                time_step={"mode": "adaptive", "cfl_wave": 0.0},
                 final_time=1.0,
                 **baseArgs,
             )
@@ -117,15 +117,15 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_rejects_unknown_dict_key(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl": 0.4, "courant": 0.2},
+                time_step={"mode": "adaptive", "cfl_wave": 0.4, "courant": 0.2},
                 final_time=1.0,
                 **baseArgs,
             )
 
-    def test_adaptive_fourier_rejects_non_positive(self):
+    def test_adaptive_cfl_diffusive_rejects_non_positive(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl": 0.4, "fourier": 0.0},
+                time_step={"mode": "adaptive", "cfl_wave": 0.4, "cfl_diffusive": 0.0},
                 final_time=1.0,
                 **baseArgs,
             )
@@ -133,7 +133,7 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_rejects_final_time_before_restart_time(self):
         with self.assertRaises(RuntimeError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl": 0.4},
+                time_step={"mode": "adaptive", "cfl_wave": 0.4},
                 final_time=1.0,
                 restart_options={"mode": "overwrite", "restart_time": 2.0},
                 **baseArgs,
@@ -141,7 +141,7 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_accepts_final_time_after_restart_time(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl": 0.4},
+            time_step={"mode": "adaptive", "cfl_wave": 0.4},
             final_time=5.0,
             restart_options={"mode": "overwrite", "restart_time": 2.0},
             **baseArgs,
@@ -153,7 +153,7 @@ class TimeStepValidation(unittest.TestCase):
     def test_unknown_mode_raises(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "variable", "cfl": 0.4},  # only "adaptive" is valid
+                time_step={"mode": "variable", "cfl_wave": 0.4},  # only "adaptive" is valid
                 final_time=1.0,
                 **baseArgs,
             )

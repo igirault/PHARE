@@ -103,15 +103,9 @@ int main(int argc, char** argv)
 
     [[maybe_unused]] auto time = simulator->startTime();
 
-    // dt actually used by the last advance(): under adaptive dt, timeStep() queried again after
-    // the final advance() would return 0 (clamped to endTime()-currentTime()==0), silently
-    // dropping anything scheduled exactly at endTime(); use the dt that produced the current
-    // state instead, falling back to timeStep() before the first advance() has happened.
-    double lastAdvanceDt = simulator->timeStep();
-
     auto const dump = [&]() {
-        simulator->dump_diagnostics(simulator->currentTime(), lastAdvanceDt);
-        simulator->dump_restarts(simulator->currentTime(), lastAdvanceDt);
+        simulator->dump_diagnostics(simulator->currentTime(), simulator->timeStep());
+        simulator->dump_restarts(simulator->currentTime(), simulator->timeStep());
     };
 
     while (simulator->currentTime() < simulator->endTime())
@@ -120,8 +114,7 @@ int main(int argc, char** argv)
             return gSignalStatus;
 
         dump();
-        lastAdvanceDt = simulator->timeStep();
-        simulator->advance(lastAdvanceDt);
+        simulator->advance(simulator->timeStep());
     }
 
     dump();

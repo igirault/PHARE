@@ -61,9 +61,9 @@ private:
     std::unordered_map<std::size_t, double> oldTime_;
 
     // adaptive-timestep coefficients (read from the algo dict, mirror ComputeFluxes/CT keys)
-    double const gamma_; // adiabatic index (advective fast speed)
+    double const gamma_; // adiabatic index (fast magnetosonic speed)
     double const eta_;   // resistivity (parabolic / Fourier bucket)
-    bool const hall_;    // Hall active -> add whistler speed to the advective bucket
+    bool const hall_;    // Hall active -> add whistler speed to the wave bucket
 
 public:
     SolverMHD(PHARE::initializer::PHAREDict const& dict)
@@ -131,7 +131,7 @@ public:
                       double const newTime) override;
 
     double computeStableDt(IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level,
-                           StabilityNumbers const& stability) override;
+                           CFLNumbers const& cflNumbers) override;
 
     void onRegrid() override {}
 
@@ -403,11 +403,11 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::advanceL
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger>
 double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::computeStableDt(
-    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, StabilityNumbers const& stability)
+    IPhysicalModel_t& model, SAMRAI::hier::PatchLevel& level, CFLNumbers const& cflNumbers)
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::computeStableDt");
 
-    auto const [cfl, fourier] = stability;
+    auto const [wave, diffusive] = cflNumbers;
 
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
     auto& rho      = mhdModel.state.rho;
@@ -415,13 +415,6 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::comput
     auto& B        = mhdModel.state.B;
     auto& Etot     = mhdModel.state.Etot;
 
-    // Two stability buckets, combined by min. Both coefficients are normalized so that the value
-    // 1 sits exactly on the (forward-Euler / SSP-RK) stability limit, independent of dimension, so
-    // cfl, fourier are meant to be chosen in (0, 1]:
-    //   - advective: dt = cfl / sum_d (|v_d| + c_fast_d [+ c_whistler_d if Hall]) / dx_d
-    //   - resistive: dt = fourier / (2 * eta * sum_d 1/dx_d^2)   (eta uniform)
-    // The level's patches are distributed across ranks, so the local min below is reduced across
-    // ranks before returning. The inter-level projection is applied by the caller.
     double dt = std::numeric_limits<double>::max();
 
     for (auto& patch : level)
@@ -431,13 +424,13 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::comput
 
         auto const meshSize = layout.meshSize();
 
-        // resistive (Fourier) bucket: eta uniform -> one value per patch, no cell loop needed
+        // diffusive cfl constraint
         if (eta_ > 0)
         {
             double invdx2 = 0;
             for (std::size_t d = 0; d < dimension; ++d)
                 invdx2 += 1.0 / (meshSize[d] * meshSize[d]);
-            dt = std::min(dt, fourier / (2.0 * eta_ * invdx2));
+            dt = std::min(dt, diffusive / (2.0 * eta_ * invdx2));
         }
 
         auto const& rhoVx = rhoV(core::Component::X);
@@ -447,7 +440,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::comput
         auto const& By    = B(core::Component::Y);
         auto const& Bz    = B(core::Component::Z);
 
-        // advective (+ Hall whistler) bucket: per cell, sum-of-speeds form
+        // wave cfl constraint
         layout.evalOnBox(rho, [&](auto&... args) mutable {
             core::MeshIndex<dimension> const index{args...};
 
@@ -455,10 +448,13 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::comput
             auto const vx = rhoVx(index) / r;
             auto const vy = rhoVy(index) / r;
             auto const vz = rhoVz(index) / r;
-            // cell-center the face-centered (Yee) fields, same idiom as ToPrimitiveConverter
-            auto const bx = GridLayout::template project<GridLayout::implT::faceXToCellCenter>(Bx, index);
-            auto const by = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(By, index);
-            auto const bz = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
+
+            auto const bx
+                = GridLayout::template project<GridLayout::implT::faceXToCellCenter>(Bx, index);
+            auto const by
+                = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(By, index);
+            auto const bz
+                = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(Bz, index);
 
             auto const P     = core::eosEtotToP(gamma_, r, vx, vy, vz, bx, by, bz, Etot(index));
             auto const BdotB = bx * bx + by * by + bz * bz;
@@ -467,19 +463,19 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::comput
             std::array<double, 3> const b{bx, by, bz};
 
             // sum_d (|v_d| + c_fast_d + c_whistler_d) / dx_d over simulated directions
-            double invDtAdv = 0;
+            double invDtWave = 0;
             for (std::size_t d = 0; d < dimension; ++d)
             {
                 auto const cfast = core::compute_fast_magnetosonic_(gamma_, r, b[d], BdotB, P);
                 // Hall whistler
                 auto const cw = hall_ ? core::compute_whistler_(1.0 / meshSize[d], r, BdotB) : 0.0;
-                invDtAdv += (std::abs(v[d]) + cfast + cw) / meshSize[d];
+                invDtWave += (std::abs(v[d]) + cfast + cw) / meshSize[d];
             }
-            dt = std::min(dt, cfl / invDtAdv);
+            dt = std::min(dt, wave / invDtWave);
         });
     }
 
-    return dt; // LOCAL (per-rank) min; caller reduces once across ranks for the whole cascade
+    return dt;
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy, typename Messenger>

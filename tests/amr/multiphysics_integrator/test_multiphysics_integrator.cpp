@@ -162,11 +162,8 @@ TYPED_TEST(SimulatorTest, returnsCorrectMessengerForEachLevel)
 
 
 // -----------------------------------------------------------------------------
-//                     ADAPTIVE DT: computeStableDt cascade
+//                                   ADAPTIVE DT
 // -----------------------------------------------------------------------------
-// job.py.in sets up a 4-level hybrid-only hierarchy (L0..L3), giving us a real multi-level
-// SAMRAI hierarchy to exercise the ratio^2 projection + min-over-levels logic without having to
-// build a hierarchy fixture from scratch.
 
 TYPED_TEST(SimulatorTest, computeStableDtReturnsAFiniteBound)
 {
@@ -176,7 +173,7 @@ TYPED_TEST(SimulatorTest, computeStableDtReturnsAFiniteBound)
 
     ASSERT_GT(hierarchy.getNumberOfLevels(), 1);
 
-    auto const dt = multiphysInteg.computeStableDt(hierarchy, {/*cfl=*/0.4, /*fourier=*/0.4});
+    auto const dt = multiphysInteg.computeStableDt(hierarchy, {/*wave=*/0.4, /*diffusive=*/0.4});
 
     EXPECT_GT(dt, 0.);
     EXPECT_LT(dt, std::numeric_limits<double>::max());
