@@ -29,7 +29,7 @@ def config():
     L = 0.5
 
     sim = ph.Simulation(
-        time_step={"mode": "adaptive", "cfl": 0.8},
+        time_step={"mode": "adaptive", "cfl_wave": 0.8},
         final_time=final_time,
         cells=cells,
         dl=(0.40, 0.40),

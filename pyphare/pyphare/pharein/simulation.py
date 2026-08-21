@@ -901,16 +901,16 @@ class Simulation(object):
 
         * ``{"mode": "constant", "value": <dt>}`` - equivalent to passing ``time_step=<dt>``
           (``"value"`` is optional and may be replaced by ``final_time``/``time_step_nbr``).
-        * ``{"mode": "adaptive", "cfl": <c>, "fourier": <f>}`` - the time step is recomputed
-          each step from a CFL constraint (MHD only). Requires ``final_time`` and is
-          incompatible with ``time_step_nbr``.
+        * ``{"mode": "adaptive", "cfl_wave": <w>, "cfl_diffusive": <d>}`` - the time step is
+          recomputed each step from a CFL constraint. Requires ``final_time`` and
+          is incompatible with ``time_step_nbr``.
 
-          * **cfl** (``float``), advective CFL coefficient. Normalized so 1 is the stability
-            limit (sum-of-speeds form, dimension-independent); choose in (0, 1], typically
-            ~0.3-0.5.
-          * **fourier** (``float``), resistive Fourier coefficient. Normalized so 1 is the
-            diffusion stability limit; choose in (0, 1]. Defaults to ``cfl``. Only relevant
-            when resistivity is non-zero.
+          * **cfl_wave** (``float``), hyperbolic (wave) CFL coefficient. Normalized so 1 is
+            the stability limit (sum-of-speeds form, dimension-independent); choose in
+            (0, 1]. In hall mhd and hybrid, whistler wave speed limits is used.
+          * **cfl_diffusive** (``float``), diffusive CFL coefficient. Normalized so 1 is
+            the diffusion stability limit; choose in (0, 1]. Defaults to ``cfl_wave``. Only
+            relevant when resistivity is non-zero.
 
           With adaptive stepping there is no fixed dump grid, so diagnostics require explicit
           ``write_timestamps``.

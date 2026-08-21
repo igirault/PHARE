@@ -2,9 +2,11 @@
 Time-step resolution and validation for pharein.Simulation.
 
 'time_step' (the public Simulation constructor option) may be:
-  - a scalar (or absent)                              -> ConstantTimeStepper
-  - {'mode': 'constant', 'value': <dt>}                -> ConstantTimeStepper ('value' optional)
-  - {'mode': 'adaptive', 'cfl': <c>, 'fourier': <f>}    -> AdaptiveTimeStepper ('fourier' defaults to 'cfl')
+  - a scalar (or absent)                 -> ConstantTimeStepper
+  - {'mode': 'constant', 'value': <dt>}  -> ConstantTimeStepper ('value' optional)
+  - {'mode': 'adaptive', 'cfl_wave': <w>, 'cfl_diffusive': <d>}
+                                         -> AdaptiveTimeStepper
+                                            ('cfl_diffusive' defaults to 'cfl_wave')
 
 resolve_time_stepper(**kwargs) is the single entry point used by Simulation's checker()
 pipeline; it returns the TimeStepper instance stored as Simulation.time_stepper.
@@ -84,8 +86,8 @@ class ConstantTimeStepper(TimeStepper):
 class AdaptiveTimeStepper(TimeStepper):
     mode = "adaptive"
 
-    cfl: float = None
-    fourier: float = None
+    cfl_wave: float = None
+    cfl_diffusive: float = None
 
     def resolve_levels(self, max_nbr_levels):
         pass  # dt (and per-level step counts) are unknown ahead of the run
@@ -98,8 +100,8 @@ class AdaptiveTimeStepper(TimeStepper):
     def populate_dict(self, dp):
         super().populate_dict(dp)
         # dt is computed each step on the C++ side; bound the run by final_time
-        dp.add_double("simulation/time_step/cfl", self.cfl)
-        dp.add_double("simulation/time_step/fourier", self.fourier)
+        dp.add_double("simulation/time_step/cfl_wave", self.cfl_wave)
+        dp.add_double("simulation/time_step/cfl_diffusive", self.cfl_diffusive)
 
 
 # ------------------------------------------------------------------------------
@@ -173,9 +175,9 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
 
     # adaptive: dt is recomputed each step from a CFL constraint. 'time_step_nbr' is not
     # allowed (imposing a step count with a variable dt is out of scope for now).
-    _check_keys({"mode", "cfl", "fourier"})
-    if "cfl" not in ts:
-        raise ValueError("Error: adaptive time_step requires 'cfl'")
+    _check_keys({"mode", "cfl_wave", "cfl_diffusive"})
+    if "cfl_wave" not in ts:
+        raise ValueError("Error: adaptive time_step requires 'cfl_wave'")
     if time_step_nbr is not None:
         raise ValueError(
             "Error: adaptive time_step is incompatible with a constant 'time_step' / 'time_step_nbr'"
@@ -183,16 +185,16 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
     if final_time is None:
         raise ValueError("Error: adaptive time_step requires 'final_time'")
 
-    cfl = ts["cfl"]
-    fourier = ts.get("fourier", cfl)
-    if cfl <= 0:
-        raise ValueError("Error: adaptive time_step 'cfl' must be > 0")
-    if fourier <= 0:
-        raise ValueError("Error: adaptive time_step 'fourier' must be > 0")
+    cfl_wave = ts["cfl_wave"]
+    cfl_diffusive = ts.get("cfl_diffusive", cfl_wave)
+    if cfl_wave <= 0:
+        raise ValueError("Error: adaptive time_step 'cfl_wave' must be > 0")
+    if cfl_diffusive <= 0:
+        raise ValueError("Error: adaptive time_step 'cfl_diffusive' must be > 0")
     if final_time - start_time < 0:
         raise RuntimeError("Simulation time cannot be negative - review inputs")
 
-    return AdaptiveTimeStepper(start_time, final_time, cfl, fourier)
+    return AdaptiveTimeStepper(start_time, final_time, cfl_wave, cfl_diffusive)
 
 
 def resolve_time_stepper(**kwargs):

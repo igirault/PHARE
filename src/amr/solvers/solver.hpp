@@ -21,16 +21,14 @@ namespace PHARE::solver
 {
 
 /**
- * @brief StabilityNumbers bundles the dimensionless coefficients scaling each stability bucket
- * used by computeStableDt. Each is normalized so that 1 is the stability limit independent of
- * dimension (choose in (0, 1]):
- *   - cfl: advective (hyperbolic, incl. Hall whistler when active)
- *   - fourier: resistive (parabolic diffusion), Fourier number Fo = eta*dt/dx^2
+ * @brief Bundles the CFL coefficients scaling for the two stability criteria:
+ *   - wave: hyperbolic (incl. Hall whistler when active)
+ *   - diffusive: due to resistive diffusion
  */
-struct StabilityNumbers
+struct CFLNumbers
 {
-    double cfl;
-    double fourier;
+    double wave;
+    double diffusive;
 };
 
 /**
@@ -106,8 +104,7 @@ public:
      * @brief implements the reflux operations needed for a given solver.
      */
     virtual void reflux(IPhysicalModel_t& model, level_t& level,
-                        amr::IMessenger<IPhysicalModel_t>& messenger, double const time)
-        = 0;
+                        amr::IMessenger<IPhysicalModel_t>& messenger, double const time) = 0;
 
     /**
      * @brief advanceLevel advances the given level from t to t+dt
@@ -115,8 +112,7 @@ public:
     virtual void advanceLevel(hierarchy_t const& hierarchy, int const levelNumber,
                               IPhysicalModel_t& view,
                               amr::IMessenger<IPhysicalModel_t>& fromCoarser,
-                              double const currentTime, double const newTime)
-        = 0;
+                              double const currentTime, double const newTime) = 0;
 
 
 
@@ -131,22 +127,18 @@ public:
 
 
     /**
-     * @brief computeStableDt returns the level's LOCAL stable time step: the minimum over
-     * only the patches owned by the calling rank, NOT YET reduced across the ranks the level
-     * is distributed over. The caller (MultiPhysicsIntegrator::computeStableDt) is
-     * responsible for the single cross-rank reduction covering the whole multi-level cascade.
+     * @brief computeStableDt returns the level stable time step local to the mpi rank. The caller
+     * (MultiPhysicsIntegrator::computeStableDt) is responsible for the mpi reduction.
      *
-     * It combines two stability buckets, each scaled by its own coefficient in @p stability
-     * (both normalized so that 1 is the stability limit independent of dimension):
-     *   - advective (hyperbolic, incl. Hall whistler when active), scaled by stability.cfl
-     *   - resistive (parabolic diffusion), scaled by stability.fourier (Fourier number Fo =
-     *     eta*dt/dx^2)
-     * and returns their min.
+     * It computes the time step based on the most constraining CFL condition, each scaled by its
+     * own coefficient in @p cflNumbers:
+     *   - wave (hyperbolic, incl. Hall whistler when active), scaled by cflNumbers.wave
+     *   - resistive (parabolic diffusion), scaled by cflNumbers.diffusive
      *
      * If not overriden by the actual Solver implementation, returns a very big double.
      */
     virtual double computeStableDt(IPhysicalModel_t& model, level_t& level,
-                                   StabilityNumbers const& stability)
+                                   CFLNumbers const& cflNumbers)
     {
         return std::numeric_limits<double>::max();
     }
