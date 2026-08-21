@@ -896,11 +896,24 @@ class Simulation(object):
         * **final_time** (``float``), final simulation time. Use with time_step OR time_step_nbr
         * **time_step** (``float``), simulation time step. Use with time_step_nbr OR final_time
         * **time_step_nbr** (``int``), number of time step to perform. Use with final_time OR time_step
-        * **time_step_type** (``str``), ``"constant"`` (default) or ``"adaptive"``. When ``"adaptive"``,
-          the time step is recomputed each step from a CFL constraint (MHD only); supply
-          ``final_time`` and ``time_step_cfl`` (not ``time_step``/``time_step_nbr``).
-        * **time_step_cfl** (``float``), advective CFL coefficient for adaptive time stepping. Normalized so 1 is the stability limit (sum-of-speeds form, dimension-independent); choose in (0, 1], typically ~0.3-0.5.
-        * **time_step_fourier** (``float``), resistive Fourier coefficient for adaptive time stepping. Normalized so 1 is the diffusion stability limit; choose in (0, 1]. Defaults to time_step_cfl. Only relevant when resistivity is non-zero.
+
+        ``time_step`` may also be given as a dict selecting the time-stepping mode:
+
+        * ``{"mode": "constant", "value": <dt>}`` - equivalent to passing ``time_step=<dt>``
+          (``"value"`` is optional and may be replaced by ``final_time``/``time_step_nbr``).
+        * ``{"mode": "adaptive", "cfl": <c>, "fourier": <f>}`` - the time step is recomputed
+          each step from a CFL constraint (MHD only). Requires ``final_time`` and is
+          incompatible with ``time_step_nbr``.
+
+          * **cfl** (``float``), advective CFL coefficient. Normalized so 1 is the stability
+            limit (sum-of-speeds form, dimension-independent); choose in (0, 1], typically
+            ~0.3-0.5.
+          * **fourier** (``float``), resistive Fourier coefficient. Normalized so 1 is the
+            diffusion stability limit; choose in (0, 1]. Defaults to ``cfl``. Only relevant
+            when resistivity is non-zero.
+
+          With adaptive stepping there is no fixed dump grid, so diagnostics require explicit
+          ``write_timestamps``.
 
 
         .. code-block:: python
