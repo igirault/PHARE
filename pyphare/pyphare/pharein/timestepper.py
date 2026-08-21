@@ -12,7 +12,6 @@ pipeline; it returns the TimeStepper instance stored as Simulation.time_stepper.
 
 from abc import ABC
 from dataclasses import dataclass
-from typing import Optional
 
 from ..core import phare_utilities
 
@@ -31,8 +30,6 @@ class TimeStepper(ABC):
 
     start_time: float
     final_time: float
-    time_step: Optional[float]
-    time_step_nbr: Optional[int]
 
     # hard coded in C++ MultiPhysicsIntegrator::getMaxFinerLevelDt
     nSubcycles = 4
@@ -56,11 +53,14 @@ class TimeStepper(ABC):
         circular import between this module and pharein.initialize.general.
         """
         dp.add_string("simulation/time_step/mode", self.mode)
+        dp.add_double("simulation/final_time", self.final_time)
 
 
 @dataclass
 class ConstantTimeStepper(TimeStepper):
     mode = "constant"
+    time_step: float
+    time_step_nbr: int
 
     def resolve_levels(self, max_nbr_levels):
         step_diff = 1 / self.nSubcycles
@@ -100,7 +100,6 @@ class AdaptiveTimeStepper(TimeStepper):
         # dt is computed each step on the C++ side; bound the run by final_time
         dp.add_double("simulation/time_step/cfl", self.cfl)
         dp.add_double("simulation/time_step/fourier", self.fourier)
-        dp.add_double("simulation/final_time", self.final_time)
 
 
 # ------------------------------------------------------------------------------
@@ -193,7 +192,7 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
     if final_time - start_time < 0:
         raise RuntimeError("Simulation time cannot be negative - review inputs")
 
-    return AdaptiveTimeStepper(start_time, final_time, None, None, cfl, fourier)
+    return AdaptiveTimeStepper(start_time, final_time, cfl, fourier)
 
 
 def resolve_time_stepper(**kwargs):

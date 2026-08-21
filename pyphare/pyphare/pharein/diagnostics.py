@@ -5,9 +5,10 @@ from . import global_vars
 
 
 def all_timestamps(sim):
-    if sim.time_step is None:  # adaptive: no fixed step to build a dump grid from
+    # adaptive: no fixed step to build a dump grid from
+    if sim.time_stepper.mode != "constant":
         raise RuntimeError(
-            "Error: with time_step_type='adaptive', diagnostics require explicit "
+            "Error: with time_step={'mode': 'adaptive', ...}, diagnostics require explicit "
             "'write_timestamps' (no default dump grid can be built without a fixed time_step)"
         )
     init_time = sim.start_time()
@@ -90,7 +91,7 @@ def validate_timestamps(clazz, key, **kwargs):
         raise RuntimeError(f"Error: {clazz}.{key} not in ascending order)")
     # with adaptive dt there is no fixed time_step to be a multiple of; dumps fire on a
     # tolerance window (C++ DiagnosticsManager::reached_) instead.
-    if sim.time_step is not None and not np.all(
+    if sim.time_stepper.mode == "constant" and not np.all(
         np.abs(timestamps / sim.time_step - np.rint(timestamps / sim.time_step) < 1e-9)
     ):
         raise RuntimeError(
