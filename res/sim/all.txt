@@ -39,7 +39,7 @@
 3,TVDRK3,WENOZ,None,Rusanov,true,true,true
 # mhd_alfven2d, mhd_rotor, mhd_orszagtang (ideal)
 2,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
-# mhd_shock
+# mhd_shock, mhd_shock_with_super_magnetofast_inflow
 1,TVDRK2,Linear,VanLeer,Rusanov,false,false,false
 # mhd_dispersion (whistler1d, Hall)
 1,TVDRK2,Linear,VanLeer,Rusanov,true,false,false

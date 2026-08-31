@@ -182,4 +182,15 @@ def is_restartable_compared_to(curr_sim, prev_sim):
         for key, curr, prev, op in failed:
             print(f"{key} current({curr}) {op.__name__} previous({prev})")
 
+    # Boundary conditions are always re-serialised from the current sim, so a restart can
+    # silently run different boundary physics than the run it continues. BoundaryCondition is
+    # a dataclass, so this compares the prescribed values. Warn rather than block.
+    if getattr(curr_sim, "boundary_conditions", None) != getattr(
+        prev_sim, "boundary_conditions", None
+    ):
+        print(
+            "WARNING: restart boundary_conditions differ from the previous run; the "
+            "simulation may change its boundary physics mid-trajectory."
+        )
+
     return not failed
