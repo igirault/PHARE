@@ -3,9 +3,9 @@
 
 
 #include "core/utilities/types.hpp"
-#include "core/utilities/meta/enum.hpp"
 
 #include <concepts>
+#include <stdexcept>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -86,6 +86,41 @@ namespace core
     }
 
 
+    template<typename Enum>
+    concept CountedEnum = std::is_enum_v<Enum> and requires { Enum::count; };
+
+    /**
+     * @brief undefined helper whose return type is the variant of std::integral_constant over
+     * every value of a CountedEnum; used only to spell EnumConstantVariant_t.
+     */
+    template<typename Enum, std::size_t... Is>
+    auto enumConstantVariant(std::index_sequence<Is...>)
+        -> std::variant<std::integral_constant<Enum, static_cast<Enum>(Is)>...>;
+
+    /** @brief alias for the std::variant of compile-time tags returned by asEnumConstant<Enum>. */
+    template<CountedEnum Enum>
+    using EnumConstantVariant_t = decltype(enumConstantVariant<Enum>(
+        std::make_index_sequence<static_cast<std::size_t>(Enum::count)>{}));
+
+    /** @brief transforms a runtime enum value into a compile-time std::integral_constant wrapped in
+     * a variant over every value of the enum. Throws if the value is not below Enum::count.
+     */
+    template<CountedEnum Enum>
+    EnumConstantVariant_t<Enum> asEnumConstant(Enum const value)
+    {
+        return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+            EnumConstantVariant_t<Enum> result;
+            bool found = false;
+            (void)(((value == static_cast<Enum>(Is))
+                        ? (result = std::integral_constant<Enum, static_cast<Enum>(Is)>{},
+                           found  = true, true)
+                        : false)
+                   || ...);
+            if (!found)
+                throw std::runtime_error("asEnumConstant: enum value out of range");
+            return result;
+        }(std::make_index_sequence<static_cast<std::size_t>(Enum::count)>{});
+    }
 
     namespace detail
     {
@@ -94,9 +129,8 @@ namespace core
             return asBoolConstant(value);
         }
 
-        template<typename Enum>
+        template<CountedEnum Enum>
         auto toConstexprVariant(Enum const value)
-            requires(std::is_enum_v<Enum>)
         {
             return asEnumConstant(value);
         }
@@ -115,26 +149,14 @@ namespace core
      *
      * Useful when runtime checks are embedded in a compute loop.
      *
-     * @note enum arguments must have an `EnumTraits<Enum>` specialization (see
-     * core/utilities/meta/enum.hpp) listing every value the enum can take.
+     * @note enum arguments must be CountedEnum, i.e. end with a `count` sentinel giving the
+     * number of values, so every case can be enumerated.
      *
      * @note the number of visitor instantiations is the *product* of the per-argument case
      * counts, and is capped at MAX_CONSTEXPR_PERMUTATIONS by a static_assert.
      *
      * @code
-     * enum class Mode { A, B, C };
-     *
-     * template<>
-     * struct EnumTraits<Mode>
-     * {
-     *     static constexpr std::string_view label = "Mode";
-     *     static constexpr std::array names
-     *     {
-     *         enumEntry("a", Mode::A),
-     *         enumEntry("b", Mode::B),
-     *         enumEntry("c", Mode::C)
-     *     };
-     * };
+     * enum class Mode { A, B, C, count };
      *
      * bool aCondition = true;
      * Mode anEnumValue = Mode::B;
