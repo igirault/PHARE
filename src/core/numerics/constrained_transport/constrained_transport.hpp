@@ -3,7 +3,6 @@
 
 
 #include "core/numerics/ohm/ohm.hpp"
-#include "core/utilities/constants.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 

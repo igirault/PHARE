@@ -3,31 +3,18 @@
 
 
 #include "core/utilities/index/index.hpp"
-#include "core/utilities/meta/enum.hpp"
 #include "core/utilities/meta/meta_utilities.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
 #include "initializer/data_provider.hpp"
 
-#include <array>
-#include <string_view>
-
 
 namespace PHARE::core
 {
 
-enum class HyperMode { constant, spatial };
-
-template<>
-struct EnumTraits<HyperMode>
-{
-    static constexpr std::string_view label = "hyper mode";
-    static constexpr std::array names{
-        enumEntry("constant", HyperMode::constant),
-        enumEntry("spatial", HyperMode::spatial),
-    };
-};
+// `count` closes the value range, so Constexprifier can fan out every case (see CountedEnum)
+enum class HyperMode { constant, spatial, count };
 
 struct OhmInfo
 {
@@ -40,10 +27,9 @@ struct OhmInfo
 
     OhmInfo static FROM(initializer::PHAREDict const& dict)
     {
-        return {
-            dict["resistivity"].template to<double>(),
-            dict["hyper_resistivity"].template to<double>(),
-            fromString<HyperMode>(cppdict::get_value(dict, "hyper_mode", std::string{"constant"}))};
+        return {dict["resistivity"].template to<double>(),
+                dict["hyper_resistivity"].template to<double>(),
+                cppdict::get_value(dict, "hyper_mode", HyperMode::constant)};
     }
 };
 

@@ -43,6 +43,8 @@ class UpwindConstrainedTransportState
                 return std::forward_as_tuple(jt_x, rhot_x, jt_y, rhot_y, jt_z, rhot_z);
         }
 
+        /// those 'transverse' current and density fields are an average value on faces (hence _x,
+        /// _y, _z) of left and right states. The averaging formula depends on the Riemann solver.
         VecField jt_x{"j_t_x", MHDQuantity::Vector::VecFlux_x};
         VecField jt_y{"j_t_y", MHDQuantity::Vector::VecFlux_y};
         VecField jt_z{"j_t_z", MHDQuantity::Vector::VecFlux_z};
@@ -164,10 +166,16 @@ public:
             transverse_state_[0].rhot_z(idx) = rhot;
     }
 
+    /// those 'transverse' velocity fields are an average value on faces (hence _x,
+    /// _y, _z) of left and right states. The averaging formula depends on the Riemann solver.
     VecField vt_x{"v_t_x", MHDQuantity::Vector::VecFlux_x};
     VecField vt_y{"v_t_y", MHDQuantity::Vector::VecFlux_y};
     VecField vt_z{"v_t_z", MHDQuantity::Vector::VecFlux_z};
 
+    /// advective and diffusive coefficients of the Riemann solver at the faces.
+    /// a = advective / d = diffusive
+    /// L = left / R = right
+    /// _x = x face / _y = y face / _z = z face
     Field aL_x{"aL_x", MHDQuantity::Scalar::ScalarFlux_x},
         aR_x{"aR_x", MHDQuantity::Scalar::ScalarFlux_x},
         dL_x{"dL_x", MHDQuantity::Scalar::ScalarFlux_x},

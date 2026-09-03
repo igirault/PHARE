@@ -24,10 +24,10 @@ class TimeIntegrator
 {
     using Base_t = BaseMHDTimestepper<MHDModel, MessengerT>;
 
-    static std::unique_ptr<Base_t> make_(MHDOpts::TimeIntegratorType t,
-                                         PHARE::initializer::PHAREDict const& dict)
+    static std::unique_ptr<Base_t> make_(PHARE::initializer::PHAREDict const& dict)
     {
-        switch (t)
+        auto defaultIntegrator = MHDOpts::TimeIntegratorType::TVDRK3;
+        switch (cppdict::get_value(dict, "time_integrator_type", defaultIntegrator))
         {
             case MHDOpts::TimeIntegratorType::Euler:
                 return std::make_unique<EulerIntegrator<FVMethodStrategy, MHDModel, MessengerT>>(
@@ -45,15 +45,14 @@ class TimeIntegrator
         }
     }
 
+
     std::unique_ptr<Base_t> impl_;
 
 public:
     using Messenger = MessengerT;
 
     TimeIntegrator(PHARE::initializer::PHAREDict const& dict)
-        : impl_{make_(core::fromString<MHDOpts::TimeIntegratorType>(
-                          cppdict::get_value(dict, "time_integrator_type", std::string{"TVDRK3"})),
-                      dict)}
+        : impl_{make_(dict)}
     {
     }
 
