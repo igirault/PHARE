@@ -45,8 +45,8 @@ public:
     virtual double currentTime() = 0;
     virtual double timeStep()    = 0;
 
-    virtual void initialize()         = 0;
-    virtual double advance(double dt) = 0;
+    virtual void initialize() = 0;
+    virtual double advance()  = 0;
 
     virtual std::vector<int> const& domainBox() const    = 0;
     virtual std::vector<double> const& cellWidth() const = 0;
@@ -103,9 +103,7 @@ public:
     NO_DISCARD double currentTime() override { return currentTime_; }
 
     void initialize() override;
-    double advance(double dt) override;
-    double advance(core::ConstantTimeStamper const& ts);
-    double advance(core::KahanTimeStamper const& ts);
+    double advance() override;
 
     std::vector<int> const& domainBox() const override { return hierarchy_->domainBox(); }
     std::vector<double> const& cellWidth() const override { return hierarchy_->cellWidth(); }
@@ -181,15 +179,15 @@ private:
     int maxLevelNumber_;
     int maxMHDLevel_;
     double dt_;
-    std::string timeStepType_  = "constant";
-    double cflWave_            = 0; // wave CFL coefficient (adaptive)
-    double cflDiffusive_       = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
-    int timeStepNbr_           = 0;
-    double startTime_          = 0;
-    double finalTime_          = 0;
-    double currentTime_        = 0;
-    std::size_t fineDumpLvlMax = 0;
-    bool isInitialized         = false;
+    core::TimeStepType timeStepType_ = core::TimeStepType::constant;
+    double cflWave_                  = 0; // wave CFL coefficient (adaptive)
+    double cflDiffusive_             = 0; // resistive Fourier number Fo = eta*dt/dx^2 (adaptive)
+    int timeStepNbr_                 = 0;
+    double startTime_                = 0;
+    double finalTime_                = 0;
+    double currentTime_              = 0;
+    std::size_t fineDumpLvlMax       = 0;
+    bool isInitialized               = false;
 
     bool allowEmergencyDumps = false;
 
@@ -429,7 +427,8 @@ Simulator<opts>::Simulator(PHARE::initializer::PHAREDict const& dict,
     , maxLevelNumber_{dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>()}
     , maxMHDLevel_{dict["simulation"]["AMR"]["max_mhd_level"].template to<int>()}
     , dt_{cppdict::get_value(dict, "simulation/time_step/value", 0.)}
-    , timeStepType_{cppdict::get_value(dict, "simulation/time_step/mode", std::string{"constant"})}
+    , timeStepType_{cppdict::get_value(dict, "simulation/time_step/mode",
+                                       core::TimeStepType::constant)}
     , cflWave_{cppdict::get_value(dict, "simulation/time_step/cfl_wave", 0.)}
     , cflDiffusive_{cppdict::get_value(dict, "simulation/time_step/cfl_diffusive", 0.)}
     , timeStepNbr_{cppdict::get_value(dict, "simulation/time_step_nbr", 0)}
@@ -547,7 +546,7 @@ void Simulator<opts>::initialize()
         integrator_->initialize();
 
         // First dt_ for the init dump
-        if (timeStepType_ == "adaptive")
+        if (timeStepType_ == core::TimeStepType::adaptive)
         {
             double const dt = multiphysInteg_->computeStableDt(
                 *hierarchy_, solver::CFLNumbers{cflWave_, cflDiffusive_});
@@ -587,7 +586,7 @@ void Simulator<opts>::initialize()
 
 
 template<auto opts>
-double Simulator<opts>::advance(double dt)
+double Simulator<opts>::advance()
 {
     PHARE_LOG_SCOPE(1, "Simulator::advance");
 
@@ -598,8 +597,15 @@ double Simulator<opts>::advance(double dt)
         if (!integrator_)
             throw std::runtime_error("Error - no valid integrator in the simulator");
 
-        integrator_->advance(dt);
-        currentTime_ = startTime_ + ((*timeStamper) += dt);
+        if (timeStepType_ == core::TimeStepType::adaptive)
+        {
+            double const dt = multiphysInteg_->computeStableDt(
+                *hierarchy_, solver::CFLNumbers{cflWave_, cflDiffusive_});
+            dt_ = std::min(dt, finalTime_ - currentTime_);
+        }
+
+        integrator_->advance(dt_);
+        currentTime_ = startTime_ + ((*timeStamper) += dt_);
     }
     catch (core::DictionaryException const& ex)
     {
@@ -626,22 +632,7 @@ double Simulator<opts>::advance(double dt)
         throw std::runtime_error("forcing error");
     }
 
-    return dt;
-}
-
-template<auto opts>
-double Simulator<opts>::advance(core::ConstantTimeStamper const& ts)
-{
-    return advance(ts.dt()); // fixed by config - nothing to (re)compute
-}
-
-template<auto opts>
-double Simulator<opts>::advance(core::KahanTimeStamper const& ts)
-{
-    double const dt = multiphysInteg_->computeStableDt(*hierarchy_,
-                                                       solver::CFLNumbers{cflWave_, cflDiffusive_});
-    dt_             = std::min(dt, finalTime_ - currentTime_);
-    return advance(dt_);
+    return dt_;
 }
 
 template<auto opts>

@@ -96,14 +96,9 @@ PYBIND11_MODULE(cpp_etc, m)
 
     m.def("makePyArrayWrapper", makePyArrayWrapper<double>);
 
-    // accumulate the (constant or actually-used-per-step) dt into the simulation's current time
-    py::class_<core::ConstantTimeStamper>(m, "ConstantTimeStamper")
-        .def(py::init<double const&, double const&>(), py::arg("dt"), py::arg("init_time") = 0)
-        .def("advance", &core::ConstantTimeStamper::operator+=);
-
-    py::class_<core::KahanTimeStamper>(m, "KahanTimeStamper")
-        .def(py::init<double const&, double const&>(), py::arg("dt"), py::arg("init_time") = 0)
-        .def("advance", &core::KahanTimeStamper::operator+=);
+    py::enum_<core::TimeStepType>(m, "TimeStepType")
+        .value("constant", core::TimeStepType::constant)
+        .value("adaptive", core::TimeStepType::adaptive);
 
     m.def("phare_deps", []() {
         std::unordered_map<std::string, std::string> versions{{"pybind", pybind_version()},

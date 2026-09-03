@@ -42,9 +42,7 @@ template<typename Simulator, typename PyClass>
 void declareSimulator(PyClass&& sim)
 {
     sim.def("initialize", &Simulator::initialize)
-        .def("advance", py::overload_cast<double>(&Simulator::advance))
-        .def("advance", py::overload_cast<core::ConstantTimeStamper const&>(&Simulator::advance))
-        .def("advance", py::overload_cast<core::KahanTimeStamper const&>(&Simulator::advance))
+        .def("advance", &Simulator::advance)
         .def("startTime", &Simulator::startTime)
         .def("currentTime", &Simulator::currentTime)
         .def("endTime", &Simulator::endTime)

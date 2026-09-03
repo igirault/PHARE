@@ -6,11 +6,19 @@
 #include "initializer/data_provider.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <string>
 
 
 namespace PHARE::core
 {
+/** @brief how the simulation time step is obtained: fixed by config, or recomputed each step
+ * from a CFL constraint. Written to the dict as an int by pharein.timestepper (add_enum_int),
+ * and exposed to python by cpp_etc.
+ */
+enum class TimeStepType : std::uint8_t { constant, adaptive };
+
+
 struct ITimeStamper
 {
     virtual double operator+=(double const& new_dt) noexcept = 0;
@@ -35,9 +43,6 @@ public:
         // fixed seed (e.g. a restart time) added fresh each call, not accumulated iteratively.
         return last_time_ + dt_ * ++idx_;
     }
-
-    // pure read - dt is fixed by config, nothing to (re)compute. See advance() below.
-    NO_DISCARD double dt() const noexcept { return dt_; }
 
 private:
     double dt_        = 0;
@@ -75,9 +80,6 @@ public:
         return (last_time_ = temp);
     }
 
-    // pure read of the last dt cached by the last operator+=() - no computation, no mutation.
-    NO_DISCARD double dt() const noexcept { return dt_; }
-
 private:
     double dt_                 = 0;
     double last_time_          = 0;
@@ -93,8 +95,8 @@ struct TimeStamperFactory
         // init_time stays 0: the stamper accumulates a *delta* from the start of this run;
         // Simulator::advance() adds startTime_ (== restart_time on restart) on top of it. Seeding
         // the stamper with restart_time too would add it twice.
-        if (time_step_dict.contains("mode")
-            && time_step_dict["mode"].template to<std::string>() == "adaptive")
+        if (cppdict::get_value(time_step_dict, "mode", TimeStepType::constant)
+            == TimeStepType::adaptive)
             // dt_ seed is irrelevant: the first (varying) dt resets it on the first step
             return std::make_unique<KahanTimeStamper>(0.);
 

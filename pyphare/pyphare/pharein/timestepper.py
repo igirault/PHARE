@@ -51,10 +51,10 @@ class TimeStepper(ABC):
         """Mirror the public `time_step` dict shape (mode + per-mode params) on the C++ side.
 
         `dp` is a dict_populator() (see pharein.initialize.general): an object exposing
-        add_string/add_double/add_int/... - passed in rather than imported, to avoid a
-        circular import between this module and pharein.initialize.general.
+        add_string/add_double/add_int/add_enum_int/... - passed in rather than imported, to
+        avoid a circular import between this module and pharein.initialize.general.
         """
-        dp.add_string("simulation/time_step/mode", self.mode)
+        dp.add_enum_int("simulation/time_step/mode", "TimeStepType", self.mode)
         dp.add_double("simulation/final_time", self.final_time)
 
 
