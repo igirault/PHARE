@@ -77,7 +77,7 @@ def config_uni(**kwargs):
     ph.ElectronModel(closure="isothermal", Te=0.12)
 
     # adaptive dt: dump times aren't known ahead of the run, use a fixed absolute grid instead
-    timestamps = np.linspace(0, sim.final_time, 11)
+    timestamps = np.linspace(0, sim.time_stepper.final_time, 11)
 
     for quantity in ["E", "B"]:
         ph.ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)
@@ -175,7 +175,7 @@ def config_td(**kwargs):
     ph.ElectronModel(closure="isothermal", Te=0.12)
 
     # adaptive dt: dump times aren't known ahead of the run, use a fixed absolute grid instead
-    timestamps = np.linspace(0, sim.final_time, 11)
+    timestamps = np.linspace(0, sim.time_stepper.final_time, 11)
 
     for quantity in ["E", "B"]:
         ph.ElectromagDiagnostics(quantity=quantity, write_timestamps=timestamps)

@@ -238,10 +238,7 @@ class Simulator:
         assert len(args) == 0 or len(args) == 2
 
         time = self.currentTime() if len(args) == 0 else args[0]
-        if len(args) == 0:
-            timestep = self.timeStep()
-        else:
-            timestep = args[1]
+        timestep = self.timeStep() if len(args) == 0 else args[1]
 
         restarts.dump(self, time, timestep)
 

@@ -29,18 +29,18 @@ class TimeStepValidation(unittest.TestCase):
     def test_constant_is_the_default(self):
         sim = ph.Simulation(time_step=0.001, time_step_nbr=10, **baseArgs)
         self.assertEqual(sim.time_stepper.mode, "constant")
-        self.assertEqual(sim.time_step, 0.001)
-        self.assertEqual(sim.time_step_nbr, 10)
+        self.assertEqual(sim.time_stepper.time_step, 0.001)
+        self.assertEqual(sim.time_stepper.time_step_nbr, 10)
 
     def test_constant_final_time_and_step(self):
         sim = ph.Simulation(time_step=0.001, final_time=1.0, **baseArgs)
         self.assertEqual(sim.time_stepper.mode, "constant")
-        self.assertEqual(sim.time_step, 0.001)
+        self.assertEqual(sim.time_stepper.time_step, 0.001)
 
     def test_constant_final_time_and_nbr_has_no_time_step_kwarg(self):
         sim = ph.Simulation(time_step_nbr=10, final_time=1.0, **baseArgs)
         self.assertEqual(sim.time_stepper.mode, "constant")
-        self.assertEqual(sim.time_step_nbr, 10)
+        self.assertEqual(sim.time_stepper.time_step_nbr, 10)
 
     def test_constant_dict_with_value(self):
         sim = ph.Simulation(
@@ -49,8 +49,8 @@ class TimeStepValidation(unittest.TestCase):
             **baseArgs,
         )
         self.assertEqual(sim.time_stepper.mode, "constant")
-        self.assertEqual(sim.time_step, 0.001)
-        self.assertEqual(sim.time_step_nbr, 10)
+        self.assertEqual(sim.time_stepper.time_step, 0.001)
+        self.assertEqual(sim.time_stepper.time_step_nbr, 10)
 
     def test_constant_dict_rejects_unknown_key(self):
         with self.assertRaises(ValueError):
@@ -70,10 +70,10 @@ class TimeStepValidation(unittest.TestCase):
         )
         self.assertEqual(sim.time_stepper.mode, "adaptive")
         self.assertEqual(sim.time_stepper.cfl_wave, 0.4)
-        self.assertEqual(sim.final_time, 1.0)
+        self.assertEqual(sim.time_stepper.final_time, 1.0)
         # with adaptive dt these are unknown ahead of the run
-        self.assertIsNone(sim.time_step)
-        self.assertIsNone(sim.time_step_nbr)
+        self.assertFalse(hasattr(sim.time_stepper, "time_step"))
+        self.assertFalse(hasattr(sim.time_stepper, "time_step_nbr"))
 
     def test_adaptive_cfl_diffusive_defaults_to_cfl_wave(self):
         sim = ph.Simulation(
@@ -146,7 +146,7 @@ class TimeStepValidation(unittest.TestCase):
             restart_options={"mode": "overwrite", "restart_time": 2.0},
             **baseArgs,
         )
-        self.assertEqual(sim.final_time, 5.0)
+        self.assertEqual(sim.time_stepper.final_time, 5.0)
 
     # ---- unknown mode ----------------------------------------------------------------------
 

@@ -12,9 +12,10 @@ def all_timestamps(sim):
             "'write_timestamps' (no default dump grid can be built without a fixed time_step)"
         )
     init_time = sim.start_time()
+    stepper = sim.time_stepper
     # consume the authoritative integer step count rather than re-deriving it from
-    # final_time/dt (fp-fragile). last stamp = init + nbr*dt = sim.final_time exactly.
-    return sim.time_step * np.arange(sim.time_step_nbr + 1) + init_time
+    # final_time/dt (fp-fragile). last stamp = init + nbr*dt = final_time exactly.
+    return stepper.time_step * np.arange(stepper.time_step_nbr + 1) + init_time
 
 
 # ------------------------------------------------------------------------------
@@ -82,17 +83,22 @@ def validate_timestamps(clazz, key, **kwargs):
         timestamps = timestamps[timestamps >= init_time]
         print(f"Warning: some timestamps below ({init_time}) are filtered")
 
-    if np.any(timestamps > sim.final_time):
+    final_time = sim.time_stepper.final_time
+    if np.any(timestamps > final_time):
         raise RuntimeError(
-            f"Error: timestamp({sim.time_step_nbr}) cannot be greater than "
-            f"simulation.final_time({sim.final_time}))"
+            f"Error: timestamp({timestamps[timestamps > final_time]}) "
+            f"cannot be greater than simulation.final_time({final_time}))"
         )
     if not np.all(np.diff(timestamps) >= 0):
         raise RuntimeError(f"Error: {clazz}.{key} not in ascending order)")
     # with adaptive dt there is no fixed time_step to be a multiple of; dumps fire on a
     # tolerance window (C++ DiagnosticsManager::reached_) instead.
     if sim.time_stepper.mode == "constant" and not np.all(
-        np.abs(timestamps / sim.time_step - np.rint(timestamps / sim.time_step) < 1e-9)
+        np.abs(
+            timestamps / sim.time_stepper.time_step
+            - np.rint(timestamps / sim.time_stepper.time_step)
+            < 1e-9
+        )
     ):
         raise RuntimeError(
             f"Error: {clazz}.{key} is inconsistent with simulation.time_step"

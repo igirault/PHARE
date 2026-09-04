@@ -90,8 +90,8 @@ def config():
 
     timestamps = np.arange(
         0,
-        sim.final_time + sim.time_step,
-        sim.final_time / 10,
+        sim.time_stepper.final_time + sim.time_stepper.time_step,
+        sim.time_stepper.final_time / 10,
     )
 
     for quantity in ["E", "B"]:

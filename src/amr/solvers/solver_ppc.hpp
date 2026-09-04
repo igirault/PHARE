@@ -330,10 +330,10 @@ double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& mode
     // whistler wave cfl criterion
     double dt = std::numeric_limits<double>::max();
 
-    for (auto& patch : level)
+    auto& rm = *hybridModel.resourcesManager;
+    for (auto& patch : rm.enumerate(level, n, B))
     {
         auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _             = hybridModel.resourcesManager->setOnPatch(*patch, n, B);
 
         auto const meshSize = layout.meshSize();
 

@@ -1115,11 +1115,7 @@ class Simulation(object):
     def __getattr__(
         self, name
     ):  # stops pylint complaining about dynamic class attributes not existing
-        # back-compat: sim.time_step / sim.final_time / sim.time_step_nbr / ... transparently
-        # fall through to sim.time_stepper's attribute of the same name
-        time_stepper = self.__dict__.get("time_stepper")
-        if time_stepper is not None and hasattr(time_stepper, name):
-            return getattr(time_stepper, name)
+        ...
 
     # dill serialization uses __getattr__
     #  but without these it causes errors
