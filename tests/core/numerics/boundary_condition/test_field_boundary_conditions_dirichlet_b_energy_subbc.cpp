@@ -10,25 +10,10 @@
 using namespace PHARE::core;
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// TotalEnergyFromPressure with a time-varying Dirichlet B sub-BC
-//
-// At an inflow boundary the magnetic field itself is E-mediated (its own field
-// BC is None: ghost B is driven through Faraday by a Dirichlet E = -v×B(t)).
-// The total-energy BC however needs ghost B values to reconstruct Etot from
-// the Neumann pressure; those are provided by a plain (time-varying) Dirichlet
-// sub-BC on B, holding the prescribed inflow field B(t).
-//
-// These tests verify that wiring: the ghost B values written by the Dirichlet
-// sub-BC must be the ones entering the ghost Etot reconstruction, and ctx.time
-// must thread through to the prescribed B(t).
-// ════════════════════════════════════════════════════════════════════════════
-
 namespace
 {
-// prescribed inflow field fed to the Dirichlet B sub-BC
 constexpr std::array<double, 3> Bprescribed{0.4, -0.2, 0.7};
-} // namespace
+}
 
 
 struct DirichletBEnergySubBC1D : testing::Test
@@ -38,7 +23,7 @@ struct DirichletBEnergySubBC1D : testing::Test
     static constexpr double vx_val   = 1.0;
     static constexpr double vy_val   = -0.5;
     static constexpr double vz_val   = 0.25;
-    static constexpr double B_int    = 7.0; // interior B, all components
+    static constexpr double B_int    = 7.0;
     static constexpr double P_val    = 1.0;
     static constexpr double sentinel = -999.0;
 
@@ -108,8 +93,6 @@ struct DirichletBEnergySubBC1D : testing::Test
         bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
                  makeCtx(acc, time));
 
-        // the Dirichlet sub-BC must have used the prescribed B: pure-ghost nodes hold the
-        // linear extrapolation 2*B - B_interior (constant interior)
         for (std::size_t comp = 0; comp < 3; ++comp)
         {
             double const bd       = Bprescribed[comp];
@@ -130,24 +113,19 @@ struct DirichletBEnergySubBC1D : testing::Test
             }
         }
 
-        // ghost Etot must be reconstructed from the Dirichlet-filled ghost B
-        // (Neumann ghosts: rho, v, P mirror the constant interior)
         auto const etotQty = MHDQuantity::Scalar::Etot;
-        // Closed-form ideal-MHD total energy, written out independently of the
-        // totalEnergyFromInternalEnergy production helpers the BC itself calls, so this checks the
-        // energy *formula* and not merely that the BC re-runs the same primitives:
-        //   Etot = P/(gamma-1) + 1/2 rho v^2 + 1/2 B^2
-        // The interior P/rho/v are constant (Neumann ghosts); only the face-centred ghost B varies,
-        // so the geometric face->cell projection is kept (it is layout, not the energy formula).
         double const kinetic
             = 0.5 * rho_val * (vx_val * vx_val + vy_val * vy_val + vz_val * vz_val);
         auto expectedEtotAt = [&](Point<std::uint32_t, 1> const& index) {
-            double const bx = GridLayoutMHD1D::template project<GridLayoutMHD1D::implT::faceXToCellCenter>(
-                Bvec[0], index);
-            double const by = GridLayoutMHD1D::template project<GridLayoutMHD1D::implT::faceYToCellCenter>(
-                Bvec[1], index);
-            double const bz = GridLayoutMHD1D::template project<GridLayoutMHD1D::implT::faceZToCellCenter>(
-                Bvec[2], index);
+            double const bx
+                = GridLayoutMHD1D::template project<GridLayoutMHD1D::implT::faceXToCellCenter>(
+                    Bvec[0], index);
+            double const by
+                = GridLayoutMHD1D::template project<GridLayoutMHD1D::implT::faceYToCellCenter>(
+                    Bvec[1], index);
+            double const bz
+                = GridLayoutMHD1D::template project<GridLayoutMHD1D::implT::faceZToCellCenter>(
+                    Bvec[2], index);
             double const magnetic = 0.5 * (bx * bx + by * by + bz * bz);
             return P_val / (gamma - 1.0) + kinetic + magnetic;
         };

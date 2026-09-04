@@ -116,10 +116,6 @@ public:
 
     /**
      * @brief Register a prebuilt scalar field boundary condition for a quantity.
-     *
-     * Overload of @c registerFieldCondition taking an already-constructed condition instead of
-     * factory arguments. Lets a caller build a condition once and use it both as a sub-BC of a
-     * composite condition and as the quantity's own main condition, avoiding a rebuild.
      */
     void registerFieldCondition(scalar_quantity_type quantity,
                                 std::shared_ptr<scalar_field_condition_type> condition)

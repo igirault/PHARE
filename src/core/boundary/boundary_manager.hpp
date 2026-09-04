@@ -21,16 +21,11 @@
 namespace PHARE::core
 {
 /**
- * @brief Fail early and by name if the grid declares a physical direction without a boundary
+ * @brief Fail early if the grid declares a physical direction without a boundary
  * condition on each of its two faces.
  *
- * Mirrors the Python DSL check for hand-built C++ dicts, which bypass it. Without this, a config
- * with a physical direction but a missing / 'none' face builds a silently inert BoundaryManager;
- * the mistake then surfaces only as an unattributed "Boundary not found." thrown from deep inside
- * a SAMRAI RefineSchedule on the first ghost fill, far from its cause.
- *
  * @tparam dimension Number of spatial dimensions.
- * @param grid  The grid sub-dict (carrying boundary_type/{x,y,z} and boundary_conditions).
+ * @param grid  The grid sub-dict
  */
 template<std::size_t dimension>
 inline void validatePhysicalBoundariesDeclared(initializer::PHAREDict const& grid)
@@ -85,6 +80,12 @@ public:
     using scalar_condition_type = IFieldBoundaryCondition<FieldT, GridLayoutT>;
     using vector_condition_type = IFieldBoundaryCondition<vector_field_type, GridLayoutT>;
 
+    /** @brief Describes how the master boundary is chosen at corner and edges */
+    enum class PriorityPolicy {
+        ByDirection,
+        ByBoundaryType,
+    };
+
     BoundaryManager() = delete;
 
     /**
@@ -92,23 +93,19 @@ public:
      * @param dict Configuration dictionary.
      * @param scalar_quantities List of scalar quantities to manage.
      * @param vector_quantities List of vector quantities to manage.
-     * @param gamma Heat capacity ratio, required by the EOS-dependent boundary conditions
-     *              (inflow and open). Leave at 0 for models without an EOS.
+     * @param gamma Heat capacity ratio, required by the dependent boundary conditions
      */
     BoundaryManager(PHARE::initializer::PHAREDict const& dict,
                     std::vector<typename PhysicalQuantityT::Scalar> const& scalarQuantities,
                     std::vector<typename PhysicalQuantityT::Vector> const& vectorQuantities,
-                    double const gamma = 0.0)
+                    double const gamma            = 0.0,
+                    PriorityPolicy priorityPolicy = PriorityPolicy::ByDirection)
+
         : gamma_{gamma}
+        , priority_policy_{priorityPolicy}
     {
-        // An empty (non-node) dict yields an inert manager with no boundaries. Models build
-        // one from an empty PHAREDict when the config carries no boundary_conditions (e.g.
-        // hand-built C++ test dicts), and cppdict's visit throws on a non-node, so guard it.
         if (!dict.isNode())
-        {
-            priority_policy_ = PriorityPolicy::ByDirection;
             return;
-        }
 
         dict.visit(cppdict::visit_all_nodes, [&](std::string const& locationName,
                                                  initializer::PHAREDict::data_t _) {
@@ -120,9 +117,6 @@ public:
             boundaries_[location]     = boundary_factory_type::create(
                 location, dict[locationName], scalarQuantities, vectorQuantities, gamma_);
         });
-
-        /// @todo If this mode stays in the code it should be read from the input dict.
-        priority_policy_ = PriorityPolicy::ByDirection;
     }
 
 
@@ -140,11 +134,7 @@ public:
         return (it != boundaries_.end()) ? it->second.get() : nullptr;
     }
 
-    /** @brief Describes how the master boundary is chosen at corner and edges */
-    enum class PriorityPolicy {
-        ByDirection,
-        ByBoundaryType,
-    };
+
 
     void setPriorityPolicy(PriorityPolicy policy) { priority_policy_ = policy; }
 
@@ -176,8 +166,8 @@ private:
     using _boundary_map_type = std::unordered_map<BoundaryLocation, std::shared_ptr<boundary_type>>;
 
     _boundary_map_type boundaries_;  //!< List of boundaries mapped by their location.
+    double gamma_;                   //!< heat capacity ratio
     PriorityPolicy priority_policy_; //!< How the master boundary is chosen at corners and edges.
-    double gamma_;                   //!< heat capacity ratio, 0 for models without an EOS.
 
     /**
      * @brief Worker function to get the master of an array of 1-codimensional boundary locations,

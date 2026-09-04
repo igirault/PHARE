@@ -12,7 +12,6 @@ TEST_F(FieldBC1D, DirichletSetsLowerGhostByLinearExtrapolation)
     FieldDirichletBoundaryCondition<Field1D, GridLayout1D> bc{value};
     bc.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
 
-    // Interior is constant = interiorValue, so ghost = 2*value - interiorValue
     double expected = 2.0 * value - interiorValue;
     for (std::uint32_t g = 0; g < ghostWidth; ++g)
         EXPECT_DOUBLE_EQ(field(g), expected);
@@ -30,8 +29,6 @@ TEST_F(FieldBC1D, DirichletSetsUpperGhostByLinearExtrapolation)
         EXPECT_DOUBLE_EQ(field(allocSz - 1 - g), expected);
 }
 
-
-// ─── 2D scalar ────────────────────────────────────────────────────────────────
 
 TEST_F(FieldBC2D, DirichletAtXBoundaries)
 {
@@ -71,8 +68,6 @@ TEST_F(FieldBC2D, DirichletAtYBoundaries)
         }
 }
 
-
-// ─── 3D scalar ────────────────────────────────────────────────────────────────
 
 TEST_F(FieldBC3D, DirichletAtZBoundaries)
 {

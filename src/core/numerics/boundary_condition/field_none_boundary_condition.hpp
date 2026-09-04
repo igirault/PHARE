@@ -38,7 +38,7 @@ public:
                BoundaryLocation const /*boundaryLocation*/,
                Box<std::uint32_t, dimension> const& /*localGhostBox*/,
                GridLayoutT const& /*gridLayout*/,
-               [[maybe_unused]] Super::boundary_condition_context_type const& /*ctx*/) override
+               [[maybe_unused]] Super::context_type const& /*ctx*/) override
     {
     }
 }; // class FieldNoneBoundaryCondition

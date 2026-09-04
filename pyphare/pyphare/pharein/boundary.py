@@ -86,7 +86,7 @@ def _normalize_inflow_velocity(location, velocity, ndim):
     positive sign for lower boundaries (flow enters in the +direction) and a
     negative sign for upper boundaries (flow enters in the -direction).
     """
-    if isinstance(velocity, (int, float)):
+    if isinstance(velocity, numbers.Real):
         normal_idx = _BOUNDARY_NORMAL_INDEX[location[0]]
         side = location[1:]
         sign = 1.0 if side == "lower" else -1.0

@@ -2,7 +2,6 @@
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_FIELD_TOTAL_ENERGY_FROM_PRESSURE_BOUNDARY_CONDITION_HPP
 
 #include "core/boundary/boundary_defs.hpp"
-#include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
@@ -10,7 +9,6 @@
 
 #include <memory>
 #include <utility>
-#include <vector>
 
 namespace PHARE::core
 {
@@ -19,8 +17,10 @@ namespace PHARE::core
  * @brief Boundary condition for the total energy field that derives ghost values from a
  * Neumann (zero-gradient) pressure condition rather than from a prescribed energy value.
  *
- * The internal energy <-> pressure relation is the ideal-gas one, P = (gamma - 1) e_int,
- * with the same heat capacity ratio the primitive/conservative converter uses.
+ * The internal energy <-> pressure relation is the ideal-gas one, P = (gamma - 1) e_int
+ *
+ * This condition has the side effect to update the pressure field in the boundary ghost cells and
+ * their interior mirrors.
  *
  * @tparam FieldT       Scalar field type (must satisfy IsField).
  * @tparam GridLayoutT  Grid layout type.
@@ -74,10 +74,8 @@ public:
         return FieldBoundaryConditionType::TotalEnergyFromPressure;
     }
 
-    // Coupled condition: reconstruct needs the ρ, P, ρv and B siblings. They are unallocated on
-    // the temporary single-quantity interpolation patches, so report false there and let the
-    // refine strategy pick its sibling-free fallback instead of throwing mid-reconstruction.
-    bool canApply(typename Super::boundary_condition_context_type const& ctx) const override
+    // check ρ, P, ρv and B fields availability
+    bool canApply(typename Super::context_type const& ctx) const override
     {
         auto const& acc = ctx.accessor_new;
         return acc.hasField(scalar_quantity_type::rho) && acc.hasField(scalar_quantity_type::P)
@@ -87,7 +85,7 @@ public:
 
     void apply(FieldT& EtotField, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-               Super::boundary_condition_context_type const& ctx) override
+               Super::context_type const& ctx) override
     {
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
@@ -118,22 +116,16 @@ public:
 
         // Step 1: reconstruct P at the interior mirror of each ghost cell from the current
         // conservative variables, so the pressure sub-BC can extrapolate it into the ghosts.
-        // The mirror cells are interior domain cells; snapshot their pressure here and restore
-        // it after Step 3 so this boundary-fill routine leaves no second, unfloored source of
-        // truth for interior P behind (the primitive converter owns interior P). The boundary
-        // reflection is injective, so no interior cell appears twice.
-        std::vector<std::pair<Point<std::uint32_t, dimension>, double>> savedInteriorP;
-        savedInteriorP.reserve(etotFieldBox.size());
         for (auto const& index : etotFieldBox)
         {
             auto const mirrorIdx = gridLayout.boundaryMirrored(direction, side, centering, index);
 
-            double const bx
-                = GridLayoutT::template project<GridLayoutT::implT::faceXToCellCenter>(Bx, mirrorIdx);
-            double const by
-                = GridLayoutT::template project<GridLayoutT::implT::faceYToCellCenter>(By, mirrorIdx);
-            double const bz
-                = GridLayoutT::template project<GridLayoutT::implT::faceZToCellCenter>(Bz, mirrorIdx);
+            double const bx = GridLayoutT::template project<GridLayoutT::implT::faceXToCellCenter>(
+                Bx, mirrorIdx);
+            double const by = GridLayoutT::template project<GridLayoutT::implT::faceYToCellCenter>(
+                By, mirrorIdx);
+            double const bz = GridLayoutT::template project<GridLayoutT::implT::faceZToCellCenter>(
+                Bz, mirrorIdx);
 
             double const rho_m = rhoField(mirrorIdx);
             double const vx    = rhoVx(mirrorIdx) / rho_m;
@@ -142,8 +134,7 @@ public:
 
             double const e_int = internalEnergyFromTotalEnergy(EtotField(mirrorIdx), rho_m, vx, vy,
                                                                vz, bx, by, bz);
-            savedInteriorP.emplace_back(mirrorIdx, PField(mirrorIdx));
-            PField(mirrorIdx) = (gamma_ - 1.0) * e_int;
+            PField(mirrorIdx)  = (gamma_ - 1.0) * e_int;
         }
 
         // Step 2: apply sub-BCs to fill ghost layers of ρ, ρv, B, P
@@ -170,11 +161,6 @@ public:
             double const e_int = PField(index) / (gamma_ - 1.0);
             EtotField(index) = totalEnergyFromInternalEnergy(e_int, rho_g, vx, vy, vz, bx, by, bz);
         }
-
-        // restore the interior pressure this BC borrowed for the reconstruction: the primitive
-        // converter is the single owner of interior P.
-        for (auto const& [mirrorIdx, oldP] : savedInteriorP)
-            PField(mirrorIdx) = oldP;
     }
 
 private:

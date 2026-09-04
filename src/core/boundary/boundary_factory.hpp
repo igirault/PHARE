@@ -19,7 +19,7 @@ namespace PHARE::core
 {
 
 /**
- * @brief Concept that detects whether a physical quantity type carries the conserved-variable set
+ * @brief Detects whether a physical quantity type carries the conserved-variable set
  * required by super-magnetofast inflow boundary conditions (momentum vector @c rhoV and total
  * energy @c Etot). Satisfied by MHDQuantity, not by HybridQuantity.
  */
@@ -31,7 +31,7 @@ concept HasInflowQuantities = requires {
 
 /**
  * @brief Contains all the recipes to create a boundary object according to the desired
- * type of physical boundary (reflective, open, ...). It can extracts all the necessary data from
+ * type of physical boundary (reflective, open, ...). It extracts all the necessary data from
  * the input data dict associated to the boundary (value of physical quantities on the boundary for
  * an Inflow condition for instance), and create the right boundary conditions associated to each
  * physical quantity that requires one.
@@ -64,8 +64,7 @@ public:
      *                condition.
      * @param vectors Vector quantities for which it is necessary to register a field boundary
      *                condition.
-     * @param gamma Heat capacity ratio, used by the EOS-dependent boundary conditions
-     *              (inflow and open) to convert pressure to total energy.
+     * @param gamma Heat capacity ratio, used to convert pressure to total energy.
      *
      * @return A unique pointer to the created @c Boundary object.
      */
@@ -119,18 +118,6 @@ private:
         vector_quantity_list_type const& vectors;
     };
 
-    /** @brief Build the shared B sub-BC used by compound conditions (e.g.
-     * TotalEnergyFromPressure) to provide ghost values of the prescribed total field.
-     * It is a plain Dirichlet on the total field, used only inside the energy computation;
-     * the magnetic field's own ghost condition is a separate divergence-free transverse
-     * Dirichlet (see register_inflow_conditions_). */
-    template<typename VecFieldT, typename VectorBcType>
-    static std::shared_ptr<VectorBcType> make_inflow_B_bc_(std::array<double, 3> const& B)
-    {
-        return std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
-                                                  GridLayoutT>(B)};
-    }
 
     /** @brief Register no-op (None) conditions so a "none" boundary leaves ghosts untouched
      * rather than falling through to another type or throwing "condition not found". */
@@ -200,9 +187,6 @@ private:
         auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
             FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT>()};
 
-        // The rho / rhoV / B sub-BCs built above for the energy reconstruction are stateless
-        // extrapolations, so they double as the quantities' own main conditions: register them
-        // by pointer rather than building a second identical object (matches the inflow builder).
         for (auto const quantity : quantities.scalars)
         {
             switch (quantity)
@@ -211,6 +195,11 @@ private:
                     boundary->registerFieldCondition(quantity, rho_bc);
                     break;
                 case (PhysicalQuantityT::Scalar::Etot):
+                    if (!(gamma > 1.0))
+                        throw std::runtime_error(
+                            "BoundaryFactory: a heat capacity ratio > 1 is required for Open "
+                            "boundaries, got "
+                            + std::to_string(gamma) + ".");
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::TotalEnergyFromPressure>(
                         quantity, rho_bc, rhoV_bc, B_bc, P_bc, gamma);
@@ -244,11 +233,9 @@ private:
 
     /** @brief Register boundary conditions to make a super-magnetofast inflow boundary.
      *
-     *  Every prescribable quantity is imposed: Dirichlet ρ, the momentum ρv = ρ·v, a Dirichlet
-     *  pressure feeding the total-energy reconstruction, the prescribed-B energy sub-BC, and a
-     *  divergence-free transverse Dirichlet B ghost condition (E is left None).
-     *
-     *  Only available for physical quantity types carrying conserved MHD variables. */
+     *  Every prescribable quantity is imposed: density, momentum, tangential B and energy (via
+     * pressure value)
+     */
     static void register_inflow_conditions_(boundary_ptr_type& boundary,
                                             initializer::PHAREDict const& data,
                                             _model_menu_type const& quantities, double const gamma)
@@ -267,42 +254,27 @@ private:
         using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
 
-        // density read once; reused by rho_bc and by the momentum ρv = ρ·v
-        double const rho = data["density"].template to<double>();
 
-        // --- prescribed pressure, only used by the energy reconstruction ---
-        auto P_bc = std::shared_ptr<ScalarBcType>{
+        auto const pressure = data["pressure"].template to<double>();
+        auto P_bc           = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
-                                                  GridLayoutT>(
-                data["pressure"].template to<double>())};
+                                                  GridLayoutT>(pressure)};
 
-        // --- scalar Dirichlet sub/main BC: rho ---
-        auto rho_bc = std::shared_ptr<ScalarBcType>{
+        double const rho = data["density"].template to<double>();
+        auto rho_bc      = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
                                                   GridLayoutT>(rho)};
 
-        // --- momentum rhoV = rho * v ---
         auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
                                                   GridLayoutT>(vToRhoV(rho, v))};
 
-        // --- magnetic field B: two conditions built from the same prescribed inflow field ---
-        //  * B_bc: plain-Dirichlet total field, used only as a sub-BC of the energy
-        //    reconstruction (TotalEnergyFromPressure) to provide ghost B values.
-        //  * B_main: the field's own ghost condition, a divergence-free transverse Dirichlet.
-        //    It sets the transverse ghost components to the prescribed field while keeping the
-        //    normal face divergence free. Being value-prescribed (not extrapolated from the
-        //    interior) it also produces valid ghosts at regrid/init, when the fine interior is
-        //    not yet available, so no separate regrid fallback condition is needed.
         auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
-        auto B_bc    = make_inflow_B_bc_<VecFieldT, VectorBcType>(B);
-        auto B_main  = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
+        auto B_bc    = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
             FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT, GridLayoutT>(
             B)};
 
-        // energy sub-BC needs rho/rhoV/B as ghost providers; the same rho_bc / rhoV_bc objects
-        // also serve as the quantities' own main Dirichlet conditions (registered by pointer).
         for (auto const quantity : quantities.scalars)
         {
             switch (quantity)
@@ -330,7 +302,7 @@ private:
                     boundary->registerFieldCondition(quantity, rhoV_bc);
                     break;
                 case (PhysicalQuantityT::Vector::B):
-                    boundary->registerFieldCondition(quantity, B_main);
+                    boundary->registerFieldCondition(quantity, B_bc);
                     break;
                 case (PhysicalQuantityT::Vector::E):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(

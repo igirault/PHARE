@@ -47,7 +47,7 @@ public:
     state_type state;
     std::shared_ptr<resources_manager_type> resourcesManager;
     std::shared_ptr<boundary_manager_type> boundaryManager;
-    double gamma_; //!< heat capacity ratio, passed to the EOS-dependent boundary conditions
+    double gamma_; //!< heat capacity ratio
 
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
@@ -99,12 +99,8 @@ public:
             core::MHDQuantity::Vector::rhoV,
         };
 
-        // Python-driven sims always emit grid/boundary_conditions; hand-built C++ test dicts
-        // may omit it. Fall back to an empty dict so the manager stays inert (registers no
-        // boundaries) rather than dereferencing a missing key, mirroring HybridModel.
         if (dict.contains("grid"))
             core::validatePhysicalBoundariesDeclared<dimension>(dict["grid"]);
-
         auto const has_bcs = dict.contains("grid") && dict["grid"].contains("boundary_conditions");
         boundaryManager    = std::make_shared<boundary_manager_type>(
             has_bcs ? dict["grid"]["boundary_conditions"] : PHARE::initializer::PHAREDict{},

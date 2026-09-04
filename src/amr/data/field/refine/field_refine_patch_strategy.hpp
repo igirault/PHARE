@@ -11,7 +11,6 @@
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
-#include "core/numerics/boundary_condition/boundary_condition_context.hpp"
 
 #include "SAMRAI/geom/CartesianPatchGeometry.h"
 #include "SAMRAI/hier/BoundaryBox.h"
@@ -34,7 +33,11 @@ namespace PHARE::amr
  *
  * This class implements the SAMRAI::xfer::RefinePatchStrategy interface to
  * specify how physical boundary conditions must be enforced for patches that touch
- * the domain boundaries. Refinement customization is deferred to child classes.
+ * the domain boundaries. Refinement customization via preprocessRefine and postProcessRefine is
+ * deferred to child classes.
+ *
+ * Each refiner is expected to hold an instance of this class, but all these instances will point to
+ * the same common boundary manager.
  *
  * @tparam ResMan The resources manager type.
  * @tparam ScalarOrTensorFieldDataT The data type for fields or tensor fields.
@@ -66,8 +69,9 @@ public:
     using boundary_type = BoundaryManagerT::boundary_type;
     using boundary_condition_type
         = core::IFieldBoundaryCondition<scalar_or_tensor_field_type, gridlayout_type>;
-    using scalar_id_map_type     = std::unordered_map<scalar_quantity_type, int>;
-    using vector_id_map_type     = std::unordered_map<vector_quantity_type, int>;
+    using boundary_condition_context_type = boundary_condition_type::context_type;
+    using scalar_id_map_type              = std::unordered_map<scalar_quantity_type, int>;
+    using vector_id_map_type              = std::unordered_map<vector_quantity_type, int>;
     using scalar_field_data_type = FieldData<gridlayout_type, grid_type, scalar_quantity_type>;
     using vector_field_data_type
         = TensorFieldData<1, gridlayout_type, grid_type, physical_quantity_type>;
@@ -77,9 +81,8 @@ public:
      *
      * Implements the core::IPatchFieldAccessor interface. Constructed once per
      * setPhysicalBoundaryConditions call and passed to boundary condition apply() methods,
-     * allowing coupled BCs (e.g. inflow/outflow) to read other fields.
+     * allowing coupled BCs to read other fields.
      *
-     * Defined as a nested class to avoid heavy external template parameters.
      */
     class PatchFieldAccessor : public core::IPatchFieldAccessor<field_type, physical_quantity_type>
     {
@@ -96,34 +99,23 @@ public:
         {
             auto it = scalarIds_.find(qty);
             if (it == scalarIds_.end())
-                throw core::PatchFieldAccessorError(
-                    "PatchFieldAccessor: scalar quantity not registered");
-            // SAMRAI runs setPhysicalBoundaryConditions on temporary single-quantity
-            // interpolation patches too: a sibling read by a coupled BC is registered
-            // (in the id-map) but not allocated there. Surface that as the accessor error
-            // the strategy catches to fall back to a sibling-free Neumann fill.
+                throw std::runtime_error("PatchFieldAccessor: scalar quantity not registered");
             if (!patch_.checkAllocated(it->second))
-                throw core::PatchFieldAccessorError(
+                throw std::runtime_error(
                     "PatchFieldAccessor: scalar quantity not allocated on patch");
             return *(&(scalar_field_data_type::getField(patch_, it->second)));
         }
 
         vectorfield_type getVecField(vector_quantity_type qty) const override
         {
-            // Memoise per quantity: getTensorField rebuilds a TensorField (name concat + per
-            // component field wrappers) on every call, and a coupled BC reads the same siblings
-            // once per boundary box of the patch. The accessor lives for a single patch's
-            // setPhysicalBoundaryConditions call, so this cache is exactly "per patch and id".
-            // Returned copies still alias the patch buffers, so writes through them land in place.
             if (auto cit = vecFieldCache_.find(qty); cit != vecFieldCache_.end())
                 return cit->second;
 
             auto it = vectorIds_.find(qty);
             if (it == vectorIds_.end())
-                throw core::PatchFieldAccessorError(
-                    "PatchFieldAccessor: vector quantity not registered");
+                throw std::runtime_error("PatchFieldAccessor: vector quantity not registered");
             if (!patch_.checkAllocated(it->second))
-                throw core::PatchFieldAccessorError(
+                throw std::runtime_error(
                     "PatchFieldAccessor: vector quantity not allocated on patch");
             auto vf = vector_field_data_type::getTensorField(patch_, it->second);
             vecFieldCache_.emplace(qty, vf);
@@ -146,7 +138,9 @@ public:
         SAMRAI::hier::Patch const& patch_;
         scalar_id_map_type const& scalarIds_;
         vector_id_map_type const& vectorIds_;
-        mutable std::unordered_map<vector_quantity_type, vectorfield_type> vecFieldCache_;
+        mutable std::unordered_map<vector_quantity_type, vectorfield_type>
+            vecFieldCache_; // allows to build a VecField once, not each time it is retrieved via
+                            // getVecField. The mutable keyword allows to keep getVecField const.
     };
 
     using patch_field_accessor_type = PatchFieldAccessor;
@@ -215,9 +209,6 @@ public:
         std::shared_ptr<cartesian_patch_geometry_type> patchGeom
             = std::static_pointer_cast<cartesian_patch_geometry_type>(patch.getPatchGeometry());
 
-        // `*(&(getField(...)))` extracts the non-owning Field view out of the patch-owned
-        // Grid via Grid::operator&() (returns &field_). `auto` then copies that lightweight
-        // view, which still aliases the patch buffer, so bc->apply(...) writes to patch data.
         auto scalarOrTensorField = [&]() {
             if constexpr (is_scalar)
             {
@@ -232,8 +223,9 @@ public:
         // accessor for the current substage state; BCs read siblings through it and write into
         // ghost cells.
         patch_field_accessor_type fieldAccessor{patch, all_scalar_ids_, all_vector_ids_};
-        core::BoundaryConditionContext<field_type, physical_quantity_type> const ctx{fieldAccessor,
-                                                                                     fill_time};
+
+        // wrap field accessor and current time into a single struct
+        boundary_condition_context_type const ctx{fieldAccessor, fill_time};
 
         // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
         SAMRAI::hier::Box const& patch_box = patch.getBox();
@@ -258,42 +250,45 @@ public:
                 auto const currentBoundaryLocation
                     = static_cast<core::CodimNBoundaryLocation<codim>>(bBox.getLocationIndex());
 
-                // get the primary 1-codimensional boundary that applies at the currently treated
-                // boundary. If the current boundary is itself 1-codimensional, then
-                // masterBoundaryLocation = currentBoundaryLocation
+                // get the "master" 1-codimensional boundary that applies at the currently treated
+                // boundary: for instance corner in 2D belongs to two different 1-codimensional
+                // boundaries (edges), so two boundary conditions compete there. The responsability
+                // of choosing which boundary condition prevails there is on the boundaryManager.
+                // If the current boundary is itself 1-codimensional, then masterBoundaryLocation =
+                // currentBoundaryLocation.
                 core::BoundaryLocation const masterBoundaryLocation
                     = boundaryManager_.getMasterBoundaryLocation(currentBoundaryLocation);
                 auto* const masterBoundary = boundaryManager_.getBoundary(masterBoundaryLocation);
                 if (!masterBoundary)
                     throw std::runtime_error("Boundary not found.");
 
-                // get the boundary condition for the current physical quantity. The same normal
-                // condition is applied during the regular advance and while a fine level is
-                // (re)filled at regrid/init: the value-prescribed inflow conditions (e.g. the
-                // divergence-free transverse Dirichlet B) produce valid outside-domain ghosts
-                // without needing the fine interior, and the extrapolating ones (e.g. open/outflow
-                // B) read the freshly (re)filled interior.
+                // get the boundary condition for the current physical quantity.
                 std::shared_ptr<boundary_condition_type> bc
                     = masterBoundary->getFieldCondition(scalarOrTensorField.physicalQuantity());
                 if (!bc)
                     throw std::runtime_error("Field boundary condition not found.");
 
-                // apply the boundary condition as if the current boundary was belonging to the
-                // primary boundary.
+                // if possible, apply the retained boundary condition, as if the current boundary
+                // was belonging to the 1-codimensional master boundary; this essentially defines
+                // which Cartesian direction is considered to be the normal one. Again, if the
+                // current boundary is itself 1-codimensional, the master boundary is just the
+                // current boundary.
                 //
-                // SAMRAI invokes this callback not only on the real level patches (which carry the
-                // full MHD state) but also on temporary, single-quantity patches it builds for
-                // cross-level (coarse->fine) interpolation. PHARE's coupled MHD conditions read
-                // sibling fields off the patch (energy BC: rho/P/rhoV/B); those siblings are not
-                // allocated on the interpolation temp patches. `bc->canApply(ctx)` reports up front
-                // (via the accessor's non-throwing availability queries) whether the condition's
-                // reads will succeed here, so the missing-sibling case is a deterministic branch
-                // rather than a thrown-and-caught exception on the hot path. The temp-patch ghosts
-                // still feed the fine level via interpolation, so they must not be left at the NaN
-                // sentinel: fall back to a sibling-free zero-gradient (Neumann) fill there. The
-                // real level patches carry the full state, so canApply is true and they receive the
-                // exact coupled condition. Value-prescribed conditions (default canApply == true)
-                // apply on temp patches too, since they read no siblings.
+                // Why are there situations where the boundary condition cannot be applied:
+                // SAMRAI can call this on temporary, single-quantity patches it builds for
+                // cross-level (coarse->fine) interpolation. PHARE's coupled field conditions need
+                // extra fields off the patch than the quantity it applies to. For instance energy
+                // BC usually requires knowing rho/P/rhoV/B; those extra fields are not allocated
+                // on the interpolation temp patches dedicated to the total energy.
+                // `bc->canApply(ctx)` reports if the boundary condition is not appplicable because
+                // some quantities are missing. Simple uncoupled boundary conditions will always
+                // be applicable. But for coupled ones, this might not be the case, yet
+                // temporary-patch ghosts cells at physical boundaries cannot be left as NaNs and
+                // should be assigned a meaningful value. Otherwise it propagates to the final patch
+                // resulting from the regrid (tried to vibe-circumvent this, but did not succeed).
+                // In this situation, we therefore fall back to a Neumann boundary condition, that
+                // requires no other fields than the quantity itself. Maybe a better solution exists
+                // to this.
                 if (bc->canApply(ctx))
                 {
                     bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,
@@ -301,15 +296,15 @@ public:
                 }
                 else
                 {
+                    // leave a clear trace in the log when and where this scenario occured
                     PHARE_LOG_LINE_SS(
                         "Neumann fallback triggered in setPhysicalBoundaryConditions"
                         << " | field=" << scalarOrTensorField.name() << " | quantity="
                         << static_cast<int>(scalarOrTensorField.physicalQuantity())
                         << " | codim=" << static_cast<int>(codim) << " | currentBoundaryLocation="
-                        << static_cast<int>(currentBoundaryLocation)
-                        << " | masterBoundaryLocation=" << static_cast<int>(masterBoundaryLocation)
-                        << " | fill_time=" << fill_time << " | patch_box=" << patch_box
-                        << " | localBox=" << localBox);
+                        << static_cast<int>(currentBoundaryLocation) << " | masterBoundaryLocation="
+                        << static_cast<int>(masterBoundaryLocation) << " | fill_time=" << fill_time
+                        << " | patch_box=" << patch_box << " | localBox=" << localBox);
                     core::FieldNeumannBoundaryCondition<scalar_or_tensor_field_type,
                                                         gridlayout_type>
                         neumannFallback;

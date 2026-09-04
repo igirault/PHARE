@@ -1,9 +1,7 @@
 #ifndef PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_DIVERGENCE_FREE_TRANSVERSE_COMMON_HPP
 #define PHARE_CORE_NUMERICS_BOUNDARY_CONDITION_DIVERGENCE_FREE_TRANSVERSE_COMMON_HPP
 
-#include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
 #include <cstddef>
 #include <tuple>
@@ -16,14 +14,9 @@ namespace PHARE::core
  * given the transverse components already filled in the ghost layer.
  *
  * Iterates the ghost cells closest-to-farthest from the physical domain (forward for an upper
- * boundary, reverse for a lower one) so each normal update reads an already-set donor. Discrete
- * div B = 0 requires the transverse differences to be scaled by their own mesh spacing and the
- * normal update by the normal spacing:
- *   Bn[i+1] = Bn[i] - dx_n * Σ_t ( Bt[t+1] - Bt[t] ) / dx_t
- * omitting the spacings is only correct on cubic cells (dx = dy = dz).
+ * boundary, reverse for a lower one) so each normal update reads an already-set donor.
  *
- * Shared verbatim by the transverse-Neumann and transverse-Dirichlet divergence-free conditions;
- * they differ only in how the transverse ghosts are filled, which is done before this call.
+ * Shared by the transverse-Neumann and transverse-Dirichlet divergence-free conditions.
  *
  * @param fields         Tuple of the three (co-centred) magnetic-field component fields.
  * @param iNormal        Index of the boundary-normal component.
@@ -70,13 +63,13 @@ void applyDivergenceFreeNormalComponent(FieldTuple& fields, std::size_t const iN
             {
                 _index const index_to_set      = index.neighbor(iNormal, 1);
                 _index const index_already_set = index;
-                nField(index_to_set) = nField(index_already_set) - dxN * transverseDiv;
+                nField(index_to_set)           = nField(index_already_set) - dxN * transverseDiv;
             }
             else
             {
                 _index const index_to_set      = index;
                 _index const index_already_set = index.neighbor(iNormal, 1);
-                nField(index_to_set) = nField(index_already_set) + dxN * transverseDiv;
+                nField(index_to_set)           = nField(index_already_set) + dxN * transverseDiv;
             }
         }
     };

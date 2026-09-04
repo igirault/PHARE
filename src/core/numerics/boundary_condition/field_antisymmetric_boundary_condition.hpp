@@ -50,7 +50,7 @@ public:
     void apply(ScalarOrTensorFieldT& scalarOrTensorField,
                BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
-               Super::boundary_condition_context_type const& ctx) override
+               Super::context_type const& ctx) override
     {
         Direction const direction = getDirection(boundaryLocation);
 

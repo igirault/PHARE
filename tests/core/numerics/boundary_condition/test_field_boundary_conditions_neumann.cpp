@@ -26,8 +26,6 @@ TEST_F(FieldBC1D, NeumannSetsUpperGhostToInteriorValue)
 }
 
 
-// ─── 2D scalar ────────────────────────────────────────────────────────────────
-
 TEST_F(FieldBC2D, NeumannAtXBoundaries)
 {
     FieldNeumannBoundaryCondition<Field2D, GridLayout2D> bc;
@@ -35,8 +33,8 @@ TEST_F(FieldBC2D, NeumannAtXBoundaries)
     bc.apply(field, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
     std::uint32_t const allocX = grid.shape()[0];
-    std::uint32_t sy = layout.physicalStartIndex(qty, Direction::Y);
-    std::uint32_t ey = layout.physicalEndIndex(qty, Direction::Y);
+    std::uint32_t sy           = layout.physicalStartIndex(qty, Direction::Y);
+    std::uint32_t ey           = layout.physicalEndIndex(qty, Direction::Y);
     for (std::uint32_t g = 0; g < ghostWidth; ++g)
         for (std::uint32_t iy = sy; iy <= ey; ++iy)
         {
@@ -46,8 +44,6 @@ TEST_F(FieldBC2D, NeumannAtXBoundaries)
 }
 
 
-// ─── 3D scalar ────────────────────────────────────────────────────────────────
-
 TEST_F(FieldBC3D, NeumannAtZBoundaries)
 {
     FieldNeumannBoundaryCondition<Field3D, GridLayout3D> bc;
@@ -55,10 +51,10 @@ TEST_F(FieldBC3D, NeumannAtZBoundaries)
     bc.apply(field, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
 
     std::uint32_t const allocZ = grid.shape()[2];
-    std::uint32_t sx = layout.physicalStartIndex(qty, Direction::X);
-    std::uint32_t ex = layout.physicalEndIndex(qty, Direction::X);
-    std::uint32_t sy = layout.physicalStartIndex(qty, Direction::Y);
-    std::uint32_t ey = layout.physicalEndIndex(qty, Direction::Y);
+    std::uint32_t sx           = layout.physicalStartIndex(qty, Direction::X);
+    std::uint32_t ex           = layout.physicalEndIndex(qty, Direction::X);
+    std::uint32_t sy           = layout.physicalStartIndex(qty, Direction::Y);
+    std::uint32_t ey           = layout.physicalEndIndex(qty, Direction::Y);
     for (std::uint32_t g = 0; g < ghostWidth; ++g)
         for (std::uint32_t ix = sx; ix <= ex; ++ix)
             for (std::uint32_t iy = sy; iy <= ey; ++iy)

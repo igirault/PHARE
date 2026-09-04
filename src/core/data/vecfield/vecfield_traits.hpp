@@ -6,6 +6,6 @@
 namespace PHARE::core
 {
 template<typename T>
-concept IsVecField = PHARE::core::IsTensorField<T> || (T::N == 3);
+concept IsVecField = PHARE::core::IsTensorField<T> && (T::size() == 3);
 }
 #endif // PHARE_CORE_DATA_VECFIELD_TRAITS_HPP

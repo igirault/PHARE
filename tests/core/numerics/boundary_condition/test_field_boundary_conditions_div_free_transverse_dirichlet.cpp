@@ -6,8 +6,6 @@
 using namespace PHARE::core;
 
 
-// ─── 1D VecField ─────────────────────────────────────────────────────────────
-
 TEST_F(VecFieldBC1D, DivergenceFreeTransverseDirichletAtXBoundaries)
 {
     std::array values{123.0, 7.0, 11.0};
@@ -38,8 +36,6 @@ TEST_F(VecFieldBC1D, DivergenceFreeTransverseDirichletAtXBoundaries)
     }
 }
 
-
-// ─── 2D VecField ─────────────────────────────────────────────────────────────
 
 TEST_F(VecFieldBC2D, DivergenceFreeTransverseDirichletAtXBoundaries)
 {
@@ -153,9 +149,6 @@ TEST_F(VecFieldBC2DNonUniformBy, DivergenceFreeTransverseDirichletKeepsXGhostDiv
 }
 
 
-// Anisotropic mesh (dx != dy): the div-free stencil must scale transverse differences by
-// their own spacing and the normal update by the normal spacing. A stencil that drops the
-// spacings leaves a non-zero discrete div B here (it is only correct on cubic cells).
 TEST_F(VecFieldBC2DNonUniformByAnisotropic,
        DivergenceFreeTransverseDirichletKeepsXGhostDivergenceZeroOnAnisotropicMesh)
 {
@@ -180,8 +173,6 @@ TEST_F(VecFieldBC2DNonUniformByAnisotropic,
             << "upper divergence at (" << index[0] << ", " << index[1] << ")";
 }
 
-
-// ─── 3D VecField ─────────────────────────────────────────────────────────────
 
 TEST_F(VecFieldBC3D, DivergenceFreeTransverseDirichletAtZBoundaries)
 {

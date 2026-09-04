@@ -10,15 +10,6 @@
 using namespace PHARE::core;
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// FieldTotalEnergyFromPressureBoundaryCondition — all-Neumann sub-BCs
-//
-// When ρ, ρv, B, P all use Neumann, the ghost thermodynamic state mirrors the
-// interior → ghost Etot equals interior Etot.
-// ════════════════════════════════════════════════════════════════════════════
-
-// ─── 1D ─────────────────────────────────────────────────────────────────────
-
 struct EtotFromPressureBC1D : testing::Test
 {
     static constexpr double gamma    = 5.0 / 3.0;
@@ -130,16 +121,12 @@ TEST_F(EtotFromPressureBC1D, InteriorEtotUnchangedAfterBC)
         EXPECT_DOUBLE_EQ(EtotField(i), etot_val) << "interior index i=" << i;
 }
 
-TEST_F(EtotFromPressureBC1D, InteriorPressureUnchangedAfterBC)
+TEST_F(EtotFromPressureBC1D, MirrorPressureReconstructedOtherInteriorPressureUnchanged)
 {
-    // Mark interior P with a value inconsistent with Etot, so the internal reconstruction of
-    // pressure at the mirror cells would produce a *different* number. A boundary fill must
-    // not leave that reconstructed value in the interior: interior P belongs to the primitive
-    // converter, not this BC.
     auto pQty                = MHDQuantity::Scalar::P;
     std::uint32_t ps         = layout.physicalStartIndex(pQty, Direction::X);
     std::uint32_t pe         = layout.physicalEndIndex(pQty, Direction::X);
-    constexpr double pMarker = 123.456; // != reconstructed P_val
+    constexpr double pMarker = 123.456;
     for (std::uint32_t i = ps; i <= pe; ++i)
         PField(i) = pMarker;
 
@@ -157,12 +144,22 @@ TEST_F(EtotFromPressureBC1D, InteriorPressureUnchangedAfterBC)
     bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
              makeCtx(acc, 0.0));
 
-    for (std::uint32_t i = ps; i <= pe; ++i)
+    for (std::uint32_t g = 0; g < mhdGhostWidth; ++g)
+    {
+        EXPECT_DOUBLE_EQ(PField(ps + g), P_val) << "lower mirror g=" << g;
+        EXPECT_DOUBLE_EQ(PField(pe - g), P_val) << "upper mirror g=" << g;
+    }
+
+    for (std::uint32_t i = ps + mhdGhostWidth; i <= pe - mhdGhostWidth; ++i)
         EXPECT_DOUBLE_EQ(PField(i), pMarker) << "interior P index i=" << i;
+
+    for (std::uint32_t g = 0; g < mhdGhostWidth; ++g)
+    {
+        EXPECT_DOUBLE_EQ(PField(ps - 1u - g), P_val) << "lower ghost P g=" << g;
+        EXPECT_DOUBLE_EQ(PField(pe + 1u + g), P_val) << "upper ghost P g=" << g;
+    }
 }
 
-
-// ─── 2D ─────────────────────────────────────────────────────────────────────
 
 struct EtotFromPressureBC2D : testing::Test
 {
@@ -287,8 +284,6 @@ TEST_F(EtotFromPressureBC2D, InteriorEtotUnchangedAfterBC)
                 << "interior index (" << ix << "," << iy << ")";
 }
 
-
-// ─── 3D ─────────────────────────────────────────────────────────────────────
 
 struct EtotFromPressureBC3D : testing::Test
 {
@@ -432,17 +427,6 @@ TEST_F(EtotFromPressureBC3D, InteriorEtotUnchangedAfterBC)
 }
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// FieldTotalEnergyFromPressureBoundaryCondition — Dirichlet-pressure sub-BC
-//
-// ρ, ρv use Neumann; B uses DivergenceFreeTransverseNeumann; P uses Dirichlet(P_fixed).
-// Ghost Etot is reconstructed from the fixed ghost pressure + Neumann-extrapolated
-// density, momentum, and magnetic field.
-//
-// Non-corner ghost-box helpers exclude cells overwritten by adjacent-direction
-// BCs (corner values are order-dependent and not read by physical stencils).
-// ════════════════════════════════════════════════════════════════════════════
-
 static Box<std::uint32_t, 2> fp2DXLowerNonCornerGhostBox()
 {
     return {{0u, mhdGhostWidth}, {mhdGhostWidth - 1u, mhdGhostWidth + nCellsMHDY2D - 1u}};
@@ -499,8 +483,6 @@ static Box<std::uint32_t, 3> fp3DZUpperNonCornerGhostBox()
              2u * mhdGhostWidth + nCellsMHDZ3D - 1u}};
 }
 
-
-// ─── 1D Dirichlet pressure ──────────────────────────────────────────────────
 
 struct DirichletPressureBC1D : testing::Test
 {
@@ -624,8 +606,6 @@ TEST_F(DirichletPressureBC1D, InteriorEtotUnchangedAfterBC)
         EXPECT_DOUBLE_EQ(EtotField(i), etot_val) << "interior index i=" << i;
 }
 
-
-// ─── 2D Dirichlet pressure ──────────────────────────────────────────────────
 
 struct DirichletPressureBC2D : testing::Test
 {
@@ -754,8 +734,6 @@ TEST_F(DirichletPressureBC2D, InteriorEtotUnchangedAfterBC)
                 << "interior index (" << ix << "," << iy << ")";
 }
 
-
-// ─── 3D Dirichlet pressure ──────────────────────────────────────────────────
 
 struct DirichletPressureBC3D : testing::Test
 {

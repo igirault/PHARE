@@ -8,18 +8,17 @@
 using namespace PHARE::core;
 
 
-// ─── 1D scalar ────────────────────────────────────────────────────────────────
-
 TEST_F(FieldBC1D, SymmetricScalarEquivalentToNeumann)
 {
-    // Reference: apply Neumann on a copy
     Grid1D refGrid{"rho_ref", qty, layout.allocSize(qty)};
     Field1D& refField{*(&refGrid)};
     for (std::uint32_t i = 0; i < refGrid.shape()[0]; ++i)
         refField(i) = (i >= physStart && i <= physEnd) ? interiorValue : ghostSentinel;
     FieldNeumannBoundaryCondition<Field1D, GridLayout1D> neumann;
-    neumann.apply(refField, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
-    neumann.apply(refField, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
+    neumann.apply(refField, BoundaryLocation::XLower, lowerGhostCellBox(), layout,
+                  makeCtx(acc, 0.0));
+    neumann.apply(refField, BoundaryLocation::XUpper, upperGhostCellBox(), layout,
+                  makeCtx(acc, 0.0));
 
     FieldSymmetricBoundaryCondition<Field1D, GridLayout1D> sym;
     sym.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
@@ -29,8 +28,6 @@ TEST_F(FieldBC1D, SymmetricScalarEquivalentToNeumann)
         EXPECT_DOUBLE_EQ(field(i), refField(i)) << "at index " << i;
 }
 
-
-// ─── 1D VecField ─────────────────────────────────────────────────────────────
 
 TEST_F(VecFieldBC1D, SymmetricNormalComponentBxSetToDirichletZero)
 {
@@ -65,15 +62,12 @@ TEST_F(VecFieldBC1D, SymmetricTangentialComponentsByBzSetToNeumann)
 }
 
 
-// ─── 2D VecField ─────────────────────────────────────────────────────────────
-
 TEST_F(VecFieldBC2D, SymmetricAtXBoundaries)
 {
     FieldSymmetricBoundaryCondition<VecField2D, GridLayout2D> bc;
     bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
     bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
-    // Bx: primal in X → Dirichlet(0)
     {
         auto& Bx          = B[0];
         auto bxQty        = HybridQuantity::Scalar::Bx;
@@ -90,7 +84,6 @@ TEST_F(VecFieldBC2D, SymmetricAtXBoundaries)
         }
     }
 
-    // By, Bz: dual in X → Neumann
     for (std::size_t comp : {1u, 2u})
     {
         auto& f           = B[comp];
@@ -115,7 +108,6 @@ TEST_F(VecFieldBC2D, SymmetricAtYBoundaries)
     bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
     bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
 
-    // By: primal in Y → Dirichlet(0)
     {
         auto& By          = B[1];
         auto byQty        = HybridQuantity::Scalar::By;
@@ -132,7 +124,6 @@ TEST_F(VecFieldBC2D, SymmetricAtYBoundaries)
         }
     }
 
-    // Bx, Bz: dual in Y → Neumann
     for (std::size_t comp : {0u, 2u})
     {
         auto& f           = B[comp];
@@ -152,15 +143,12 @@ TEST_F(VecFieldBC2D, SymmetricAtYBoundaries)
 }
 
 
-// ─── 3D VecField ─────────────────────────────────────────────────────────────
-
 TEST_F(VecFieldBC3D, SymmetricAtZBoundaries)
 {
     FieldSymmetricBoundaryCondition<VecField3D, GridLayout3D> bc;
     bc.apply(B, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
     bc.apply(B, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
 
-    // Bz: primal in Z → Dirichlet(0)
     {
         auto& Bz          = B[2];
         auto bzQty        = HybridQuantity::Scalar::Bz;
@@ -184,7 +172,6 @@ TEST_F(VecFieldBC3D, SymmetricAtZBoundaries)
             }
     }
 
-    // Bx, By: dual in Z → Neumann
     for (std::size_t comp : {0u, 1u})
     {
         auto& f           = B[comp];
@@ -213,7 +200,6 @@ TEST_F(VecFieldBC3D, SymmetricAtXBoundaries)
     bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
     bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
 
-    // Bx: primal in X → Dirichlet(0)
     {
         auto& Bx          = B[0];
         auto bxQty        = HybridQuantity::Scalar::Bx;
@@ -233,7 +219,6 @@ TEST_F(VecFieldBC3D, SymmetricAtXBoundaries)
             }
     }
 
-    // By, Bz: dual in X → Neumann
     for (std::size_t comp : {1u, 2u})
     {
         auto& f           = B[comp];
@@ -259,7 +244,6 @@ TEST_F(VecFieldBC3D, SymmetricAtYBoundaries)
     bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
     bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
 
-    // By: primal in Y → Dirichlet(0)
     {
         auto& By          = B[1];
         auto byQty        = HybridQuantity::Scalar::By;
@@ -279,7 +263,6 @@ TEST_F(VecFieldBC3D, SymmetricAtYBoundaries)
             }
     }
 
-    // Bx, Bz: dual in Y → Neumann
     for (std::size_t comp : {0u, 2u})
     {
         auto& f           = B[comp];

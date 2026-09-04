@@ -627,6 +627,7 @@ namespace amr
             std::vector<std::shared_ptr<RefinePatchStrategyT>>& patchStrategies,
             std::vector<std::string> const& keys)
         {
+            patchStrategies.clear(); // registerQuantities must be idempotent
             patchStrategies.reserve(keys.size());
             // Every ghost-name list has exactly one entry per integrator sub-state (model state
             // included), in lockstep with the per-sub-state id-maps built in buildFieldIdMaps_.

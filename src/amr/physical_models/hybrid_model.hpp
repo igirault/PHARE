@@ -92,14 +92,10 @@ public:
         , state{dict}
         , resourcesManager{_resourcesManager}
     {
-        // inert manager: no quantity has a registered field BC for the hybrid model yet,
-        // but the messenger wiring dereferences this BoundaryManager unconditionally
-        // (magneticRefinePatchStrategy_), so it must never be null. When the config carries no
-        // boundary_conditions (hand-built C++ test dicts), build it from an empty dict: the
-        // manager then registers no boundaries and stays inert.
+        // no boundary conditions in hybrid for now, but boundaryManager needed by the messenger, so
+        // we create a dummy one
         if (dict.contains("grid"))
             core::validatePhysicalBoundariesDeclared<dimension>(dict["grid"]);
-
         auto const has_bcs = dict.contains("grid") && dict["grid"].contains("boundary_conditions");
         boundaryManager    = std::make_shared<boundary_manager_type>(
             has_bcs ? dict["grid"]["boundary_conditions"] : PHARE::initializer::PHAREDict{},

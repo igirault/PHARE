@@ -1,25 +1,23 @@
 #ifndef PHARE_TEST_CORE_NUMERICS_BOUNDARY_CONDITION_HYBRID_BC_TEST_FIXTURES_HPP
 #define PHARE_TEST_CORE_NUMERICS_BOUNDARY_CONDITION_HYBRID_BC_TEST_FIXTURES_HPP
 
-#include "gtest/gtest.h"
-
-#include "core/boundary/boundary_defs.hpp"
 #include "core/data/grid/grid.hpp"
 #include "core/data/grid/gridlayout.hpp"
-#include "core/models/options/hybrid_options.hpp"
-#include "phare_simulator_options.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/data/patch_field_accessor.hpp"
-#include "core/numerics/boundary_condition/boundary_condition_context.hpp"
+#include "core/models/options/hybrid_options.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/utilities/box/box.hpp"
+
+#include "gtest/gtest.h"
+
+#include "phare_simulator_options.hpp"
 #include "tests/core/data/tensorfield/test_tensorfield_fixtures.hpp"
 
 namespace PHARE::core
 {
 
-// ─── Layout options ──────────────────────────────────────────────────────────
 
-// Hybrid Yee layout, interp order 1: field ghost width 2 in every direction.
 template<std::size_t dim>
 inline constexpr PHARE::SimOpts hybridSimOptions{.dimension = dim, .interp_order = 1};
 
@@ -27,12 +25,10 @@ template<std::size_t dim>
 inline constexpr PHARE::HybridFieldOptions<hybridSimOptions<dim>> hybridFieldOptions{};
 
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-static constexpr std::uint32_t nCells      = 10u;
-static constexpr std::uint32_t ghostWidth  = hybridFieldOptions<1>.field_ghost_width;
-static constexpr double        interiorValue = 5.0;
-static constexpr double        ghostSentinel = 99.0;
+static constexpr std::uint32_t nCells     = 10u;
+static constexpr std::uint32_t ghostWidth = hybridFieldOptions<1>.field_ghost_width;
+static constexpr double interiorValue     = 5.0;
+static constexpr double ghostSentinel     = 99.0;
 
 static constexpr std::uint32_t nCellsX2D = 10u;
 static constexpr std::uint32_t nCellsY2D = 8u;
@@ -41,8 +37,6 @@ static constexpr std::uint32_t nCellsX3D = 10u;
 static constexpr std::uint32_t nCellsY3D = 8u;
 static constexpr std::uint32_t nCellsZ3D = 6u;
 
-
-// ─── Type aliases ─────────────────────────────────────────────────────────────
 
 using GridLayout1D = GridLayout<PHARE::HybridOptions<hybridFieldOptions<1>>{}>;
 using NdArray1D    = NdArrayVector<1, double>;
@@ -63,8 +57,6 @@ using Field3D      = Grid3D::field_type;
 using VecField3D   = VecField<Field3D, HybridQuantity>;
 
 
-// ─── Null accessor ────────────────────────────────────────────────────────────
-
 template<typename FieldT>
 struct NullFieldAccessorT : IPatchFieldAccessor<FieldT, HybridQuantity>
 {
@@ -83,15 +75,12 @@ struct NullFieldAccessorT : IPatchFieldAccessor<FieldT, HybridQuantity>
 using NullFieldAccessor = NullFieldAccessorT<Field1D>;
 
 
-// Build a BC context bound to the accessor exposing the current substage state. time=0 by default.
 template<typename FieldT>
 auto makeCtx(NullFieldAccessorT<FieldT> const& acc, double time = 0.0)
 {
-    return PHARE::core::BoundaryConditionContext<FieldT, HybridQuantity>{acc, time};
+    return BoundaryConditionContext<FieldT, HybridQuantity>{acc, time};
 }
 
-
-// ─── 1D ghost-cell boxes ─────────────────────────────────────────────────────
 
 inline Box<std::uint32_t, 1> lowerGhostCellBox()
 {
@@ -103,8 +92,6 @@ inline Box<std::uint32_t, 1> upperGhostCellBox()
             Point<std::uint32_t, 1>{2u * ghostWidth + nCells - 1u}};
 }
 
-
-// ─── 2D ghost-cell boxes ─────────────────────────────────────────────────────
 
 inline Box<std::uint32_t, 2> xLowerGhostCellBox2D()
 {
@@ -125,8 +112,6 @@ inline Box<std::uint32_t, 2> yUpperGhostCellBox2D()
             {nCellsX2D + 2u * ghostWidth - 1u, 2u * ghostWidth + nCellsY2D - 1u}};
 }
 
-
-// ─── 3D ghost-cell boxes ─────────────────────────────────────────────────────
 
 inline Box<std::uint32_t, 3> xLowerGhostCellBox3D()
 {
@@ -163,8 +148,6 @@ inline Box<std::uint32_t, 3> zUpperGhostCellBox3D()
 }
 
 
-// ─── 1D scalar field fixture ──────────────────────────────────────────────────
-
 struct FieldBC1D : testing::Test
 {
     GridLayout1D layout{{0.1}, {nCells}, {0.0}};
@@ -186,8 +169,6 @@ struct FieldBC1D : testing::Test
     }
 };
 
-
-// ─── 2D scalar field fixture ──────────────────────────────────────────────────
 
 struct FieldBC2D : testing::Test
 {
@@ -214,8 +195,6 @@ struct FieldBC2D : testing::Test
     }
 };
 
-
-// ─── 3D scalar field fixture ──────────────────────────────────────────────────
 
 struct FieldBC3D : testing::Test
 {
@@ -247,8 +226,6 @@ struct FieldBC3D : testing::Test
 };
 
 
-// ─── 1D VecField (B) fixture ──────────────────────────────────────────────────
-
 struct VecFieldBC1D : testing::Test
 {
     GridLayout1D layout{{0.1}, {nCells}, {0.0}};
@@ -273,8 +250,6 @@ struct VecFieldBC1D : testing::Test
     }
 };
 
-
-// ─── 2D VecField (B) fixture ──────────────────────────────────────────────────
 
 struct VecFieldBC2D : testing::Test
 {
@@ -305,8 +280,6 @@ struct VecFieldBC2D : testing::Test
     }
 };
 
-
-// ─── 2D VecField (B) fixture with non-uniform By ─────────────────────────────
 
 struct VecFieldBC2DNonUniformBy : testing::Test
 {
@@ -340,10 +313,6 @@ struct VecFieldBC2DNonUniformBy : testing::Test
 };
 
 
-// ─── 2D VecField (B) fixture: anisotropic mesh (dx != dy) + non-uniform By ──────
-// Same as VecFieldBC2DNonUniformBy but with dy != dx, so a divergence-free stencil that
-// drops the mesh spacings produces a non-zero discrete div B — the F01 regression guard.
-
 struct VecFieldBC2DNonUniformByAnisotropic : testing::Test
 {
     GridLayout2D layout{{0.1, 0.2}, {nCellsX2D, nCellsY2D}, {0.0, 0.0}};
@@ -375,8 +344,6 @@ struct VecFieldBC2DNonUniformByAnisotropic : testing::Test
     }
 };
 
-
-// ─── 3D VecField (B) fixture ──────────────────────────────────────────────────
 
 struct VecFieldBC3D : testing::Test
 {
@@ -413,4 +380,4 @@ struct VecFieldBC3D : testing::Test
 
 } // namespace PHARE::core
 
-#endif // PHARE_TEST_CORE_NUMERICS_BOUNDARY_CONDITION_HYBRID_BC_TEST_FIXTURES_HPP
+#endif

@@ -12,11 +12,6 @@
 using namespace PHARE::core;
 using PHARE::initializer::PHAREDict;
 
-// Table-driven check that the boundary factory maps each supported boundary-type string to the
-// expected FieldBoundaryConditionType for every registered MHD quantity. This is the layer where
-// two real fall-through bugs were already found (None->Reflective on a missing break, and the
-// dead-motional-E path), so pinning the exact per-quantity dispatch here guards against their
-// regression. No patch data or SAMRAI needed: only the factory's construction wiring is exercised.
 
 namespace
 {
@@ -27,12 +22,9 @@ using FBC     = FieldBoundaryConditionType;
 
 double constexpr gamma = 5.0 / 3.0;
 
-// the quantities the MHD model registers boundary conditions for (see mhd_model.hpp)
 std::vector<Scalar> const mhdScalars{Scalar::rho, Scalar::Etot};
 std::vector<Vector> const mhdVectors{Vector::B, Vector::E, Vector::rhoV};
 
-// A fully-populated inflow 'data' sub-dict: constant density/pressure and constant
-// velocity/B 3-vectors, with the "<key>_is_function" flags the C++ readers expect.
 void fillInflowData(PHAREDict& dict)
 {
     dict["data"]["density"]              = 1.0;

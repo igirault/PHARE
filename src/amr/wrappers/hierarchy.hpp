@@ -328,8 +328,10 @@ auto griddingAlgorithmDatabase(PHARE::initializer::PHAREDict const& grid)
     }
 
     int periodicity[dimension];
-    auto boundary_types = initializer::parseDimXYZType<std::string, dimension>(grid, "boundary_type");
-    for (size_t i = 0; i < dimension; ++i) {
+    auto const boundary_types
+        = initializer::parseDimXYZType<std::string, dimension>(grid, "boundary_type");
+    for (std::size_t i = 0; i < dimension; ++i)
+    {
         if (boundary_types[i] == "periodic")
             periodicity[i] = 1;
         else if (boundary_types[i] == "physical")
@@ -437,9 +439,11 @@ DimHierarchy<_dimension>::DimHierarchy(PHARE::initializer::PHAREDict const& dict
               SAMRAI::tbox::Dimension{dimension}, "CartesianGridGeom",
               griddingAlgorithmDatabase<dimension>(dict["simulation"]["grid"])),
           patchHierarchyDatabase<dimension>(dict["simulation"]["AMR"]),
-          shapeToBox(initializer::parseDimXYZType<int, dimension>(dict["simulation"]["grid"], "nbr_cells")),
+          shapeToBox(initializer::parseDimXYZType<int, dimension>(dict["simulation"]["grid"],
+                                                                   "nbr_cells")),
           initializer::parseDimXYZType<double, dimension>(dict["simulation"]["grid"], "meshsize"),
-          initializer::parseDimXYZType<std::string, dimension>(dict["simulation"]["grid"], "boundary_type")}
+          initializer::parseDimXYZType<std::string, dimension>(dict["simulation"]["grid"],
+                                                               "boundary_type")}
 {
 }
 

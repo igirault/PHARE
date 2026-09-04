@@ -35,7 +35,7 @@ class TensorFieldData : public SAMRAI::hier::PatchData
 
     static constexpr auto NO_ROTATE = SAMRAI::hier::Transformation::NO_ROTATE;
 
-    using tensor_t             = typename PhysicalQuantity::template TensorType<rank_>;
+    using tensor_t             = PhysicalQuantity::template TensorType<rank_>;
     using TensorFieldOverlap_t = TensorFieldOverlap<rank_>;
 
 public:
@@ -61,7 +61,7 @@ public:
     using Geometry          = TensorFieldGeometry<rank, GridLayoutT, PhysicalQuantity>;
     using gridlayout_type   = GridLayoutT;
     using grid_type         = Grid_t;
-    using field_type        = typename Grid_t::field_type;
+    using field_type        = Grid_t::field_type;
     using tensor_field_type = core::TensorField<field_type, PhysicalQuantity, rank>;
 
     /*** \brief Construct a TensorFieldData from information associated to a patch

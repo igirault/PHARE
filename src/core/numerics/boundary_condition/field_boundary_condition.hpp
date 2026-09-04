@@ -5,7 +5,6 @@
 #include "core/data/field/field_traits.hpp"
 #include "core/data/patch_field_accessor.hpp"
 #include "core/data/tensorfield/tensorfield_traits.hpp"
-#include "core/numerics/boundary_condition/boundary_condition_context.hpp"
 #include "core/utilities/box/box.hpp"
 
 #include <tuple>
@@ -28,6 +27,15 @@ enum class FieldBoundaryConditionType : int {
     TotalEnergyFromPressure
 };
 
+/** @brief Context data passed to boundary conditions */
+template<typename FieldT, typename PhysicalQuantityT>
+struct BoundaryConditionContext
+{
+    using patch_field_accessor_type = IPatchFieldAccessor<FieldT, PhysicalQuantityT>;
+
+    patch_field_accessor_type const& accessor_new;
+    double time;
+};
 
 /**
  * @brief Interface for applying boundary conditions to scalar or tensor fields.
@@ -48,17 +56,14 @@ public:
     static constexpr size_t dimension = GridLayoutT::dimension;
     static constexpr size_t N = NumberOfComponentsSelector<ScalarOrTensorFieldT, is_scalar>::value;
 
-    using This                   = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
+    using This = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
     // the quantity category (HybridQuantity / MHDQuantity) is carried by the layout options
     using physical_quantity_type = typename decltype(GridLayoutT::options.field_options)::Quantity;
     using tensor_quantity_type
         = PhysicalQuantityTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
-    using field_type = FieldTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
-    using patch_field_accessor_type
-        = IPatchFieldAccessor<field_type, physical_quantity_type>;
-    using boundary_condition_context_type
-        = BoundaryConditionContext<field_type, physical_quantity_type>;
-
+    using field_type                = FieldTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
+    using context_type              = BoundaryConditionContext<field_type, physical_quantity_type>;
+    using patch_field_accessor_type = context_type::patch_field_accessor_type;
 
     /** @brief Return the type of the boundary condition. */
     virtual FieldBoundaryConditionType getType() const = 0;
@@ -69,14 +74,10 @@ public:
      * @brief Whether this condition can be applied with the state currently reachable through
      * @p ctx.
      *
-     * Value-prescribed conditions read no siblings and always apply (default). Coupled conditions
-     * that read sibling fields (e.g. TotalEnergyFromPressure reads rho/P/rhoV/B) override this to
-     * report false when those siblings are absent — as on the temporary single-quantity patches
-     * SAMRAI builds for cross-level interpolation. The refine strategy then falls back to a
-     * sibling-free fill instead of applying a partial condition, and does so as an explicit branch
-     * rather than by catching a thrown accessor error.
+     * This query is necessary, because on tempory regrid patches, coupled field boundary
+     * conditions might not be applicable and require a fallback strategy
      */
-    virtual bool canApply(boundary_condition_context_type const& /*ctx*/) const { return true; }
+    virtual bool canApply(context_type const& /*ctx*/) const { return true; }
 
 
     /**
@@ -95,16 +96,10 @@ public:
     virtual void apply(ScalarOrTensorFieldT& scalarOrTensorField,
                        BoundaryLocation const boundaryLocation,
                        Box<std::uint32_t, dimension> const& localGhostBox,
-                       GridLayoutT const& gridLayout, boundary_condition_context_type const& ctx)
-        = 0;
+                       GridLayoutT const& gridLayout, context_type const& ctx) = 0;
 
 protected:
-    /**
-     * @brief Unwrap a scalar-or-tensor field into a tuple of its scalar component fields, so a
-     * single for_N<N> sweep handles the scalar (N==1) and vector cases identically. Shared by the
-     * leaf conditions (Dirichlet / Neumann / Symmetric / AntiSymmetric), which all iterate
-     * component-wise; the returned fields are lightweight views aliasing the same buffers.
-     */
+    /** @brief Unwrap a scalar-or-tensor field into a tuple of its scalar component fields */
     static auto asComponentTuple(ScalarOrTensorFieldT& scalarOrTensorField)
     {
         if constexpr (is_scalar)

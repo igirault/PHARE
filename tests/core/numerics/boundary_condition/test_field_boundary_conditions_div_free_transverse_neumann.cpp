@@ -7,14 +7,6 @@
 using namespace PHARE::core;
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// FieldDivergenceFreeTransverseNeumannBoundaryCondition
-//
-// Transverse components mirror the first interior value (zero normal gradient),
-// the normal component is set so that the discrete divergence of B vanishes in
-// every ghost cell.
-// ════════════════════════════════════════════════════════════════════════════
-
 struct DivFreeTransverseNeumannBC2D : testing::Test
 {
     GridLayoutMHD2D layout{{0.1, 0.1}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
@@ -31,8 +23,6 @@ struct DivFreeTransverseNeumannBC2D : testing::Test
 
     DivFreeTransverseNeumannBC2D()
     {
-        // analytic node values everywhere (interior *and* ghosts), deliberately not
-        // divergence-free so the BC has real work to do on the normal component
         auto fill = [&](auto& f, double a, double b, double c) {
             auto const shape = f.shape();
             for (std::uint32_t i = 0; i < shape[0]; ++i)
@@ -111,9 +101,6 @@ TEST_F(DivFreeTransverseNeumannBC2D, YUpperGhostsMirrorTransverseAndKillDivergen
 }
 
 
-// Anisotropic mesh (dx != dy): a div-free stencil that drops the mesh spacings leaves a
-// non-zero discrete div B here, even though it looks correct on the cubic fixtures above.
-// F01 regression guard for the Neumann variant.
 struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
 {
     GridLayoutMHD2D layout{{0.1, 0.2}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
@@ -154,7 +141,7 @@ struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
         for (auto const& cell : ghostBox)
         {
             double const div = (Bx(cell.neighbor(0, 1)) - Bx(cell)) / dx
-                             + (By(cell.neighbor(1, 1)) - By(cell)) / dy;
+                               + (By(cell.neighbor(1, 1)) - By(cell)) / dy;
             EXPECT_NEAR(div, 0.0, 1e-12)
                 << "cell=(" << cell[0] << "," << cell[1] << ") at " << static_cast<int>(loc);
         }
@@ -174,16 +161,10 @@ TEST_F(DivFreeTransverseNeumannBC2DAnisotropic, YBoundariesKillDivergenceOnAniso
 }
 
 
-// ════════════════════════════════════════════════════════════════════════════
-// 3D: exercises the normal-component update with two transverse divergence terms
-// (the 2D fixtures above only ever have one), on every face.
-// ════════════════════════════════════════════════════════════════════════════
-
 struct DivFreeTransverseNeumannBC3D : testing::Test
 {
-    GridLayoutMHD3D layout{{0.1, 0.1, 0.1},
-                           {nCellsMHDX3D, nCellsMHDY3D, nCellsMHDZ3D},
-                           {0.0, 0.0, 0.0}};
+    GridLayoutMHD3D layout{
+        {0.1, 0.1, 0.1}, {nCellsMHDX3D, nCellsMHDY3D, nCellsMHDZ3D}, {0.0, 0.0, 0.0}};
 
     GridMHD3D rhoGrid{"rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
     GridMHD3D PGrid{"P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
@@ -197,7 +178,6 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
 
     DivFreeTransverseNeumannBC3D()
     {
-        // analytic node values everywhere, deliberately not divergence-free
         auto fill = [&](auto& f, double a, double b, double c, double d) {
             auto const shape = f.shape();
             for (std::uint32_t i = 0; i < shape[0]; ++i)
@@ -221,7 +201,6 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
         FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D> bc;
         bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
 
-        // transverse components mirror the first interior value (zero normal gradient)
         for (std::size_t comp = 0; comp < 3; ++comp)
         {
             if (comp == iNormal)
@@ -236,7 +215,6 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
             }
         }
 
-        // normal component set so the mesh-spaced discrete div B vanishes in every ghost cell
         auto& Bx        = Bvec[0];
         auto& By        = Bvec[1];
         auto& Bz        = Bvec[2];
@@ -246,8 +224,8 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
         for (auto const& cell : ghostBox)
         {
             double const div = (Bx(cell.neighbor(0, 1)) - Bx(cell)) / dx
-                             + (By(cell.neighbor(1, 1)) - By(cell)) / dy
-                             + (Bz(cell.neighbor(2, 1)) - Bz(cell)) / dz;
+                               + (By(cell.neighbor(1, 1)) - By(cell)) / dy
+                               + (Bz(cell.neighbor(2, 1)) - Bz(cell)) / dz;
             EXPECT_NEAR(div, 0.0, 1e-12) << "at " << static_cast<int>(loc);
         }
     }
