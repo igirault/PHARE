@@ -2,32 +2,10 @@
 #
 # mhd_harris_with_boundaries
 #
-# Discriminating test for the outer physical electric-field boundary condition.
-#
-# This is the *bottom half* of the mhd_harris double current sheet: the domain
-# spans only the lower half of the original box (so it contains a single current
-# sheet), with *reflective* (perfectly conducting wall) boundaries applied at
-# ylower / yupper (x stays periodic). At a reflective wall the factory registers
-# an AntiSymmetric condition on E, whose sole trigger is the solver's
-# fillElectricGhosts() call. That antisymmetric E kills the tangential electric
-# field on the wall so that constrained transport keeps the wall-normal field
-# (By at the y boundaries) at zero.
-#
-# If the electric-field ghosts are NOT filled (i.e. the E BC is never applied),
-# the tangential E on the wall is left uncorrected and Faraday makes By drift
-# away from zero at the y boundaries. The test asserts that the wall-normal By
-# stays below a tight threshold, so it passes only when the E BC is applied.
-#
-# The run uses two levels with x open: tagging keeps a refined level on the
-# current sheet, which spans the full x extent and thus touches both open x
-# physical boundaries from t=0 through every regrid. This exercises the
-# init/regrid physical ghost fill on refined levels (B regrid fallback and the
-# moment init refiners' boundary fill): if those ghosts are left at the NaN
-# sentinel, the first fine-level flux poisons the state, which the explicit
-# no-NaN assertion below catches.
 
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 from pathlib import Path
 
 from pyphare import cpp
@@ -42,11 +20,8 @@ os.environ["PHARE_SCOPE_TIMING"] = "1"  # turn on scope timing
 
 ph.NO_GUI()
 
-# bottom half of the mhd_harris domain: same dx, half the y extent
 cells = (160, 40)
 time_step = 0.005
-# long enough for the refined level to go through hundreds of regrids while
-# touching the open x boundaries, short enough for CI
 final_time = 5.0
 timestamps = np.arange(0, final_time + time_step, final_time / 5)
 diag_dir = "phare_outputs/mhd_harris_with_boundaries"
@@ -55,8 +30,6 @@ hall = True
 res = False
 hyper_res = True
 
-# max |By| tolerated at the wall-normal boundary rows. The reflective E BC keeps
-# this at round-off; without it By drifts orders of magnitude above.
 BN_WALL_TOL = 1e-6
 
 
@@ -93,8 +66,6 @@ def config():
         model_options=["MHDModel"],
         boundary_types=("physical", "physical"),
         boundary_conditions={
-            # x open (free outflow) so tagging puts a refined level on the x physical
-            # boundary, exercising the regrid ghost-fill path; y reflective as before.
             "xlower": {"type": "open"},
             "xupper": {"type": "open"},
             "ylower": {"type": "reflective"},
@@ -106,10 +77,6 @@ def config():
         return 0.5 * (1.0 + np.tanh((y - y0) / l))
 
     def density(x, y):
-        # the simulated domain is the *bottom half* of the mhd_harris box: the
-        # initial condition is evaluated with the original full height so only the
-        # lower current sheet (at 0.25*Ly_full) falls inside; the upper sheet
-        # (0.75*Ly_full) lies above yupper.
         Ly = 2.0 * sim.simulation_domain()[1]
         return (
             0.4
@@ -221,6 +188,7 @@ def plot(diag_dir, plot_dir):
                 qty="z",
                 plot_patches=True,
             )
+        plt.close('all')
 
 
 def max_normal_B_at_y_walls(diag_dir, time):
@@ -284,16 +252,13 @@ class HarrisBoundariesTest(SimulatorTest):
 
     def test_run(self):
         self.register_diag_dir_for_cleanup(diag_dir)
-        Simulator(config()).run().reset()
-        if cpp.mpi_rank() == 0:
+        sim = config()
+        Simulator(sim).run().reset()
+        if not sim.dry_run and cpp.mpi_rank() == 0:
             plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
             plot_dir.mkdir(parents=True, exist_ok=True)
             plot(diag_dir, plot_dir)
             times = get_times_from_h5(f"{diag_dir}/EM_B.h5")
-            # the refined level touches the open x boundaries: any init/regrid
-            # physical ghost left at the NaN sentinel poisons the state through
-            # the first fine-level flux (the wall check below masks non-finite
-            # values, so it would not catch this on its own)
             self.assertEqual(
                 count_nans(diag_dir),
                 0,
@@ -308,7 +273,7 @@ class HarrisBoundariesTest(SimulatorTest):
             self.assertLess(
                 max(bn_lower, bn_upper),
                 BN_WALL_TOL,
-                "wall-normal By deviated from zero: reflective E boundary "
+                "wall-normal By deviated from zero: reflective boundary "
                 "condition not applied (fillElectricGhosts missing?)",
             )
         cpp.mpi_barrier()

@@ -2,6 +2,7 @@
 
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 from pathlib import Path
 from dataclasses import field
 
@@ -175,18 +176,10 @@ def plot(diag_dir, plot_dir):
         run.GetMHDP(time).plot(
             filename=plot_file_for_qty(plot_dir, "p", time), plot_patches=True
         )
+        plt.close("all")
 
 
 def assert_inflow_holds_left_state(diag_dir):
-    """Proves at RUNTIME that the xlower super-magnetofast-inflow boundary kept the
-    leftmost physical cell pinned at the prescribed constant left state (density
-    LEFT_INIT.rho) at every dump, and that the whole field stayed finite.
-
-    Discriminates a working inflow from the failure modes F15 flags: a wrong value,
-    a wrong sign, or (as in F02) no condition applied at all would let the leftmost
-    cell drift away from LEFT_INIT.rho or go non-finite over 1000 steps, whereas a
-    correctly applied inflow holds it.
-    """
     if cpp.mpi_rank() != 0:
         return
 
@@ -247,14 +240,15 @@ class ShockTest(SimulatorTest):
         ph.global_vars.sim = None
 
     def test_run(self):
-        # self.register_diag_dir_for_cleanup(diag_dir)
-        Simulator(config()).run().reset()
-        print_case_info()
-        assert_inflow_holds_left_state(diag_dir)
-        # if cpp.mpi_rank() == 0:
-        #     plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
-        #     plot_dir.mkdir(parents=True, exist_ok=True)
-        #     plot(diag_dir, plot_dir)
+        self.register_diag_dir_for_cleanup(diag_dir)
+        sim = config()
+        Simulator(sim).run().reset()
+        if not sim.dry_run and cpp.mpi_rank() == 0:
+            print_case_info()
+            assert_inflow_holds_left_state(diag_dir)
+            plot_dir = Path(f"{diag_dir}_plots") / str(cpp.mpi_size())
+            plot_dir.mkdir(parents=True, exist_ok=True)
+            plot(diag_dir, plot_dir)
         cpp.mpi_barrier()
         return self
 
