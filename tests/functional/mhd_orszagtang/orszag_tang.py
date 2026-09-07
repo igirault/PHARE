@@ -44,7 +44,6 @@ def config(time_step=None, with_diags=True):
 
     sim = ph.Simulation(
         smallest_patch_size=15,
-        # largest_patch_size=25,
         time_step=time_step,
         final_time=final_time,
         cells=cells,

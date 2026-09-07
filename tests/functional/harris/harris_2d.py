@@ -20,7 +20,6 @@ ph.NO_GUI()
 
 cells = (200, 100)
 final_time = 50
-# adaptive dt: dump times aren't known ahead of the run, use a fixed absolute grid instead
 timestamps = np.linspace(0, final_time, 6)
 diag_dir = "phare_outputs/harris"
 
@@ -29,7 +28,7 @@ def config():
     L = 0.5
 
     sim = ph.Simulation(
-        time_step={"mode": "adaptive", "cfl_wave": 0.8},
+        time_step={"mode": "adaptive", "cfl_wave": 0.5},
         final_time=final_time,
         cells=cells,
         dl=(0.40, 0.40),

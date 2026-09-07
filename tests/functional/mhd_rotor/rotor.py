@@ -17,7 +17,6 @@ ph.NO_GUI()
 
 
 final_time = 0.15
-# adaptive dt: dump times aren't known ahead of the run, use a fixed absolute grid instead
 timestamps = np.linspace(0, final_time, 6)
 diag_dir = "phare_outputs/rotor"
 
@@ -28,7 +27,6 @@ def config():
 
     sim = ph.Simulation(
         smallest_patch_size=15,
-        # largest_patch_size=25,
         time_step={"mode": "adaptive", "cfl_wave": 0.8},
         final_time=final_time,
         cells=cells,
