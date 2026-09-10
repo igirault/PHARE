@@ -468,7 +468,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy, Messenger>::comput
             {
                 auto const cfast = core::compute_fast_magnetosonic_(gamma_, r, b[d], BdotB, P);
                 // Hall whistler
-                auto const cw = hall_ ? core::compute_whistler_(1.0 / meshSize[d], r, BdotB) : 0.0;
+                auto const cw = hall_ ? std::numbers::pi * core::compute_whistler_(1.0 / meshSize[d], r, BdotB) : 0.0;
                 invDtWave += (std::abs(v[d]) + cfast + cw) / meshSize[d];
             }
             dt = std::min(dt, wave / invDtWave);
