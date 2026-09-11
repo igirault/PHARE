@@ -1083,8 +1083,6 @@ class Simulation(object):
         self.electrons = None
         self.load_balancer = None
 
-        self.time_stepper.resolve_levels(self.max_nbr_levels)
-
         validate_restart_options(self)
 
     def simulation_domain(self):

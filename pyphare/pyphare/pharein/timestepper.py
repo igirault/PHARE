@@ -33,17 +33,6 @@ class TimeStepper(ABC):
     start_time: float
     final_time: float
 
-    # hard coded in C++ MultiPhysicsIntegrator::getMaxFinerLevelDt
-    nSubcycles = 4
-
-    def __post_init__(self):
-        self.level_time_steps = None
-        self.level_step_nbr = None
-
-    def resolve_levels(self, max_nbr_levels):
-        """Populate per-level dt / coarse-step-count arrays used for AMR subcycling."""
-        raise NotImplementedError
-
     def within_simulation_duration(self, time_period):
         raise NotImplementedError
 
@@ -64,15 +53,6 @@ class ConstantTimeStepper(TimeStepper):
     time_step: float
     time_step_nbr: int
 
-    def resolve_levels(self, max_nbr_levels):
-        step_diff = 1 / self.nSubcycles
-        self.level_time_steps = [
-            self.time_step * (step_diff**ilvl) for ilvl in range(max_nbr_levels)
-        ]
-        self.level_step_nbr = [
-            self.nSubcycles**ilvl * self.time_step_nbr for ilvl in range(max_nbr_levels)
-        ]
-
     def within_simulation_duration(self, time_period):
         return time_period[0] >= 0 and time_period[1] < self.time_step_nbr
 
@@ -88,9 +68,6 @@ class AdaptiveTimeStepper(TimeStepper):
 
     cfl_wave: float = None
     cfl_diffusive: float = None
-
-    def resolve_levels(self, max_nbr_levels):
-        pass  # dt (and per-level step counts) are unknown ahead of the run
 
     def within_simulation_duration(self, time_period):
         raise NotImplementedError(
