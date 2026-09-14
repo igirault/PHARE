@@ -74,9 +74,13 @@ public:
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
     field_type P_diag_{"diagnostics_P_", core::MHDQuantity::Scalar::P};
-    // The total-field / total-energy / divB output buffers of the B0 + B1 split live on the
-    // diagnostic ModelView (diagnostic_model_view.hpp), which owns the reconstruction; the model
-    // holds none of them here (they would be dead and would collide on the SAMRAI variable name).
+    // Total-field / total-energy / divB output buffers of the B0 + B1 split. The reconstruction
+    // itself is owned by the diagnostic ModelView (diagnostic_model_view.hpp), whose same-named
+    // view objects are bound to these patch data by name - the model must declare, register and
+    // allocate them here, as it does for V_diag_/P_diag_.
+    vecfield_type BTotal_diag_{"diagnostics_BTotal_", core::MHDQuantity::Vector::B};
+    field_type EtotTotal_diag_{"diagnostics_EtotTotal_", core::MHDQuantity::Scalar::Etot};
+    field_type divB_diag_{"diagnostics_divB_", core::MHDQuantity::Scalar::divB};
 
     // maybe these could have a single allocation shared for hybrid and mhd, as they are strictly
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
@@ -133,6 +137,9 @@ public:
         resourcesManager->allocate(B0Ascratch_, patch, allocateTime);
         resourcesManager->allocate(V_diag_, patch, allocateTime);
         resourcesManager->allocate(P_diag_, patch, allocateTime);
+        resourcesManager->allocate(BTotal_diag_, patch, allocateTime);
+        resourcesManager->allocate(EtotTotal_diag_, patch, allocateTime);
+        resourcesManager->allocate(divB_diag_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
     }
@@ -183,7 +190,7 @@ public:
             }
             else
             {
-                B0initST_ = core::SpaceTimeVecFieldInitializer<dimension>{extB["initializer"]};
+                B0initST_    = core::SpaceTimeVecFieldInitializer<dimension>{extB["initializer"]};
                 dB0dtInitST_ = core::SpaceTimeVecFieldInitializer<dimension>{extB["derivative"]};
             }
         }
@@ -193,6 +200,9 @@ public:
         resourcesManager->registerResources(B0Ascratch_);
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
+        resourcesManager->registerResources(BTotal_diag_);
+        resourcesManager->registerResources(EtotTotal_diag_);
+        resourcesManager->registerResources(divB_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
     }
@@ -237,7 +247,7 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& le
     for (auto& patch : level)
     {
         auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-        auto _ = this->resourcesManager->setOnPatch(*patch, state, B0, dB0dt, B0Ascratch_);
+        auto _      = this->resourcesManager->setOnPatch(*patch, state, B0, dB0dt, B0Ascratch_);
 
         // evaluate the background B0 first, then the dynamic state, which subtracts B0 from the
         // prescribed total field to form B1. The initial stamp is at time 0: the Python total field
@@ -264,7 +274,8 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& le
             else
                 B0init_.initialize(B0, layout);
             // dB0/dt is unused for a static B0; zero it so the allocated field is well-defined.
-            for (auto const& component : {core::Component::X, core::Component::Y, core::Component::Z})
+            for (auto const& component :
+                 {core::Component::X, core::Component::Y, core::Component::Z})
             {
                 auto& dc = dB0dt(component);
                 layout.evalOnGhostBox(dc, [&](auto&... args) mutable { dc(args...) = 0.0; });
