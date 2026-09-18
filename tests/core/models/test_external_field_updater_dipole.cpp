@@ -36,6 +36,8 @@ using MHDTypes = typename PHARE_Types<mhd_opts<dim>>::MHD;
  * @brief analytical magnetic field of a dipole, i.e. the exact curl of the potential the
  * updater implements
  *
+ * The moment has one component per dimension.
+ *
  * In 3D @f$\mathbf{B} = \frac{1}{4\pi r^{3}}
  *                       \left[3(\mathbf{m}\cdot\hat{\mathbf{r}})\hat{\mathbf{r}}-\mathbf{m}\right]@f$
  * and in 2D @f$\mathbf{B} = \frac{1}{2\pi r^{2}}
@@ -44,7 +46,7 @@ using MHDTypes = typename PHARE_Types<mhd_opts<dim>>::MHD;
  */
 template<std::size_t dim>
 Point<double, 3> expectedB(Point<double, dim> const& x, Point<double, dim> const& x0,
-                           Point<double, 3> const& m)
+                           Point<double, dim> const& m)
 {
     auto const r          = x - x0;
     double const rSquared = std::inner_product(r.begin(), r.end(), r.begin(), 0.0);
@@ -79,10 +81,17 @@ struct DipoleSetup
     using GridLayout_t = typename MHDTypes<dim>::GridLayout_t;
     using VecField_t   = typename MHDTypes<dim>::VecField_t;
     using Updater_t    = ExternalFieldUpdaterDipole<VecField_t, GridLayout_t>;
-    using Position_t   = Point<double, dim>;
+    using Position_t   = Updater_t::point_type;
+    using Moment_t     = Updater_t::vector_type;
 
-    //! the moment: in 2D only the in-plane components are used by the dipole formula
-    Point<double, 3> static moment() { return {0.3, -0.2, 0.5}; }
+    //! the moment, one component per dimension
+    Moment_t static moment()
+    {
+        if constexpr (dim == 2)
+            return {0.3, -0.2};
+        else
+            return {0.3, -0.2, 0.5};
+    }
 
     //! kept outside the [0, 1]^dim domain so that the field stays smooth on the whole mesh
     Position_t static position()
