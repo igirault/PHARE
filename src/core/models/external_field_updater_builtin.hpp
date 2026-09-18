@@ -26,7 +26,6 @@ namespace PHARE::core
  * double potentialTimeDerivative(point_type const& coords, double time) const;
  * @endcode
  *
- * Both may be private, provided the derived class declares this base a friend.
  */
 template<typename DerivedT, typename VecFieldT, typename GridLayoutT>
 class ExternalFieldUpdaterBuiltin : public IExternalFieldUpdater<VecFieldT, GridLayoutT>
@@ -37,7 +36,6 @@ public:
     using value_type     = Super::value_type;
     using point_type     = Super::point_type;
     using component_type = Super::component_type;
-    using vector_type    = Point<value_type, 3>;
 
     static constexpr std::size_t dimension = Super::dimension;
 
@@ -72,10 +70,6 @@ private:
     /**
      * @brief determine automatically if the external field is time dependent by checking if the
      * implementation defines a time derivative
-     *
-     * This must stay a function and not a static constexpr data member: the latter would be
-     * instantiated together with this class, i.e. while DerivedT is still incomplete, and the
-     * requirement would then be evaluated on a type that has no members yet.
      */
     static constexpr bool isTimeDependent_()
     {

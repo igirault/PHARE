@@ -12,6 +12,8 @@
 
 #include "gtest/gtest.h"
 
+#include <string>
+
 using namespace PHARE;
 using namespace PHARE::core;
 
@@ -36,8 +38,8 @@ using None_t       = ExternalFieldUpdaterNone<VecField_t, GridLayout_t>;
 auto constexpr cells = 8u;
 
 //! kept outside the domain so that the dipole field stays smooth on the whole mesh
-auto const position = Point<double, 2>{-0.5, 0.5};
-auto const moment   = Point<double, 3>{0.3, -0.2, 0.5};
+auto const position = Dipole_t::point_type{-0.5, 0.5};
+auto const moment   = Dipole_t::vector_type{0.3, -0.2};
 
 
 void putType(initializer::PHAREDict& dict, ExternalFieldUpdaterType type)
@@ -167,40 +169,35 @@ TEST(ExternalFieldUpdaterFactory, throwsOnAMissingDipoleParameter)
 }
 
 
+/**
+ * @brief a missing component must name itself, not surface later as a type error
+ */
+TEST(ExternalFieldUpdaterFactory, throwsNamingAMissingVectorComponent)
+{
+    initializer::PHAREDict dict;
+    putType(dict, ExternalFieldUpdaterType::Dipole);
+    putVector(dict, "position", position);
+    dict["moment"]["x"] = moment[0]; // no "y"
+
+    try
+    {
+        Factory_t::create(dict);
+        FAIL() << "expected a missing component to throw";
+    }
+    catch (std::runtime_error const& e)
+    {
+        EXPECT_NE(std::string{e.what()}.find("invalid key: y"), std::string::npos)
+            << "got: " << e.what();
+    }
+}
+
+
 TEST(ExternalFieldUpdaterFactory, throwsOnAnIncompleteVectorParameter)
 {
-    auto dict = dipoleDict();
-    dict["moment"]["z"]
-        = std::string{"not a double"}; // a 3 component vector, whatever the dimension
+    auto dict           = dipoleDict();
+    dict["moment"]["y"] = std::string{"not a double"};
 
     EXPECT_THROW(Factory_t::create(dict), std::runtime_error);
-}
-
-
-/**
- * @brief a simulation that prescribes no external field has no "external_field" key at all
- */
-TEST(ExternalFieldUpdaterFactory, defaultsToNoExternalFieldWhenTheKeyIsAbsent)
-{
-    initializer::PHAREDict parent;
-    parent["something_else"] = 1;
-
-    auto updater = Factory_t::create(parent, "external_field");
-
-    ASSERT_NE(updater, nullptr);
-    EXPECT_NE(dynamic_cast<None_t*>(updater.get()), nullptr);
-}
-
-
-TEST(ExternalFieldUpdaterFactory, readsTheSubDictNamedByTheKey)
-{
-    initializer::PHAREDict parent;
-    parent["external_field"] = dipoleDict();
-
-    auto updater = Factory_t::create(parent, "external_field");
-
-    ASSERT_NE(updater, nullptr);
-    EXPECT_NE(dynamic_cast<Dipole_t*>(updater.get()), nullptr);
 }
 
 

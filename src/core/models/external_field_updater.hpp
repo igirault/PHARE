@@ -14,7 +14,7 @@ namespace PHARE::core
 
 
 /**
- * @brief Interface of the external (background) field updaters.
+ * @brief Interface of the external field updaters.
  *
  * @tparam VecFieldT vecfield implementation
  * @tparam GridLayoutT grid layout implementation
@@ -82,13 +82,6 @@ public:
 private:
     bool is_time_dependent_;
 
-    /**
-     * @brief B-like output = curl of an E-like input, on the whole ghost box
-     *
-     * No index is missed: each derivative is taken in a direction where the operand is primal
-     * (which is what makes the result dual in that direction), so only next=+1/prev=+0 are ever
-     * used, and the primal array has exactly one point more than the dual one to absorb the +1.
-     */
     void curlOnGhostBox_(vecfield_type& out, vecfield_type const& in, GridLayoutT const& layout)
     {
         auto& outX = out(component_type::X);

@@ -5,14 +5,12 @@
 #include "core/models/external_field_updater_defs.hpp"
 #include "core/models/external_field_updater_dipole.hpp"
 #include "core/models/external_field_updater_none.hpp"
-#include "core/utilities/point/point.hpp"
 
 #include "initializer/data_provider.hpp"
 #include "initializer/dict_utils.hpp"
 
 #include <memory>
 #include <stdexcept>
-#include <string>
 
 namespace PHARE::core
 {
@@ -23,28 +21,15 @@ template<typename VecFieldT, typename GridLayoutT>
 class ExternalFieldUpdaterFactory
 {
 public:
-    using Interface   = IExternalFieldUpdater<VecFieldT, GridLayoutT>;
-    using point_type  = Interface::point_type;
-    using vector_type = Point<double, 3>;
+    using Interface  = IExternalFieldUpdater<VecFieldT, GridLayoutT>;
+    using Dipole     = ExternalFieldUpdaterDipole<VecFieldT, GridLayoutT>;
+    using None       = ExternalFieldUpdaterNone<VecFieldT, GridLayoutT>;
+    using point_type = Interface::point_type;
+    using value_type = Interface::value_type;
 
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
     ExternalFieldUpdaterFactory() = delete;
-
-    /**
-     * @brief build the updater described by @p parentDict[@p key]
-     *
-     * A simulation that prescribes no external field has no such key at all, in which case the
-     * zero external field is used.
-     */
-    static std::unique_ptr<Interface> create(initializer::PHAREDict const& parentDict,
-                                             std::string const& key)
-    {
-        if (!parentDict.contains(key))
-            return std::make_unique<ExternalFieldUpdaterNone<VecFieldT, GridLayoutT>>();
-
-        return create(parentDict[key]);
-    }
 
     static std::unique_ptr<Interface> create(initializer::PHAREDict const& dict)
     {
@@ -52,17 +37,19 @@ public:
 
         switch (type)
         {
-            case ExternalFieldUpdaterType::None:
-                return std::make_unique<ExternalFieldUpdaterNone<VecFieldT, GridLayoutT>>();
+            case ExternalFieldUpdaterType::None: return std::make_unique<None>();
 
-            case ExternalFieldUpdaterType::Dipole:
-                return std::make_unique<ExternalFieldUpdaterDipole<VecFieldT, GridLayoutT>>(
-                    point_type{initializer::parseDimXYZType<double, dimension>(dict, "position")},
-                    vector_type{initializer::parseDimXYZType<double, 3>(dict, "moment")});
+            case ExternalFieldUpdaterType::Dipole: {
+                auto position
+                    = point_type{initializer::parseDimXYZType<double, dimension>(dict, "position")};
+                auto moment = typename Dipole::vector_type{
+                    initializer::parseDimXYZType<value_type, dimension>(dict, "moment")};
+                return std::make_unique<Dipole>(position, moment);
+            }
 
             case ExternalFieldUpdaterType::UserDefined:
                 throw std::runtime_error(
-                    "external field updater: 'user_defined' is not implemented yet");
+                    "external field updater: 'user-defined' is not implemented yet");
         }
 
         throw std::runtime_error("external field updater: unknown type");
