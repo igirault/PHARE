@@ -20,6 +20,7 @@
 #include <SAMRAI/hier/Patch.h>
 #include "SAMRAI/hier/PatchLevel.h"
 
+#include <stdexcept>
 #include <tuple>
 #include <unordered_map>
 #include <cmath>
@@ -322,6 +323,8 @@ double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& mode
 {
     PHARE_LOG_SCOPE(1, "SolverPPC::computeStableDt");
 
+    throw std::runtime_error("Adaptive time-stepping not ready in hybrid.");
+
     double const wave = cflNumbers.wave;
 
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
@@ -354,8 +357,9 @@ double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& mode
 
             double invDtWhistler = 0;
             for (std::size_t d = 0; d < dimension; ++d)
-                invDtWhistler
-                    += std::numbers::pi * core::compute_whistler_(1.0 / meshSize[d], rho, BdotB) / meshSize[d];
+                invDtWhistler += std::numbers::pi
+                                 * core::compute_whistler_(1.0 / meshSize[d], rho, BdotB)
+                                 / meshSize[d];
 
             dt = std::min(dt, wave / invDtWhistler);
         });
