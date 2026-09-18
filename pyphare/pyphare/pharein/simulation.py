@@ -7,6 +7,7 @@ from ..core import box as boxm
 from ..core import phare_utilities
 from ..core.box import Box
 from . import global_vars
+from .external_field import resolve_external_field
 
 # ------------------------------------------------------------------------------
 
@@ -805,6 +806,7 @@ def checker(func):
             "limiter",
             "riemann",
             "mhd_timestepper",
+            "external_field",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -844,6 +846,8 @@ def checker(func):
         kwargs["diag_options"] = check_diag_options(**kwargs)
 
         kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
+
+        kwargs["external_field"] = resolve_external_field(ndim, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
 
@@ -1112,6 +1116,10 @@ class Simulation(object):
         * **resistivity** (``float``), resistivity value (default=0.0)
         * **hyper-resistivity** (``float``), hyper-resistivity value (default=0.0)
         * **boundary_types** (``str`` or ``tuple``) type of boundary conditions (default is "periodic" for each direction)
+        * **external_field** (``dict``), prescribed background magnetic field, e.g.
+          ``{"type": "dipole", "position": (0.5, 0.5), "moment": (0., 1.)}``
+          (vectors have one component per dimension)
+          (default is ``{"type": "none"}``)
 
     """
 

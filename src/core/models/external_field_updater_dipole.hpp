@@ -16,8 +16,9 @@ namespace PHARE::core
  * @f$\mathbf{m}@f$ placed at @f$\mathbf{x}_0@f$. In what follows @f$\mathbf{r} = \mathbf{x} -
  * \mathbf{x}_0@f$ and @f$r = \lVert\mathbf{r}\rVert@f$.
  *
- * In 2D the configuration is invariant along @f$z@f$ and the moment lies in the @f$(x,y)@f$
- * plane, so only the @f$z@f$ component of the potential is non-zero:
+ * The moment has one component per dimension: in 2D the configuration is invariant along
+ * @f$z@f$, the moment lies in the @f$(x,y)@f$ plane, and only the @f$z@f$ component of the
+ * potential is non-zero:
  * @f[
  *   A_{0,z}(\mathbf{x}) = \frac{1}{2\pi}\,
  *                         \frac{\left(\mathbf{m}\times\mathbf{r}\right)_z}{r^{2}}
@@ -37,13 +38,12 @@ class ExternalFieldUpdaterDipole
 {
     using Super = ExternalFieldUpdaterBuiltin<ExternalFieldUpdaterDipole<VecFieldT, GridLayoutT>,
                                               VecFieldT, GridLayoutT>;
-    friend Super; // so that the base may call the private point-wise formula below
 
 public:
     using vecfield_type  = Super::vecfield_type;
     using value_type     = Super::value_type;
     using point_type     = Super::point_type;
-    using vector_type    = Super::vector_type;
+    using vector_type    = Point<value_type, GridLayoutT::dimension>;
     using component_type = Super::component_type;
 
     static constexpr std::size_t dimension = Super::dimension;
@@ -52,10 +52,6 @@ public:
         : Super()
         , position_{position}
         , moment_{moment} {};
-
-private:
-    point_type position_; //!< where is placed the dipole in space
-    vector_type moment_; //!< the moment vector. In 2D only the in-plane (x, y) components are used.
 
     template<component_type i>
     double potential(point_type const& coords, double /*time*/) const
@@ -85,6 +81,10 @@ private:
         constexpr auto k = (static_cast<std::size_t>(i) + 2) % 3;
         return factor * (moment_[j] * r[k] - moment_[k] * r[j]) / (rSquared * std::sqrt(rSquared));
     }
+
+private:
+    point_type position_; //!< where is placed the dipole in space
+    vector_type moment_;  //!< the moment vector, one component per dimension
 };
 
 } // namespace PHARE::core

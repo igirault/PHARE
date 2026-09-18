@@ -26,7 +26,6 @@ public:
     using point_type          = Super::point_type;
     using component_type      = Super::component_type;
     using external_field_type = Super::external_field_type;
-    using vector_type         = Point<value_type, 3>;
 
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
