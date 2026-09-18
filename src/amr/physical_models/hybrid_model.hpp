@@ -4,6 +4,9 @@
 
 #include "core/def.hpp"
 #include "core/models/hybrid_state.hpp"
+#include "core/models/external_field.hpp"
+#include "core/models/external_field_updater.hpp"
+#include "core/models/external_field_updater_factory.hpp"
 #include "core/data/ions/particle_initializers/particle_initializer_factory.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -45,13 +48,22 @@ public:
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, grid_type>;
     using ParticleInitializerFactory
         = core::ParticleInitializerFactory<particle_array_type, gridlayout_type>;
+    using external_field_type         = core::ExternalField<vecfield_type>;
+    using external_field_updater_type = core::IExternalFieldUpdater<vecfield_type, gridlayout_type>;
+    using external_field_factory_type
+        = core::ExternalFieldUpdaterFactory<vecfield_type, gridlayout_type>;
 
     static constexpr std::string_view model_type_name = "HybridModel";
     static inline std::string const model_name{model_type_name};
 
 
     core::HybridState<Electromag, Ions, Electrons> state;
+    external_field_type externalField;
     std::shared_ptr<resources_manager_type> resourcesManager;
+    std::unique_ptr<external_field_updater_type> externalFieldUpdater;
+
+    //! E-centered scratch, holding the vector potential while the external field is computed
+    vecfield_type tmpElike_{"PHARE_tmpElike_hybrid", core::HybridQuantity::Vector::E};
 
 
     void initialize(level_t& level) override;
@@ -64,6 +76,8 @@ public:
     virtual void allocate(patch_t& patch, double const allocateTime) override
     {
         resourcesManager->allocate(state, patch, allocateTime);
+        resourcesManager->allocate(externalField, patch, allocateTime);
+        resourcesManager->allocate(tmpElike_, patch, allocateTime);
     }
 
 
@@ -86,8 +100,12 @@ public:
                 std::shared_ptr<resources_manager_type> const& _resourcesManager)
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict}
+        , externalField{model_name}
         , resourcesManager{_resourcesManager}
+        , externalFieldUpdater{external_field_factory_type::create(dict, "external_field")}
     {
+        resourcesManager->registerResources(externalField);
+        resourcesManager->registerResources(tmpElike_);
     }
 
 
@@ -97,13 +115,19 @@ public:
     //                  start the ResourcesUser interface
     //-------------------------------------------------------------------------
 
-    NO_DISCARD bool isUsable() const { return state.isUsable(); }
+    NO_DISCARD bool isUsable() const { return state.isUsable() and externalField.isUsable(); }
 
-    NO_DISCARD bool isSettable() const { return state.isSettable(); }
+    NO_DISCARD bool isSettable() const { return state.isSettable() and externalField.isSettable(); }
 
-    NO_DISCARD auto getCompileTimeResourcesViewList() const { return std::forward_as_tuple(state); }
+    NO_DISCARD auto getCompileTimeResourcesViewList() const
+    {
+        return std::forward_as_tuple(state, externalField);
+    }
 
-    NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(state); }
+    NO_DISCARD auto getCompileTimeResourcesViewList()
+    {
+        return std::forward_as_tuple(state, externalField);
+    }
 
     //-------------------------------------------------------------------------
     //                  ends the ResourcesUser interface
@@ -130,7 +154,8 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::i
         // first initialize the ions
         auto layout = amr::layoutFromPatch<gridlayout_type>(*patch);
         auto& ions  = state.ions;
-        auto _ = this->resourcesManager->setOnPatch(*patch, state.electromag, state.ions, state.J);
+        auto _ = this->resourcesManager->setOnPatch(*patch, state.electromag, state.ions, state.J,
+                                                    externalField, tmpElike_);
 
         for (auto& pop : ions)
         {
@@ -140,6 +165,7 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::i
         }
 
         state.electromag.initialize(layout);
+        (*externalFieldUpdater)(externalField, tmpElike_, layout, 0.);
     }
 }
 
