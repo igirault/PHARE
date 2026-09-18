@@ -4,6 +4,7 @@
 #include "core/def.hpp"
 #include "core/def/phare_config.hpp"
 #include "core/data/particles/particle_array.hpp"
+#include "core/models/external_field_updater_defs.hpp"
 
 #include "amr/samrai.hpp"             // SamraiLifeCycle without simulators
 #include "amr/wrappers/hierarchy.hpp" // for HierarchyRestarter::getRestartFileFullPath
@@ -129,6 +130,11 @@ PYBIND11_MODULE(cpp_etc, m)
 
         throw std::runtime_error("PHARE not built with highfive support");
     });
+
+    py::enum_<core::ExternalFieldUpdaterType>(m, "ExternalFieldUpdaterType")
+        .value("none", core::ExternalFieldUpdaterType::None)
+        .value("user-defined", core::ExternalFieldUpdaterType::UserDefined)
+        .value("dipole", core::ExternalFieldUpdaterType::Dipole);
 
 
     declareDim<1>(m);
