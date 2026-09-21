@@ -4,7 +4,6 @@
 #include "phare_core.hpp"
 
 #include "tests/core/data/gridlayout/test_gridlayout.hpp"
-#include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 #include "tests/core/models/test_external_field_fixtures.hpp"
 
 #include "gtest/gtest.h"
@@ -105,11 +104,10 @@ struct DipoleSetup
     TestGridLayout<GridLayout_t> layout{cells};
 
     UsableExternalField<dim> externalField{"external", layout};
-    UsableVecFieldMHD<dim> a0{"a0", layout, MHDQuantity::Vector::E};
 
     Updater_t updater{position(), moment()};
 
-    void update(double time = 0.) { updater(externalField, a0, layout, time); }
+    void update(double time = 0.) { updater(externalField, layout, time); }
 
     //! largest |B0 - B_analytical| over the physical domain, all components
     double maxErrorOnDomain()

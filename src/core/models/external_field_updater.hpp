@@ -48,24 +48,24 @@ public:
     /**
      * @brief fill an external field at a given time
      *
-     * @param externalField the external field to fill
-     * @param scratch an E-centered work vecfield, holding the vector potential on output
+     * @param externalField the external field to fill, whose E-centered scratch vecfield holds
+     * the vector potential on output
      * @param layout the current grid layout
      * @param time the current time
      */
-    virtual void operator()(external_field_type& externalField, vecfield_type& scratch,
-                            GridLayoutT const& layout, double time)
+    virtual void operator()(external_field_type& externalField, GridLayoutT const& layout,
+                            double time)
     {
         assert(layout.centering(externalField.B0) == layout.centering(tensor_type::B));
         assert(layout.centering(externalField.dB0dt) == layout.centering(tensor_type::B));
-        assert(layout.centering(scratch) == layout.centering(tensor_type::E));
+        assert(layout.centering(externalField.scratch) == layout.centering(tensor_type::E));
 
-        computePotential(scratch, time, layout);
-        curlOnGhostBox_(externalField.B0, scratch, layout);
+        computePotential(externalField.scratch, time, layout);
+        curlOnGhostBox_(externalField.B0, externalField.scratch, layout);
         if (is_time_dependent_)
         {
-            computePotentialTimeDerivative(scratch, time, layout);
-            curlOnGhostBox_(externalField.dB0dt, scratch, layout);
+            computePotentialTimeDerivative(externalField.scratch, time, layout);
+            curlOnGhostBox_(externalField.dB0dt, externalField.scratch, layout);
         }
         else
         {

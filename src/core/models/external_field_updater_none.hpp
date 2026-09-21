@@ -34,8 +34,8 @@ public:
 
     virtual ~ExternalFieldUpdaterNone() = default;
 
-    void virtual operator()(external_field_type& externalField, vecfield_type& scratch,
-                            GridLayoutT const& layout, double time) final
+    void virtual operator()(external_field_type& externalField, GridLayoutT const& layout,
+                            double time) final
     {
         externalField.B0.zero();
         externalField.dB0dt.zero();
