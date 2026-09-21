@@ -70,7 +70,8 @@ public:
                 // z component of the cross product `moment_` times `r`
                 return factor * (moment_[0] * r[1] - moment_[1] * r[0]) / rSquared;
             }
-            return 0.0;
+            else
+                return 0.0;
         }
         // 3D case
         point_type const r      = coords - position_;

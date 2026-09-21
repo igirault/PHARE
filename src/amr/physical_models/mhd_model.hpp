@@ -60,7 +60,6 @@ public:
     // temporaries. Right now the hybrid version is in the hybrid_hybrid_messenger_strategy.hpp
     field_type tmpField_{"PHARE_sumField_MHD", core::MHDQuantity::Scalar::ScalarAllPrimal};
     vecfield_type tmpVec_{"PHARE_sumVec_MHD", core::MHDQuantity::Vector::VecAllPrimal};
-    vecfield_type tmpElike_{"PHARE_tmpElike_MHD", core::MHDQuantity::Vector::E};
 
     void initialize(level_t& level) override;
 
@@ -68,12 +67,11 @@ public:
     void allocate(patch_t& patch, double const allocateTime) override
     {
         resourcesManager->allocate(state, patch, allocateTime);
-        resourcesManager->allocate(externalField, patch, allocateTime);
         resourcesManager->allocate(V_diag_, patch, allocateTime);
         resourcesManager->allocate(P_diag_, patch, allocateTime);
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
-        resourcesManager->allocate(tmpElike_, patch, allocateTime);
+        resourcesManager->allocate(externalField, patch, allocateTime);
     }
 
 
@@ -92,12 +90,11 @@ public:
         , resourcesManager{_resourcesManager}
         , externalFieldUpdater{external_field_factory_type::create(dict["external_field"])}
     {
-        resourcesManager->registerResources(externalField);
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
         resourcesManager->registerResources(tmpField_);
         resourcesManager->registerResources(tmpVec_);
-        resourcesManager->registerResources(tmpElike_);
+        resourcesManager->registerResources(externalField);
     }
 
     ~MHDModel() override = default;
@@ -134,10 +131,10 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& le
     for (auto& patch : level)
     {
         auto layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-        auto _      = this->resourcesManager->setOnPatch(*patch, state, externalField, tmpElike_);
+        auto _      = this->resourcesManager->setOnPatch(*patch, state, externalField);
 
         state.initialize(layout);
-        (*externalFieldUpdater)(externalField, tmpElike_, layout, 0.);
+        (*externalFieldUpdater)(externalField, layout, 0.);
     }
 }
 

@@ -26,9 +26,11 @@ public:
         : Super{name}
         , b0_{name + "_B0", layout, MHDQuantity::Vector::B}
         , dB0dt_{name + "_dB0dt", layout, MHDQuantity::Vector::B}
+        , scratch_{name + "_scratch", layout, MHDQuantity::Vector::E}
     {
         b0_.set_on(this->B0);
         dB0dt_.set_on(this->dB0dt);
+        scratch_.set_on(this->scratch);
     }
 
     Super& super() { return *this; }
@@ -36,6 +38,7 @@ public:
 private:
     UsableVecFieldMHD<dim> b0_;
     UsableVecFieldMHD<dim> dB0dt_;
+    UsableVecFieldMHD<dim> scratch_;
 };
 
 } // namespace PHARE::core

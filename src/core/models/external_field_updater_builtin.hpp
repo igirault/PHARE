@@ -93,24 +93,16 @@ private:
                                 Fn&& f                     //!< the callable to apply
     ) const
     {
-        a0.zero(); // components a formula does not define stay zero rather than uninitialized
-
         auto fields = a0.components();
         for_N<3>([&](auto i) {
             constexpr auto component = static_cast<component_type>(decltype(i)::value);
-            // in 1D and 2D, only the z component of the potential vector is needed
-            if constexpr (dimension <= 2 && component != component_type::Z)
-                return;
-            else
-            {
-                auto& field = std::get<i>(fields);
-                layout.evalOnGhostBox(field, [&](auto... ijk) {
-                    auto const coords
-                        = layout.fieldNodeCoordinates(field, layout.localToAMR(Point{ijk...}));
-                    field(ijk...)
-                        = f(std::integral_constant<component_type, component>{}, coords, time);
-                });
-            }
+            auto& field              = std::get<i>(fields);
+            layout.evalOnGhostBox(field, [&](auto... ijk) {
+                auto const coords
+                    = layout.fieldNodeCoordinates(field, layout.localToAMR(Point{ijk...}));
+                field(ijk...)
+                    = f(std::integral_constant<component_type, component>{}, coords, time);
+            });
         });
     }
 };

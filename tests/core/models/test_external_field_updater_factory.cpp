@@ -7,7 +7,6 @@
 #include "phare_core.hpp"
 
 #include "tests/core/data/gridlayout/test_gridlayout.hpp"
-#include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 #include "tests/core/models/test_external_field_fixtures.hpp"
 
 #include "gtest/gtest.h"
@@ -81,12 +80,11 @@ struct UpdaterRun
     TestGridLayout<GridLayout_t> layout{cells};
 
     UsableExternalField<2> externalField{"external", layout};
-    UsableVecFieldMHD<2> a0{"a0", layout, MHDQuantity::Vector::E};
 
     template<typename Updater>
     explicit UpdaterRun(Updater& updater)
     {
-        updater(externalField, a0, layout, 0.);
+        updater(externalField, layout, 0.);
     }
 };
 

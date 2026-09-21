@@ -62,9 +62,6 @@ public:
     std::shared_ptr<resources_manager_type> resourcesManager;
     std::unique_ptr<external_field_updater_type> externalFieldUpdater;
 
-    //! E-centered scratch, holding the vector potential while the external field is computed
-    vecfield_type tmpElike_{"PHARE_tmpElike_hybrid", core::HybridQuantity::Vector::E};
-
 
     void initialize(level_t& level) override;
 
@@ -77,7 +74,6 @@ public:
     {
         resourcesManager->allocate(state, patch, allocateTime);
         resourcesManager->allocate(externalField, patch, allocateTime);
-        resourcesManager->allocate(tmpElike_, patch, allocateTime);
     }
 
 
@@ -105,7 +101,6 @@ public:
         , externalFieldUpdater{external_field_factory_type::create(dict["external_field"])}
     {
         resourcesManager->registerResources(externalField);
-        resourcesManager->registerResources(tmpElike_);
     }
 
 
@@ -155,7 +150,7 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::i
         auto layout = amr::layoutFromPatch<gridlayout_type>(*patch);
         auto& ions  = state.ions;
         auto _ = this->resourcesManager->setOnPatch(*patch, state.electromag, state.ions, state.J,
-                                                    externalField, tmpElike_);
+                                                    externalField);
 
         for (auto& pop : ions)
         {
@@ -165,7 +160,7 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::i
         }
 
         state.electromag.initialize(layout);
-        (*externalFieldUpdater)(externalField, tmpElike_, layout, 0.);
+        (*externalFieldUpdater)(externalField, layout, 0.);
     }
 }
 
