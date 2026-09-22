@@ -21,12 +21,11 @@ using namespace PHARE::core;
 namespace
 {
 //! an MHD-enabled option set, the axes other than the dimension are irrelevant here
-constexpr SimOpts mhd_opts{.dimension            = 2,
-                           .interp_order         = 1,
-                           .time_integrator_type = MHDOpts::TimeIntegratorType::Euler,
-                           .reconstruction_type  = MHDOpts::ReconstructionType::Constant,
-                           .slope_limiter_type   = MHDOpts::SlopeLimiterType::None,
-                           .riemann_solver_type  = MHDOpts::RiemannSolverType::Rusanov};
+constexpr SimOpts mhd_opts{.dimension           = 2,
+                           .interp_order        = 1,
+                           .reconstruction_type = MHDOpts::ReconstructionType::Constant,
+                           .slope_limiter_type  = MHDOpts::SlopeLimiterType::None,
+                           .riemann_solver_type = MHDOpts::RiemannSolverType::Rusanov};
 
 using MHDTypes      = PHARE_Types<mhd_opts>::MHD;
 using GridLayout_t  = MHDTypes::GridLayout_t;

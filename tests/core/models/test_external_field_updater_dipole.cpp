@@ -20,12 +20,11 @@ namespace
 {
 //! an MHD-enabled option set, the axes other than the dimension are irrelevant here
 template<std::size_t dim>
-constexpr SimOpts mhd_opts{.dimension            = dim,
-                           .interp_order         = 1,
-                           .time_integrator_type = MHDOpts::TimeIntegratorType::Euler,
-                           .reconstruction_type  = MHDOpts::ReconstructionType::Constant,
-                           .slope_limiter_type   = MHDOpts::SlopeLimiterType::None,
-                           .riemann_solver_type  = MHDOpts::RiemannSolverType::Rusanov};
+constexpr SimOpts mhd_opts{.dimension           = dim,
+                           .interp_order        = 1,
+                           .reconstruction_type = MHDOpts::ReconstructionType::Constant,
+                           .slope_limiter_type  = MHDOpts::SlopeLimiterType::None,
+                           .riemann_solver_type = MHDOpts::RiemannSolverType::Rusanov};
 
 template<std::size_t dim>
 using MHDTypes = typename PHARE_Types<mhd_opts<dim>>::MHD;

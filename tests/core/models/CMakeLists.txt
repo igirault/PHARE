@@ -7,7 +7,13 @@ set(TESTS test_external_field_updater_dipole
           test_external_field_updater_user_defined)
 
 foreach(test ${TESTS})
-  string(REPLACE "test_external_field_updater_" "test-external-field-updater-" target ${test})
+  string(
+    REPLACE 
+    "test_external_field_updater_"
+    "test-external-field-updater-"
+    target 
+    ${test}
+  )
 
   add_executable(${target} ${test}.cpp)
 
