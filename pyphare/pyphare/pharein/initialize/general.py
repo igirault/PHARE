@@ -54,6 +54,23 @@ class fn_wrapper(py_fn_wrapper):
         return cpp_etc_lib().makePyArrayWrapper(super().__call__(*xyz))
 
 
+# Wrap calls to user space-time functions. Deliberately not a py_fn_wrapper:
+# the coordinates already are numpy arrays, zero-copy views onto the C++ buffers
+# (see the CoordinateSpan caster in python3/pybind_def.hpp).
+class space_time_fn_wrapper:
+    def __init__(self, fn):
+        self.fn = fn
+
+    def __call__(self, *args):
+        from pyphare.cpp import cpp_etc_lib
+
+        *xyz, t = args
+        ret = self.fn(*xyz, t)
+        if is_scalar(ret):
+            ret = np.full(xyz[-1].shape, ret, dtype=np.float64)
+        return cpp_etc_lib().makePyArrayWrapper(ret)
+
+
 # pybind complains if receiving wrong type
 def add_int(path, val):
     pp.add_int(path, int(val))
@@ -96,7 +113,21 @@ def add_enum_int(path, enum_name, member_name):
     add_int(path, int(getattr(enum_cls, member)))
 
 
-def dict_populator():
+def _space_time_function_adder(ndim):
+    """
+    Retrieve the correct cppdict adding utility for a space-time function, consistently
+    with ndim.
+    """
+    adder = getattr(pp, f"add_space_time_function_{ndim:d}d")
+
+    def add_space_time_function(path, fn):
+        """'fn' takes the ndim coordinates followed by the time."""
+        adder(path, space_time_fn_wrapper(fn))
+
+    return add_space_time_function
+
+
+def dict_populator(ndim):
     """An object bundling the add_* writers, passed to the objects that populate the dict
     themselves, so that they need not import this module (which would be circular)."""
 
@@ -109,6 +140,7 @@ def dict_populator():
             self.add_vector_int = add_vector_int
             self.add_string = add_string
             self.add_enum_int = add_enum_int
+            self.add_space_time_function = _space_time_function_adder(ndim)
 
     return DictPopulator()
 
@@ -136,7 +168,7 @@ def populateDict(sim):
             add_double("simulation/grid/meshsize/z", sim.dl[2])
             add_string("simulation/grid/boundary_type/z", sim.boundary_types[2])
 
-    sim.external_field.populate_dict(dict_populator())
+    sim.external_field.populate_dict(dict_populator(sim.ndim))
 
     add_int("simulation/interp_order", sim.interp_order)
     add_int("simulation/refined_particle_nbr", sim.refined_particle_nbr)

@@ -1,6 +1,7 @@
 #include "core/models/external_field_updater_factory.hpp"
 #include "core/models/external_field_updater_defs.hpp"
 #include "core/models/external_field_updater_dipole.hpp"
+#include "core/models/external_field_updater_user_defined.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -27,12 +28,13 @@ constexpr SimOpts mhd_opts{.dimension            = 2,
                            .slope_limiter_type   = MHDOpts::SlopeLimiterType::None,
                            .riemann_solver_type  = MHDOpts::RiemannSolverType::Rusanov};
 
-using MHDTypes     = PHARE_Types<mhd_opts>::MHD;
-using GridLayout_t = MHDTypes::GridLayout_t;
-using VecField_t   = MHDTypes::VecField_t;
-using Factory_t    = ExternalFieldUpdaterFactory<VecField_t, GridLayout_t>;
-using Dipole_t     = ExternalFieldUpdaterDipole<VecField_t, GridLayout_t>;
-using None_t       = ExternalFieldUpdaterNone<VecField_t, GridLayout_t>;
+using MHDTypes      = PHARE_Types<mhd_opts>::MHD;
+using GridLayout_t  = MHDTypes::GridLayout_t;
+using VecField_t    = MHDTypes::VecField_t;
+using Factory_t     = ExternalFieldUpdaterFactory<VecField_t, GridLayout_t>;
+using Dipole_t      = ExternalFieldUpdaterDipole<VecField_t, GridLayout_t>;
+using None_t        = ExternalFieldUpdaterNone<VecField_t, GridLayout_t>;
+using UserDefined_t = ExternalFieldUpdaterUserDefined<VecField_t, GridLayout_t>;
 
 auto constexpr cells = 8u;
 
@@ -82,9 +84,9 @@ struct UpdaterRun
     UsableExternalField<2> externalField{"external", layout};
 
     template<typename Updater>
-    explicit UpdaterRun(Updater& updater)
+    explicit UpdaterRun(Updater& updater, double time = 0.)
     {
-        updater(externalField, layout, 0.);
+        updater(externalField, layout, time);
     }
 };
 
@@ -100,6 +102,71 @@ double maxDifference(UpdaterRun& lhs, UpdaterRun& rhs)
             maxDiff = std::max(maxDiff, std::abs(lhsField.data()[k] - rhsField.data()[k]));
     });
     return maxDiff;
+}
+
+
+/**
+ * @brief a vector potential whose three components differ, and whose curl is constant.
+ *
+ * a = ((2y)g, (3x)g, (5x + 7y)g)  =>  curl a = (7, -5, 3 - 2) * g
+ *
+ * Linear in space, so the discrete curl is exact and the expected field can be asserted
+ * without a tolerance. The three constants are distinct, so a component written to the wrong
+ * axis, or a truncated vector, changes the answer instead of cancelling out.
+ */
+Point<double, 3> constexpr expectedCurl{7., -5., 1.};
+
+template<typename Profile>
+std::array<SpaceTimeFunction<2>, 3> potentialFunctions(Profile g)
+{
+    return {
+        spaceTimeFunction<2>([g](Point<double, 2> const& x, double t) { return 2. * x[1] * g(t); }),
+        spaceTimeFunction<2>([g](Point<double, 2> const& x, double t) { return 3. * x[0] * g(t); }),
+        spaceTimeFunction<2>(
+            [g](Point<double, 2> const& x, double t) { return (5. * x[0] + 7. * x[1]) * g(t); })};
+}
+
+//! the potential grows as 1 + t, so its time derivative is the same potential with g = 1
+double profile(double t)
+{
+    return 1. + t;
+}
+double profileDerivative(double)
+{
+    return 1.;
+}
+
+//! a complete, valid user-defined dict
+initializer::PHAREDict userDefinedDict(bool time_dependent)
+{
+    initializer::PHAREDict dict;
+    putType(dict, ExternalFieldUpdaterType::UserDefined);
+    dict["is_time_dependent"] = time_dependent;
+
+    std::array constexpr axes{"x", "y", "z"};
+    auto const potential = potentialFunctions(profile);
+    for (std::size_t i = 0; i < 3; ++i)
+        dict["potential"][axes[i]] = potential[i];
+
+    if (time_dependent)
+    {
+        auto const derivative = potentialFunctions(profileDerivative);
+        for (std::size_t i = 0; i < 3; ++i)
+            dict["potential_time_derivative"][axes[i]] = derivative[i];
+    }
+    return dict;
+}
+
+//! largest |field - expected| over the whole ghost box, all components
+double maxDeviation(VecField_t& vecfield, Point<double, 3> const& expected)
+{
+    double maxDev = 0.;
+    for_N<3>([&](auto i) {
+        auto& field = vecfield(static_cast<Component>(decltype(i)::value));
+        for (std::size_t k = 0; k < field.size(); ++k)
+            maxDev = std::max(maxDev, std::abs(field.data()[k] - expected[i]));
+    });
+    return maxDev;
 }
 
 } // namespace
@@ -199,10 +266,100 @@ TEST(ExternalFieldUpdaterFactory, throwsOnAnIncompleteVectorParameter)
 }
 
 
-TEST(ExternalFieldUpdaterFactory, throwsOnAnUnimplementedType)
+TEST(ExternalFieldUpdaterFactory, createsTheStaticUserDefinedUpdater)
+{
+    auto const dict = userDefinedDict(/*time_dependent=*/false);
+    auto updater    = Factory_t::create(dict);
+
+    ASSERT_NE(updater, nullptr);
+    EXPECT_NE(dynamic_cast<UserDefined_t*>(updater.get()), nullptr);
+    EXPECT_FALSE(updater->isTimeDependent());
+}
+
+
+TEST(ExternalFieldUpdaterFactory, createsTheTimeDependentUserDefinedUpdater)
+{
+    auto const dict = userDefinedDict(/*time_dependent=*/true);
+    auto updater    = Factory_t::create(dict);
+
+    ASSERT_NE(updater, nullptr);
+    EXPECT_NE(dynamic_cast<UserDefined_t*>(updater.get()), nullptr);
+    EXPECT_TRUE(updater->isTimeDependent());
+}
+
+
+/**
+ * @brief the potential components must reach the updater on the axis they were written to
+ *
+ * The expected curl has three distinct entries, so a swapped or dropped component shows up.
+ */
+TEST(ExternalFieldUpdaterFactory, forwardsThePotentialComponentsInOrder)
+{
+    auto const dict = userDefinedDict(/*time_dependent=*/true);
+    auto updater    = Factory_t::create(dict);
+
+    UpdaterRun run{*updater, 1.};
+
+    // the potential grows as 1 + t, so at t = 1 the field is twice its curl at t = 0
+    EXPECT_NEAR(maxDeviation(run.externalField.B0, expectedCurl * 2.), 0., 1e-12);
+}
+
+
+TEST(ExternalFieldUpdaterFactory, forwardsThePotentialTimeDerivative)
+{
+    auto const dict = userDefinedDict(/*time_dependent=*/true);
+    auto updater    = Factory_t::create(dict);
+
+    UpdaterRun run{*updater, 1.};
+
+    // d/dt of the potential above is the same shape with g = 1, so dB0/dt is the bare curl -
+    // a value the potential itself never takes, so the two arrays cannot be confused
+    EXPECT_NEAR(maxDeviation(run.externalField.dB0dt, expectedCurl), 0., 1e-12);
+}
+
+
+//! without a derivative the updater must zero dB0/dt rather than compute one
+TEST(ExternalFieldUpdaterFactory, zeroesTheTimeDerivativeOfAStaticUserDefinedField)
+{
+    auto const dict = userDefinedDict(/*time_dependent=*/false);
+    auto updater    = Factory_t::create(dict);
+
+    UpdaterRun run{*updater, 1.};
+
+    EXPECT_NEAR(maxDeviation(run.externalField.B0, expectedCurl * 2.), 0., 1e-12);
+    EXPECT_DOUBLE_EQ(maxDeviation(run.externalField.dB0dt, Point<double, 3>{0., 0., 0.}), 0.);
+}
+
+
+TEST(ExternalFieldUpdaterFactory, throwsOnAMissingUserDefinedPotential)
 {
     initializer::PHAREDict dict;
     putType(dict, ExternalFieldUpdaterType::UserDefined);
+    dict["is_time_dependent"] = false;
+
+    EXPECT_THROW(Factory_t::create(dict), std::runtime_error);
+}
+
+
+//! the potential has three components whatever the dimensionality, z included
+TEST(ExternalFieldUpdaterFactory, throwsOnAMissingPotentialComponent)
+{
+    initializer::PHAREDict dict;
+    putType(dict, ExternalFieldUpdaterType::UserDefined);
+    dict["is_time_dependent"] = false;
+
+    auto const potential   = potentialFunctions(profile);
+    dict["potential"]["x"] = potential[0];
+    dict["potential"]["y"] = potential[1]; // no "z"
+
+    EXPECT_THROW(Factory_t::create(dict), std::runtime_error);
+}
+
+
+TEST(ExternalFieldUpdaterFactory, throwsWhenTimeDependentWithoutADerivative)
+{
+    auto dict                 = userDefinedDict(/*time_dependent=*/false);
+    dict["is_time_dependent"] = true; // but no "potential_time_derivative" was written
 
     EXPECT_THROW(Factory_t::create(dict), std::runtime_error);
 }

@@ -9,12 +9,19 @@ from dataclasses import dataclass
 from ..core import phare_utilities
 
 _AXES = ("x", "y", "z")
+_CPPDICT_PATH = "simulation/external_field"
 
 
-def _add_components(dp, path, values):
-    """Write a vector as the x/y/z sub-dict shape the C++ parseDimXYZType expects."""
-    for axis, value in zip(_AXES, values):
-        dp.add_double(f"{path}/{axis}", value)
+def _add_vector(component_adder, path, components):
+    """Write a vector as the x/y/z sub-dict shape the C++ side reads component by component.
+
+    Careful on the C++ side: initializer::parseDimXYZType<T, dimension> reads only 'dimension'
+    components, which is right for the dipole vectors but wrong for a vector potential - that
+    one always has its three components, and in 2D the in-plane pair is the only way to
+    prescribe an out-of-plane B0. The factory passes N, not dimension, for that reason.
+    """
+    for axis, component in zip(_AXES, components):
+        component_adder(f"{path}/{axis}", component)
 
 
 def _check_components(name, dict, expected):
@@ -91,8 +98,8 @@ class DipoleExternalField(ExternalField):
 
     def populate_dict(self, dp):
         super().populate_dict(dp)
-        _add_components(dp, "simulation/external_field/position", self.position)
-        _add_components(dp, "simulation/external_field/moment", self.moment)
+        _add_vector(dp.add_double, "simulation/external_field/position", self.position)
+        _add_vector(dp.add_double, "simulation/external_field/moment", self.moment)
 
 
 @dataclass
@@ -107,6 +114,19 @@ class UserDefinedExternalField(ExternalField):
     potential: tuple
     potential_time_derivative: tuple | None
 
+    def populate_dict(self, dp):
+        super().populate_dict(dp)
+        dp.add_bool(f"{_CPPDICT_PATH}/is_time_dependent", self.is_time_dependent)
+        _add_vector(
+            dp.add_space_time_function, f"{_CPPDICT_PATH}/potential", self.potential
+        )
+        if self.is_time_dependent:
+            _add_vector(
+                dp.add_space_time_function,
+                f"{_CPPDICT_PATH}/potential_time_derivative",
+                self.potential_time_derivative,
+            )
+
 
 # ------------------------------------------------------------------------------
 def _check_keys(keys, allowed, type):
@@ -116,6 +136,7 @@ def _check_keys(keys, allowed, type):
             f"Error: invalid external_field keys for type '{type}': {sorted(extra)}, "
             f"allowed {sorted(allowed)}"
         )
+
 
 def _get_signature_size(f):
     return len(inspect.signature(f).parameters)
@@ -170,45 +191,39 @@ def _check_signature_size(list, name, ndim, is_time_dependent):
             )
 
 
-def _zero_defaulter(ndim, is_time_dependent):
+def _zero_defaulter(ndim):
+    if ndim == 1:
+        return lambda x, t: x * 0.0
+    if ndim == 2:
+        return lambda x, y, t: x * 0.0
+    if ndim == 3:
+        return lambda x, y, z, t: x * 0.0
+
+
+def _normalized_components(list, ndim, is_time_dependent):
     """
-    Build the callable a 'None' component stands for: zero everywhere.
-
-    Shaped after MHDModel.defaulter, with one lambda per dimension so the returned
-    callable has the same signature size as the components the user did provide.
-    Zero is returned as 'x * 0.0' rather than as a bare scalar so that the result is
-    always an array matching the coordinates, independently of which argument the
-    pybind wrapper sizes a scalar broadcast from - the trailing argument is the time
-    when the field is time dependent.
+    Do two things:
+    - None component -> zero function
+    - spatial-only functions -> space-time functions (ex: f(x) -> f(x, t))
     """
-    if is_time_dependent:
-        if ndim == 1:
-            return lambda x, t: x * 0.0
-        if ndim == 2:
-            return lambda x, y, t: x * 0.0
-        if ndim == 3:
-            return lambda x, y, z, t: x * 0.0
-    else:
-        if ndim == 1:
-            return lambda x: x * 0.0
-        if ndim == 2:
-            return lambda x, y: x * 0.0
-        if ndim == 3:
-            return lambda x, y, z: x * 0.0
+    zero = _zero_defaulter(ndim)
 
+    def as_space_time(f):
+        if f is None:
+            return zero
+        return f if is_time_dependent else (lambda *args: f(*args[:-1]))
 
-def _default_none_components(list, ndim, is_time_dependent):
-    """Replace the 'None' components by a zero-valued callable of the same signature."""
-    zero = _zero_defaulter(ndim, is_time_dependent)
-    return tuple(zero if f is None else f for f in list)
+    return tuple(as_space_time(f) for f in list)
 
 
 def _resolve_dict_user_defined_external_field(external_field, *, ndim):
-    _check_keys(external_field, {"type", "potential", "potential_time_derivative"}, "user-defined")
+    _check_keys(
+        external_field,
+        {"type", "potential", "potential_time_derivative"},
+        "user-defined",
+    )
     if "potential" not in external_field:
-        raise ValueError(
-            "Error: a user-defined external field requires 'potential'"
-        )
+        raise ValueError("Error: a user-defined external field requires 'potential'")
     potential = _check_callables("potential", external_field)
     _check_that_vector_of_callable_is_valid(potential, "potential")
 
@@ -221,9 +236,7 @@ def _resolve_dict_user_defined_external_field(external_field, *, ndim):
             f"coordinate(s), optionally followed by the time, "
             f"got {size} argument(s)"
         )
-    is_time_dependant = _is_signature_time_dependent(
-        _first_callable(potential), ndim
-    )
+    is_time_dependent = _is_signature_time_dependent(_first_callable(potential), ndim)
 
     if ndim == 1 and potential[0] is not None:
         raise ValueError(
@@ -231,21 +244,21 @@ def _resolve_dict_user_defined_external_field(external_field, *, ndim):
             " contribute to the external magnetic field. Expected as None."
         )
 
-    potential = _default_none_components(potential, ndim, is_time_dependant)
+    potential = _normalized_components(potential, ndim, is_time_dependent)
 
     has_derivative = "potential_time_derivative" in external_field
-    if is_time_dependant and not has_derivative:
+    if is_time_dependent and not has_derivative:
         raise ValueError(
             "Error: a time-dependent 'potential' requires "
             "'potential_time_derivative'"
         )
-    if has_derivative and not is_time_dependant:
+    if has_derivative and not is_time_dependent:
         raise ValueError(
             "Error: 'potential_time_derivative' was given but 'potential' does "
             "not depend on time"
         )
 
-    if is_time_dependant:
+    if is_time_dependent:
         potential_time_derivative = _check_callables(
             "potential_time_derivative", external_field
         )
@@ -256,17 +269,18 @@ def _resolve_dict_user_defined_external_field(external_field, *, ndim):
             potential_time_derivative,
             "potential_time_derivative",
             ndim,
-            is_time_dependant,
+            is_time_dependent,
         )
-        potential_time_derivative = _default_none_components(
-            potential_time_derivative, ndim, is_time_dependant
+        potential_time_derivative = _normalized_components(
+            potential_time_derivative, ndim, is_time_dependent
         )
     else:
         potential_time_derivative = None
 
     return UserDefinedExternalField(
-        is_time_dependant, potential, potential_time_derivative
+        is_time_dependent, potential, potential_time_derivative
     )
+
 
 def _resolve_dict_external_field(external_field, *, ndim):
     valid_types = ("none", "dipole", "user-defined")

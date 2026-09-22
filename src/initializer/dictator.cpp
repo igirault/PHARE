@@ -12,8 +12,8 @@
 
 
 
+using PHARE::core::SpaceTimeFunction;
 using PHARE::initializer::InitFunction;
-
 
 
 template<typename T>
@@ -54,6 +54,12 @@ PYBIND11_MODULE(dictator, m)
     m.def("addInitFunction1D", add<InitFunction<1>>, "add");
     m.def("addInitFunction2D", add<InitFunction<2>>, "add");
     m.def("addInitFunction3D", add<InitFunction<3>>, "add");
+
+    // coordinates reach these ones as zero-copy numpy views, via the CoordinateSpan
+    // caster in python3/pybind_def.hpp - included above, before functional.h
+    m.def("add_space_time_function_1d", add<SpaceTimeFunction<1>>, "add");
+    m.def("add_space_time_function_2d", add<SpaceTimeFunction<2>>, "add");
+    m.def("add_space_time_function_3d", add<SpaceTimeFunction<3>>, "add");
 
     m.def("add_array_as_vector", add_array_as_vector<double>, "add_array_as_vector");
 
