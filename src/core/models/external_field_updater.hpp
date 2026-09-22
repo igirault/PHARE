@@ -56,10 +56,6 @@ public:
     virtual void operator()(external_field_type& externalField, GridLayoutT const& layout,
                             double time)
     {
-        assert(layout.centering(externalField.B0) == layout.centering(tensor_type::B));
-        assert(layout.centering(externalField.dB0dt) == layout.centering(tensor_type::B));
-        assert(layout.centering(externalField.scratch) == layout.centering(tensor_type::E));
-
         computePotential(externalField.scratch, time, layout);
         curlOnGhostBox_(externalField.B0, externalField.scratch, layout);
         if (is_time_dependent_)

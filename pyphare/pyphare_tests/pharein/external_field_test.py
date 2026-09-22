@@ -50,8 +50,14 @@ class RecordingPopulator:
     def add_double(self, path, value):
         self.written[path] = float(value)
 
+    def add_bool(self, path, value):
+        self.written[path] = bool(value)
+
     def add_enum_int(self, path, enum_name, member_name):
         self.written[path] = (enum_name, member_name)
+
+    def add_space_time_function(self, path, fn):
+        self.written[path] = fn
 
 
 class TestExternalFieldResolution(unittest.TestCase):
@@ -85,9 +91,12 @@ class TestExternalFieldResolution(unittest.TestCase):
         self.assertFalse(ef.is_time_dependent)
         self.assertIsNone(ef.potential_time_derivative)
 
-        # the component the user gave is kept as is, the 'None' ones become callables
-        self.assertIs(ef.potential[2], az_2d)
+        # every component is normalized to the space-time signature, the 'None' ones
+        # included, so that one C++ SpaceTimeFunction type serves both cases
         self.assertTrue(all(callable(a) for a in ef.potential))
+        x = np.array([0.0, 1.0, 2.0])
+        y = np.array([3.0, 4.0, 5.0])
+        np.testing.assert_array_equal(ef.potential[2](x, y, 7.0), az_2d(x, y))
 
     def test_none_components_default_to_zero_shaped_like_the_coordinates(self):
         ef = resolve_user_defined(2, (None, None, az_2d))
@@ -95,11 +104,12 @@ class TestExternalFieldResolution(unittest.TestCase):
         x = np.array([0.0, 1.0, 2.0])
         y = np.array([3.0, 4.0, 5.0])
 
-        # an array, not a scalar: the pybind wrapper must not have to broadcast it
+        # an array, not a scalar: the pybind wrapper must not have to broadcast it.
+        # the time is accepted and ignored, the potential being static here
         for defaulted in (ef.potential[0], ef.potential[1]):
-            np.testing.assert_array_equal(defaulted(x, y), np.zeros(x.size))
+            np.testing.assert_array_equal(defaulted(x, y, 7.0), np.zeros(x.size))
 
-        np.testing.assert_array_equal(ef.potential[2](x, y), x + y)
+        np.testing.assert_array_equal(ef.potential[2](x, y, 7.0), x + y)
 
     def test_user_defined_time_dependence_comes_from_the_signature(self):
         ef = resolve_user_defined(
@@ -122,9 +132,14 @@ class TestExternalFieldResolution(unittest.TestCase):
             np.testing.assert_array_equal(defaulted(x, y, 0.5), np.zeros(x.size))
 
     def test_user_defined_is_resolved_in_1d_and_3d(self):
+        x = np.array([0.0, 1.0, 2.0])
+
         # in 1D a_x contributes to no curl term at all, and is expected to be None
-        self.assertIs(resolve_user_defined(1, (None, ay_1d, None)).potential[1], ay_1d)
-        self.assertIs(resolve_user_defined(3, (None, None, az_3d)).potential[2], az_3d)
+        ay = resolve_user_defined(1, (None, ay_1d, None)).potential[1]
+        np.testing.assert_array_equal(ay(x, 7.0), ay_1d(x))
+
+        az = resolve_user_defined(3, (None, None, az_3d)).potential[2]
+        np.testing.assert_array_equal(az(x, x, x, 7.0), az_3d(x, x, x))
 
     def test_invalid_declarations_are_rejected(self):
         dipole = {"type": "dipole", "position": (0.5, 1.5), "moment": (0.0, 2.0)}
@@ -195,6 +210,62 @@ class TestExternalFieldPopulateDict(unittest.TestCase):
                 "simulation/external_field/moment/x": 0.0,
                 "simulation/external_field/moment/y": 1.0,
             },
+        )
+
+
+    def test_user_defined_writes_its_three_components_and_the_time_flag(self):
+        dp = RecordingPopulator()
+        resolve_user_defined(2, (None, None, az_2d)).populate_dict(dp)
+
+        path = "simulation/external_field"
+        self.assertEqual(
+            sorted(dp.written),
+            sorted(
+                [
+                    f"{path}/type",
+                    f"{path}/is_time_dependent",
+                    f"{path}/potential/x",
+                    f"{path}/potential/y",
+                    f"{path}/potential/z",
+                ]
+            ),
+        )
+        self.assertEqual(
+            dp.written[f"{path}/type"], ("ExternalFieldUpdaterType", "user-defined")
+        )
+        self.assertFalse(dp.written[f"{path}/is_time_dependent"])
+
+        # what is written is callable with the space-time signature, whatever the user gave:
+        # a_z is theirs, a_x and a_y are the zero defaulters
+        x = np.array([0.0, 1.0, 2.0])
+        y = np.array([3.0, 4.0, 5.0])
+        np.testing.assert_array_equal(dp.written[f"{path}/potential/z"](x, y, 7.0), x + y)
+        np.testing.assert_array_equal(
+            dp.written[f"{path}/potential/x"](x, y, 7.0), np.zeros(x.size)
+        )
+
+    def test_user_defined_writes_the_derivative_only_when_time_dependent(self):
+        dp = RecordingPopulator()
+        resolve_user_defined(
+            2, (None, None, az_2d_t), potential_time_derivative=(None, None, dazdt_2d)
+        ).populate_dict(dp)
+
+        path = "simulation/external_field"
+        self.assertTrue(dp.written[f"{path}/is_time_dependent"])
+        for axis in "xyz":
+            self.assertIn(f"{path}/potential_time_derivative/{axis}", dp.written)
+
+        x = np.array([0.0, 1.0, 2.0])
+        y = np.array([3.0, 4.0, 5.0])
+        np.testing.assert_array_equal(
+            dp.written[f"{path}/potential_time_derivative/z"](x, y, 7.0), x + y
+        )
+
+        # a static field writes no derivative at all
+        static = RecordingPopulator()
+        resolve_user_defined(2, (None, None, az_2d)).populate_dict(static)
+        self.assertFalse(
+            any("potential_time_derivative" in key for key in static.written)
         )
 
 

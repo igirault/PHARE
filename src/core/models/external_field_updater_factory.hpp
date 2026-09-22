@@ -5,11 +5,14 @@
 #include "core/models/external_field_updater_defs.hpp"
 #include "core/models/external_field_updater_dipole.hpp"
 #include "core/models/external_field_updater_none.hpp"
+#include "core/utilities/space_time_function.hpp"
 
+#include "external_field_updater_user_defined.hpp"
 #include "initializer/data_provider.hpp"
 #include "initializer/dict_utils.hpp"
 
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 namespace PHARE::core
@@ -20,14 +23,19 @@ namespace PHARE::core
 template<typename VecFieldT, typename GridLayoutT>
 class ExternalFieldUpdaterFactory
 {
+private:
+    using Interface   = IExternalFieldUpdater<VecFieldT, GridLayoutT>;
+    using Dipole      = ExternalFieldUpdaterDipole<VecFieldT, GridLayoutT>;
+    using None        = ExternalFieldUpdaterNone<VecFieldT, GridLayoutT>;
+    using UserDefined = ExternalFieldUpdaterUserDefined<VecFieldT, GridLayoutT>;
+
 public:
-    using Interface  = IExternalFieldUpdater<VecFieldT, GridLayoutT>;
-    using Dipole     = ExternalFieldUpdaterDipole<VecFieldT, GridLayoutT>;
-    using None       = ExternalFieldUpdaterNone<VecFieldT, GridLayoutT>;
-    using point_type = Interface::point_type;
-    using value_type = Interface::value_type;
+    using point_type               = Interface::point_type;
+    using value_type               = Interface::value_type;
+    using space_time_function_type = SpaceTimeFunction<GridLayoutT::dimension>;
 
     static constexpr std::size_t dimension = GridLayoutT::dimension;
+    static constexpr std::size_t N         = VecFieldT::size();
 
     ExternalFieldUpdaterFactory() = delete;
 
@@ -47,11 +55,20 @@ public:
                 return std::make_unique<Dipole>(position, moment);
             }
 
-            case ExternalFieldUpdaterType::UserDefined:
-                throw std::runtime_error(
-                    "external field updater: 'user-defined' is not implemented yet");
-        }
+            case ExternalFieldUpdaterType::UserDefined: {
+                // N, not dimension: a vector potential always has its three components, in 2D
+                // the in-plane pair being the only way to prescribe an out-of-plane B0
+                auto potential
+                    = initializer::parseDimXYZType<space_time_function_type, N>(dict, "potential");
 
+                std::optional<std::array<space_time_function_type, N>> derivative;
+                if (dict["is_time_dependent"].template to<bool>())
+                    derivative = initializer::parseDimXYZType<space_time_function_type, N>(
+                        dict, "potential_time_derivative");
+
+                return std::make_unique<UserDefined>(std::move(potential), std::move(derivative));
+            }
+        }
         throw std::runtime_error("external field updater: unknown type");
     }
 };

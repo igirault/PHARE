@@ -2,13 +2,55 @@
 #define PHARE_TEST_CORE_MODELS_TEST_EXTERNAL_FIELD_FIXTURES_HPP
 
 #include "core/models/external_field.hpp"
+#include "core/utilities/point/point.hpp"
+#include "core/utilities/space_time_function.hpp"
+#include "core/utilities/span.hpp"
 
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
+#include <cstddef>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace PHARE::core
 {
+/**
+ * @brief turn a point-wise formula f(Point, time) into a vectorized SpaceTimeFunction.
+ *
+ * Stands in for pyphare's space_time_fn_wrapper: coordinates arrive as CoordinateSpan views
+ * and the result is returned as a Span owning its buffer, so a test drives the updaters
+ * through the very call convention the python binding produces, without python.
+ */
+template<std::size_t dim, typename Fn>
+SpaceTimeFunction<dim> spaceTimeFunction(Fn f)
+{
+    auto fill = [f](CoordinateSpan const& x, double t, auto&& pointAt) {
+        std::vector<double> out(x.size);
+        for (std::size_t i = 0; i < x.size; ++i)
+            out[i] = f(pointAt(i), t);
+        return std::static_pointer_cast<Span<double>>(
+            std::make_shared<VectorSpan<double>>(std::move(out)));
+    };
+
+    if constexpr (dim == 1)
+        return [fill](CoordinateSpan const& x, double t) {
+            return fill(x, t, [&](std::size_t i) { return Point<double, 1>{x.ptr[i]}; });
+        };
+    else if constexpr (dim == 2)
+        return [fill](CoordinateSpan const& x, CoordinateSpan const& y, double t) {
+            return fill(x, t, [&](std::size_t i) { return Point<double, 2>{x.ptr[i], y.ptr[i]}; });
+        };
+    else
+        return [fill](CoordinateSpan const& x, CoordinateSpan const& y, CoordinateSpan const& z,
+                      double t) {
+            return fill(x, t, [&](std::size_t i) {
+                return Point<double, 3>{x.ptr[i], y.ptr[i], z.ptr[i]};
+            });
+        };
+}
+
+
 /**
  * @brief an ExternalField that owns the memory of its vecfields, for tests.
  *
