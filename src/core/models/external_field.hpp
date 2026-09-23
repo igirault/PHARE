@@ -34,9 +34,9 @@ public:
     //                  start the ResourcesUser interface
     //-------------------------------------------------------------------------
 
-    NO_DISCARD bool isUsable() const { return isUsable(B0, dB0dt, scratch); }
+    NO_DISCARD bool isUsable() const { return core::isUsable(B0, dB0dt, scratch); }
 
-    NO_DISCARD bool isSettable() const { return isSettable(B0, dB0dt, scratch); }
+    NO_DISCARD bool isSettable() const { return core::isSettable(B0, dB0dt, scratch); }
 
     NO_DISCARD auto getCompileTimeResourcesViewList() const
     {

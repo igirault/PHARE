@@ -39,10 +39,15 @@ public:
     {
         externalField.B0.zero();
         externalField.dB0dt.zero();
+        externalField.scratch.zero(); // registered resource: never leave the sentinel in place
     }
 
+    // never called: operator() above is final and fills B0/dB0dt without a potential
     void virtual computePotential(vecfield_type& a0, double time,
                                   GridLayoutT const& layout) final{};
+
+    void virtual computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
+                                                GridLayoutT const& layout) final{};
 };
 
 } // namespace PHARE::core

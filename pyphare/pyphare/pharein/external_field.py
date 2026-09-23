@@ -320,6 +320,9 @@ def resolve_external_field(ndim, **kwargs):
     if external_field is None:
         return ZeroExternalField()
 
+    if isinstance(external_field, ExternalField):
+        return external_field
+
     if not isinstance(external_field, dict):
         raise ValueError(
             "Error: external_field must be a dict or an ExternalField, got "

@@ -73,14 +73,17 @@ public:
             else
                 return 0.0;
         }
-        // 3D case
-        point_type const r      = coords - position_;
-        double rSquared         = std::inner_product(r.begin(), r.end(), r.begin(), 0.0);
-        double constexpr factor = 1. / (4. * std::numbers::pi);
-        // elegant trick to express component i of cross product `moment_` times `r`
-        constexpr auto j = (static_cast<std::size_t>(i) + 1) % 3;
-        constexpr auto k = (static_cast<std::size_t>(i) + 2) % 3;
-        return factor * (moment_[j] * r[k] - moment_[k] * r[j]) / (rSquared * std::sqrt(rSquared));
+        else // 3D case
+        {
+            point_type const r      = coords - position_;
+            double rSquared         = std::inner_product(r.begin(), r.end(), r.begin(), 0.0);
+            double constexpr factor = 1. / (4. * std::numbers::pi);
+            // elegant trick to express component i of cross product `moment_` times `r`
+            constexpr auto j = (static_cast<std::size_t>(i) + 1) % 3;
+            constexpr auto k = (static_cast<std::size_t>(i) + 2) % 3;
+            return factor * (moment_[j] * r[k] - moment_[k] * r[j])
+                   / (rSquared * std::sqrt(rSquared));
+        }
     }
 
 private:

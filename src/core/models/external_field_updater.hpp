@@ -71,7 +71,7 @@ public:
 
     void virtual computePotential(vecfield_type& a0, double time, GridLayoutT const& layout) = 0;
     void virtual computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
-                                                GridLayoutT const& layout){};
+                                                GridLayoutT const& layout)                   = 0;
 
     NO_DISCARD bool isTimeDependent() const { return is_time_dependent_; }
 
