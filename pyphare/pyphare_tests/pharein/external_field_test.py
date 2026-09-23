@@ -5,7 +5,7 @@ import pyphare.pharein.global_vars as global_vars
 from pyphare.pharein import simulation
 from pyphare.pharein.external_field import (
     DipoleExternalField,
-    NoExternalField,
+    ZeroExternalField,
     UserDefinedExternalField,
     resolve_external_field,
 )
@@ -62,12 +62,12 @@ class RecordingPopulator:
 
 class TestExternalFieldResolution(unittest.TestCase):
     def test_absent_gives_no_external_field(self):
-        self.assertIsInstance(resolve_external_field(2), NoExternalField)
+        self.assertIsInstance(resolve_external_field(2), ZeroExternalField)
         self.assertIsInstance(
-            resolve_external_field(2, external_field=None), NoExternalField
+            resolve_external_field(2, external_field=None), ZeroExternalField
         )
         self.assertIsInstance(
-            resolve_external_field(2, external_field={"type": "none"}), NoExternalField
+            resolve_external_field(2, external_field={"type": "zero"}), ZeroExternalField
         )
 
     def test_dipole_is_resolved(self):
@@ -179,16 +179,16 @@ class TestExternalFieldResolution(unittest.TestCase):
 
 
 class TestExternalFieldPopulateDict(unittest.TestCase):
-    def test_none_writes_only_its_type(self):
+    def test_zero_writes_only_its_type(self):
         dp = RecordingPopulator()
-        NoExternalField().populate_dict(dp)
+        ZeroExternalField().populate_dict(dp)
 
         self.assertEqual(
             dp.written,
             {
                 "simulation/external_field/type": (
                     "ExternalFieldUpdaterType",
-                    "none",
+                    "zero",
                 )
             },
         )
@@ -280,7 +280,7 @@ class TestSimulationExternalField(unittest.TestCase):
         sim = simulation.Simulation(
             time_step=0.001, time_step_nbr=10, cells=(20, 20), dl=(0.1, 0.1)
         )
-        self.assertIsInstance(sim.external_field, NoExternalField)
+        self.assertIsInstance(sim.external_field, ZeroExternalField)
 
     def test_simulation_accepts_a_dipole(self):
         sim = simulation.Simulation(

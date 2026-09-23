@@ -1113,7 +1113,7 @@ class Simulation(object):
         * **external_field** (``dict``), prescribed background magnetic field, e.g.
           ``{"type": "dipole", "position": (0.5, 0.5), "moment": (0., 1.)}``
           (vectors have one component per dimension)
-          (default is ``{"type": "none"}``)
+          (default is ``{"type": "zero"}``)
 
     """
 

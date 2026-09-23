@@ -79,10 +79,10 @@ class ExternalField(ABC):
 
 
 @dataclass
-class NoExternalField(ExternalField):
-    """No external field: B0 and its time derivative stay zero."""
+class ZeroExternalField(ExternalField):
+    """Zero external field: B0 and its time derivative stay zero."""
 
-    type = "none"
+    type = "zero"
 
 
 @dataclass
@@ -283,15 +283,15 @@ def _resolve_dict_user_defined_external_field(external_field, *, ndim):
 
 
 def _resolve_dict_external_field(external_field, *, ndim):
-    valid_types = ("none", "dipole", "user-defined")
+    valid_types = ("zero", "dipole", "user-defined")
     type_ = external_field.get("type")
     if type_ not in valid_types:
         raise ValueError(
             f"Error: external_field dict requires 'type' in {valid_types}, got {type_!r}"
         )
-    if type_ == "none":
+    if type_ == "zero":
         _check_keys(external_field, {"type"}, type_)
-        return NoExternalField()
+        return ZeroExternalField()
     elif type_ == "dipole":
         _check_keys(external_field, {"type", "position", "moment"}, type_)
         if ndim == 1:
@@ -318,7 +318,7 @@ def resolve_external_field(ndim, **kwargs):
     external_field = kwargs.get("external_field")
 
     if external_field is None:
-        return NoExternalField()
+        return ZeroExternalField()
 
     if not isinstance(external_field, dict):
         raise ValueError(

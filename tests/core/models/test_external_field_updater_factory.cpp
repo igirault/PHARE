@@ -32,7 +32,7 @@ using GridLayout_t  = MHDTypes::GridLayout_t;
 using VecField_t    = MHDTypes::VecField_t;
 using Factory_t     = ExternalFieldUpdaterFactory<VecField_t, GridLayout_t>;
 using Dipole_t      = ExternalFieldUpdaterDipole<VecField_t, GridLayout_t>;
-using None_t        = ExternalFieldUpdaterNone<VecField_t, GridLayout_t>;
+using Zero_t        = ExternalFieldUpdaterZero<VecField_t, GridLayout_t>;
 using UserDefined_t = ExternalFieldUpdaterUserDefined<VecField_t, GridLayout_t>;
 
 auto constexpr cells = 8u;
@@ -171,24 +171,24 @@ double maxDeviation(VecField_t& vecfield, Point<double, 3> const& expected)
 } // namespace
 
 
-TEST(ExternalFieldUpdaterFactory, defaultsToNoExternalFieldWhenTypeIsAbsent)
+TEST(ExternalFieldUpdaterFactory, defaultsToZeroExternalFieldWhenTypeIsAbsent)
 {
     initializer::PHAREDict dict;
     auto updater = Factory_t::create(dict);
 
     ASSERT_NE(updater, nullptr);
-    EXPECT_NE(dynamic_cast<None_t*>(updater.get()), nullptr);
+    EXPECT_NE(dynamic_cast<Zero_t*>(updater.get()), nullptr);
 }
 
 
-TEST(ExternalFieldUpdaterFactory, createsTheNoneUpdater)
+TEST(ExternalFieldUpdaterFactory, createsTheZeroUpdater)
 {
     initializer::PHAREDict dict;
-    putType(dict, ExternalFieldUpdaterType::None);
+    putType(dict, ExternalFieldUpdaterType::Zero);
     auto updater = Factory_t::create(dict);
 
     ASSERT_NE(updater, nullptr);
-    EXPECT_NE(dynamic_cast<None_t*>(updater.get()), nullptr);
+    EXPECT_NE(dynamic_cast<Zero_t*>(updater.get()), nullptr);
     EXPECT_FALSE(updater->isTimeDependent());
 }
 

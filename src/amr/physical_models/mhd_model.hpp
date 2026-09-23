@@ -88,7 +88,9 @@ public:
         , state{dict["mhd_state"]}
         , externalField{model_name}
         , resourcesManager{_resourcesManager}
-        , externalFieldUpdater{external_field_factory_type::create(dict["external_field"])}
+        , externalFieldUpdater{dict.contains("external_field")
+                                   ? external_field_factory_type::create(dict["external_field"])
+                                   : external_field_factory_type::createZero()}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
