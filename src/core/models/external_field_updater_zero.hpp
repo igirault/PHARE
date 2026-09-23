@@ -1,5 +1,5 @@
-#ifndef PHARE_CORE_MODELS_EXTERNAL_FIELD_UPDATER_NONE_HPP
-#define PHARE_CORE_MODELS_EXTERNAL_FIELD_UPDATER_NONE_HPP
+#ifndef PHARE_CORE_MODELS_EXTERNAL_FIELD_UPDATER_ZERO_HPP
+#define PHARE_CORE_MODELS_EXTERNAL_FIELD_UPDATER_ZERO_HPP
 
 #include "core/models/external_field_updater.hpp"
 
@@ -17,7 +17,7 @@ namespace PHARE::core
  *
  */
 template<typename VecFieldT, typename GridLayoutT>
-class ExternalFieldUpdaterNone : public IExternalFieldUpdater<VecFieldT, GridLayoutT>
+class ExternalFieldUpdaterZero : public IExternalFieldUpdater<VecFieldT, GridLayoutT>
 {
 public:
     using Super               = IExternalFieldUpdater<VecFieldT, GridLayoutT>;
@@ -29,10 +29,10 @@ public:
 
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    ExternalFieldUpdaterNone()
+    ExternalFieldUpdaterZero()
         : Super(false) {};
 
-    virtual ~ExternalFieldUpdaterNone() = default;
+    virtual ~ExternalFieldUpdaterZero() = default;
 
     void virtual operator()(external_field_type& externalField, GridLayoutT const& layout,
                             double time) final
@@ -47,4 +47,4 @@ public:
 
 } // namespace PHARE::core
 
-#endif // PHARE_CORE_MODELS_EXTERNAL_FIELD_UPDATER_NONE_HPP
+#endif // PHARE_CORE_MODELS_EXTERNAL_FIELD_UPDATER_ZERO_HPP

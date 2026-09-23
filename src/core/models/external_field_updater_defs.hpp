@@ -3,7 +3,7 @@
 
 namespace PHARE::core
 {
-enum class ExternalFieldUpdaterType { None, Dipole, UserDefined };
+enum class ExternalFieldUpdaterType { Zero, Dipole, UserDefined };
 
 } // namespace PHARE::core
 

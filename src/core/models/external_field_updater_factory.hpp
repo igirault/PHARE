@@ -4,7 +4,7 @@
 #include "core/models/external_field_updater.hpp"
 #include "core/models/external_field_updater_defs.hpp"
 #include "core/models/external_field_updater_dipole.hpp"
-#include "core/models/external_field_updater_none.hpp"
+#include "core/models/external_field_updater_zero.hpp"
 #include "core/utilities/space_time_function.hpp"
 
 #include "external_field_updater_user_defined.hpp"
@@ -12,6 +12,7 @@
 #include "initializer/dict_utils.hpp"
 
 #include <memory>
+#include <string>
 #include <optional>
 #include <stdexcept>
 
@@ -26,7 +27,7 @@ class ExternalFieldUpdaterFactory
 private:
     using Interface   = IExternalFieldUpdater<VecFieldT, GridLayoutT>;
     using Dipole      = ExternalFieldUpdaterDipole<VecFieldT, GridLayoutT>;
-    using None        = ExternalFieldUpdaterNone<VecFieldT, GridLayoutT>;
+    using Zero        = ExternalFieldUpdaterZero<VecFieldT, GridLayoutT>;
     using UserDefined = ExternalFieldUpdaterUserDefined<VecFieldT, GridLayoutT>;
 
 public:
@@ -39,13 +40,15 @@ public:
 
     ExternalFieldUpdaterFactory() = delete;
 
+    static std::unique_ptr<Interface> createZero() { return std::make_unique<Zero>(); }
+
     static std::unique_ptr<Interface> create(initializer::PHAREDict const& dict)
     {
-        auto const type = cppdict::get_value(dict, "type", ExternalFieldUpdaterType::None);
+        auto const type = cppdict::get_value(dict, "type", ExternalFieldUpdaterType::Zero);
 
         switch (type)
         {
-            case ExternalFieldUpdaterType::None: return std::make_unique<None>();
+            case ExternalFieldUpdaterType::Zero: return std::make_unique<Zero>();
 
             case ExternalFieldUpdaterType::Dipole: {
                 auto position
