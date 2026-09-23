@@ -106,6 +106,20 @@ public:
         resourcesManager->registerResources(externalField);
     }
 
+    void initializeExternalField(level_t& level, double time) override
+    {
+        for (auto const& patch : resourcesManager->enumerate(level, externalField))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayoutT>(*patch);
+            (*externalFieldUpdater)(externalField, layout, time);
+        }
+    }
+
+    void updateExternalField(level_t& level, double time) override
+    {
+        if (externalFieldUpdater->isTimeDependent())
+            initializeExternalField(level, time);
+    }
 
     virtual ~HybridModel() override {}
 
@@ -163,7 +177,6 @@ void HybridModel<GridLayoutT, Electromag, Ions, Electrons, AMR_Types, Grid_t>::i
         }
 
         state.electromag.initialize(layout);
-        (*externalFieldUpdater)(externalField, layout, 0.);
     }
 }
 

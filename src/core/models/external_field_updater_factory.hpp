@@ -59,8 +59,6 @@ public:
             }
 
             case ExternalFieldUpdaterType::UserDefined: {
-                // N, not dimension: a vector potential always has its three components, in 2D
-                // the in-plane pair being the only way to prescribe an out-of-plane B0
                 auto potential
                     = initializer::parseDimXYZType<space_time_function_type, N>(dict, "potential");
 

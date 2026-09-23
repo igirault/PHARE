@@ -99,6 +99,21 @@ public:
         resourcesManager->registerResources(externalField);
     }
 
+    void initializeExternalField(level_t& level, double time) override
+    {
+        for (auto const& patch : resourcesManager->enumerate(level, externalField))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayoutT>(*patch);
+            (*externalFieldUpdater)(externalField, layout, time);
+        }
+    }
+
+    void updateExternalField(level_t& level, double time) override
+    {
+        if (externalFieldUpdater->isTimeDependent())
+            initializeExternalField(level, time);
+    }
+
     ~MHDModel() override = default;
 
 
@@ -136,7 +151,6 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::initialize(level_t& le
         auto _      = this->resourcesManager->setOnPatch(*patch, state, externalField);
 
         state.initialize(layout);
-        (*externalFieldUpdater)(externalField, layout, 0.);
     }
 }
 
@@ -169,8 +183,6 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.ghostElectric.push_back(MHDInfo.modelElectric);
     MHDInfo.ghostCurrent.push_back(MHDInfo.modelCurrent);
 }
-
-
 
 
 template<typename Model>
