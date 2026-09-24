@@ -222,6 +222,7 @@ class ExternalFieldTest(SimulatorTest):
                 "type": "dipole",
                 "position": (-5.0, -5.0),  # outside the domain: no singularity
                 "moment": (0.0, 1.0),
+                "radius": 0.0,
             },
             refinement_boxes={"L0": {"B0": [(10, 10), (29, 29)]}},
             smallest_patch_size=10,
@@ -243,6 +244,56 @@ class ExternalFieldTest(SimulatorTest):
             self.assertTrue(np.all(np.isfinite(values)), f"{key}: non finite B0")
             self.assertIn(key, last)
             np.testing.assert_array_equal(values, last[key], err_msg=str(key))
+
+    def test_dipole_radius_regularizes_the_center(self):
+        """A dipole of finite radius sitting on a node inside the domain: B0 must be
+        finite everywhere (a point dipole divides by zero there), and inside the radius
+        the uniform field m / (2 pi R^2) of a uniformly magnetized cylinder."""
+        center = tuple(0.5 * n * d for n, d in zip(cells, dl))  # a node on every level
+        moment = (0.0, 1.0)
+        radius = 1.0
+        sim, timestamps = self.config(
+            nbr_steps=1,
+            external_field={
+                "type": "dipole",
+                "position": center,
+                "moment": moment,
+                "radius": radius,
+            },
+            refinement_boxes={"L0": {"B0": [(10, 10), (29, 29)]}},
+            smallest_patch_size=10,
+            largest_patch_size=20,
+        )
+        run = self.run_sim(sim)
+
+        uniform = {
+            "B0x": moment[0] / (2.0 * np.pi * radius**2),
+            "B0y": moment[1] / (2.0 * np.pi * radius**2),
+            "B0z": 0.0,
+        }
+        levels = self.b0_levels(run, timestamps[0])
+        self.assertGreaterEqual(len(levels), 2)
+        inside = 0
+        for ilvl, level in levels.items():
+            for patch in level.patches:
+                for name, pd in patch.patch_datas.items():
+                    data = pd.dataset[:]
+                    self.assertTrue(
+                        np.all(np.isfinite(data)), f"lvl={ilvl} {name}: non finite B0"
+                    )
+                    x, y = pd.meshgrid()
+                    r = np.hypot(x - center[0], y - center[1])
+                    # the curl stencil reaches half a cell away: keep it all inside
+                    mask = r + pd.layout.dl[0] < radius
+                    np.testing.assert_allclose(
+                        data[mask],
+                        uniform[name],
+                        atol=1e-10,
+                        rtol=0,
+                        err_msg=f"lvl={ilvl} {name}",
+                    )
+                    inside += np.count_nonzero(mask)
+        self.assertGreater(inside, 0, "no node was checked inside the radius")
 
     def test_no_external_field_gives_a_clean_zero_b0(self):
         """The default: B0 must be zero everywhere, and never the SAMRAI sentinel."""

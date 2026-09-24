@@ -77,12 +77,28 @@ class TestExternalFieldResolution(unittest.TestCase):
                 "type": "dipole",
                 "position": (0.5, 1.5),
                 "moment": (0.0, 2.0),
+                "radius": 1,
             },
         )
 
         assert isinstance(ef, DipoleExternalField)
         self.assertEqual(ef.position, (0.5, 1.5))
         self.assertEqual(ef.moment, (0.0, 2.0))
+        self.assertEqual(ef.radius, 1.0)
+        self.assertIsInstance(ef.radius, float)
+
+    def test_dipole_accepts_a_zero_radius(self):
+        """0 is the point dipole: a valid, explicit choice."""
+        ef = resolve_external_field(
+            2,
+            external_field={
+                "type": "dipole",
+                "position": (0.5, 1.5),
+                "moment": (0.0, 2.0),
+                "radius": 0.0,
+            },
+        )
+        self.assertEqual(ef.radius, 0.0)
 
     def test_user_defined_is_resolved(self):
         ef = resolve_user_defined(2, (None, None, az_2d))
@@ -142,7 +158,12 @@ class TestExternalFieldResolution(unittest.TestCase):
         np.testing.assert_array_equal(az(x, x, x, 7.0), az_3d(x, x, x))
 
     def test_invalid_declarations_are_rejected(self):
-        dipole = {"type": "dipole", "position": (0.5, 1.5), "moment": (0.0, 2.0)}
+        dipole = {
+            "type": "dipole",
+            "position": (0.5, 1.5),
+            "moment": (0.0, 2.0),
+            "radius": 0.0,
+        }
         static = {"type": "user-defined", "potential": (None, None, az_2d)}
         timed = {
             "type": "user-defined",
@@ -159,7 +180,13 @@ class TestExternalFieldResolution(unittest.TestCase):
             (2, {**dipole, "moment": (0.0, 1.0, 2.0)}),  # three components in 2D
             (2, {**dipole, "moment": (0.0, 0.0)}),  # a zero moment is no dipole
             (2, {k: v for k, v in dipole.items() if k != "moment"}),  # missing key
+            (2, {k: v for k, v in dipole.items() if k != "radius"}),  # radius is required
             (2, {**dipole, "value": 3}),  # unknown key
+            (2, {**dipole, "radius": -1.0}),  # a negative radius
+            (2, {**dipole, "radius": float("nan")}),  # not a number
+            (2, {**dipole, "radius": float("inf")}),  # an infinite radius
+            (2, {**dipole, "radius": (1.0, 1.0)}),  # not a scalar
+            (2, {**dipole, "radius": "1"}),  # not a number
             #
             (2, {"type": "user-defined"}),  # no potential
             (2, {**static, "potential": (None, None, None)}),  # all components None
@@ -195,7 +222,7 @@ class TestExternalFieldPopulateDict(unittest.TestCase):
 
     def test_dipole_writes_its_vectors_component_wise(self):
         dp = RecordingPopulator()
-        DipoleExternalField((0.5, 1.5), (0.0, 1.0)).populate_dict(dp)
+        DipoleExternalField((0.5, 1.5), (0.0, 1.0), 0.0).populate_dict(dp)
 
         self.assertEqual(
             dp.written,
@@ -209,8 +236,15 @@ class TestExternalFieldPopulateDict(unittest.TestCase):
                 "simulation/external_field/position/y": 1.5,
                 "simulation/external_field/moment/x": 0.0,
                 "simulation/external_field/moment/y": 1.0,
+                "simulation/external_field/radius": 0.0,
             },
         )
+
+    def test_dipole_writes_its_radius(self):
+        dp = RecordingPopulator()
+        DipoleExternalField((0.5, 1.5), (0.0, 1.0), 0.25).populate_dict(dp)
+
+        self.assertEqual(dp.written["simulation/external_field/radius"], 0.25)
 
 
     def test_user_defined_writes_its_three_components_and_the_time_flag(self):
@@ -292,6 +326,7 @@ class TestSimulationExternalField(unittest.TestCase):
                 "type": "dipole",
                 "position": (0.5, 1.5),
                 "moment": (0.0, 2.0),
+                "radius": 0.0,
             },
         )
         self.assertIsInstance(sim.external_field, DipoleExternalField)

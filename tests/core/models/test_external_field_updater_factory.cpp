@@ -63,6 +63,7 @@ initializer::PHAREDict dipoleDict()
     putType(dict, ExternalFieldUpdaterType::Dipole);
     putVector(dict, "position", position);
     putVector(dict, "moment", moment);
+    dict["radius"] = 0.;
     return dict;
 }
 
@@ -214,7 +215,7 @@ TEST(ExternalFieldUpdaterFactory, forwardsThePositionAndMomentToTheDipole)
 {
     auto const dict = dipoleDict();
     auto fromDict   = Factory_t::create(dict);
-    Dipole_t direct{position, moment};
+    Dipole_t direct{position, moment, /*radius=*/0.};
 
     UpdaterRun fromDictRun{*fromDict};
     UpdaterRun directRun{direct};
@@ -223,11 +224,48 @@ TEST(ExternalFieldUpdaterFactory, forwardsThePositionAndMomentToTheDipole)
 }
 
 
+/**
+ * @brief the radius must reach the dipole constructor
+ *
+ * Large enough to cover the low-x part of the mesh from a dipole placed outside it, so that
+ * the field does depend on it.
+ */
+TEST(ExternalFieldUpdaterFactory, forwardsTheRadiusToTheDipole)
+{
+    double constexpr radius = 0.6;
+
+    auto dict      = dipoleDict();
+    dict["radius"] = radius;
+    auto fromDict  = Factory_t::create(dict);
+    Dipole_t withIt{position, moment, radius};
+    Dipole_t pointLike{position, moment, 0.};
+
+    UpdaterRun fromDictRun{*fromDict};
+    UpdaterRun withItRun{withIt};
+    UpdaterRun pointLikeRun{pointLike};
+
+    EXPECT_DOUBLE_EQ(maxDifference(fromDictRun, withItRun), 0.);
+    EXPECT_GT(maxDifference(fromDictRun, pointLikeRun), 0.);
+}
+
+
 TEST(ExternalFieldUpdaterFactory, throwsOnAMissingDipoleParameter)
 {
     initializer::PHAREDict dict;
     putType(dict, ExternalFieldUpdaterType::Dipole);
     putVector(dict, "position", position); // no "moment"
+
+    EXPECT_THROW(Factory_t::create(dict), std::runtime_error);
+}
+
+
+//! no default radius: a point dipole must be asked for, with radius = 0
+TEST(ExternalFieldUpdaterFactory, throwsOnAMissingDipoleRadius)
+{
+    initializer::PHAREDict dict;
+    putType(dict, ExternalFieldUpdaterType::Dipole);
+    putVector(dict, "position", position);
+    putVector(dict, "moment", moment);
 
     EXPECT_THROW(Factory_t::create(dict), std::runtime_error);
 }

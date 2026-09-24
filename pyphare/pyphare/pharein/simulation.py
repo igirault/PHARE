@@ -1111,7 +1111,7 @@ class Simulation(object):
         * **hyper-resistivity** (``float``), hyper-resistivity value (default=0.0)
         * **boundary_types** (``str`` or ``tuple``) type of boundary conditions (default is "periodic" for each direction)
         * **external_field** (``dict``), prescribed background magnetic field, e.g.
-          ``{"type": "dipole", "position": (0.5, 0.5), "moment": (0., 1.)}``
+          ``{"type": "dipole", "position": (0.5, 0.5), "moment": (0., 1.), "radius": 0.1}``
           (vectors have one component per dimension)
           (default is ``{"type": "zero"}``)
 

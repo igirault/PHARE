@@ -3,6 +3,8 @@ External magnetic field resolution and validation for pharein.Simulation.
 """
 
 import inspect
+import math
+import numbers
 from abc import ABC
 from dataclasses import dataclass
 
@@ -13,13 +15,7 @@ _CPPDICT_PATH = "simulation/external_field"
 
 
 def _add_vector(component_adder, path, components):
-    """Write a vector as the x/y/z sub-dict shape the C++ side reads component by component.
-
-    Careful on the C++ side: initializer::parseDimXYZType<T, dimension> reads only 'dimension'
-    components, which is right for the dipole vectors but wrong for a vector potential - that
-    one always has its three components, and in 2D the in-plane pair is the only way to
-    prescribe an out-of-plane B0. The factory passes N, not dimension, for that reason.
-    """
+    """Write a vector as the x/y/z sub-dict shape the C++ side reads component by component."""
     for axis, component in zip(_AXES, components):
         component_adder(f"{path}/{axis}", component)
 
@@ -35,6 +31,19 @@ def _check_components(name, dict, expected):
         raise ValueError(f"Error: external_field '{name}' components must be scalars")
 
     return tuple(float(v) for v in values)
+
+
+def _check_radius(radius):
+    """A finite, non-negative scalar, 0 standing for a point dipole."""
+    if isinstance(radius, bool) or not isinstance(radius, numbers.Real):
+        raise ValueError(
+            f"Error: dipole external_field 'radius' must be a number, got {radius!r}"
+        )
+    if not math.isfinite(radius) or radius < 0.0:
+        raise ValueError(
+            f"Error: dipole external_field 'radius' must be finite and >= 0, got {radius}"
+        )
+    return float(radius)
 
 
 def _check_callables(name, dict):
@@ -88,18 +97,21 @@ class ZeroExternalField(ExternalField):
 @dataclass
 class DipoleExternalField(ExternalField):
     """
-    A static magnetic dipole of moment 'moment' placed at 'position'.
+    A static magnetic dipole of moment 'moment' placed at 'position',
+    with uniform field below inside 'radius'.
     """
 
     type = "dipole"
 
     position: tuple
     moment: tuple
+    radius: float
 
     def populate_dict(self, dp):
         super().populate_dict(dp)
         _add_vector(dp.add_double, "simulation/external_field/position", self.position)
         _add_vector(dp.add_double, "simulation/external_field/moment", self.moment)
+        dp.add_double("simulation/external_field/radius", self.radius)
 
 
 @dataclass
@@ -293,10 +305,10 @@ def _resolve_dict_external_field(external_field, *, ndim):
         _check_keys(external_field, {"type"}, type_)
         return ZeroExternalField()
     elif type_ == "dipole":
-        _check_keys(external_field, {"type", "position", "moment"}, type_)
+        _check_keys(external_field, {"type", "position", "moment", "radius"}, type_)
         if ndim == 1:
             raise ValueError("Error: a dipole external_field makes no sense in 1D")
-        for key in ("position", "moment"):
+        for key in ("position", "moment", "radius"):
             if key not in external_field:
                 raise ValueError(f"Error: dipole external_field requires '{key}'")
 
@@ -306,7 +318,9 @@ def _resolve_dict_external_field(external_field, *, ndim):
         if all(m == 0.0 for m in moment):
             raise ValueError("Error: dipole external_field 'moment' cannot be zero")
 
-        return DipoleExternalField(position, moment)
+        radius = _check_radius(external_field["radius"])
+
+        return DipoleExternalField(position, moment, radius)
     elif type_ == "user-defined":
         return _resolve_dict_user_defined_external_field(external_field, ndim=ndim)
 

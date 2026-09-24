@@ -11,6 +11,7 @@
 #include <cmath>
 #include <numbers>
 #include <numeric>
+#include <stdexcept>
 
 using namespace PHARE;
 using namespace PHARE::core;
@@ -104,7 +105,7 @@ struct DipoleSetup
 
     UsableExternalField<dim> externalField{"external", layout};
 
-    Updater_t updater{position(), moment()};
+    Updater_t updater{position(), moment(), /*radius=*/0.};
 
     void update(double time = 0.) { updater(externalField, layout, time); }
 
@@ -186,6 +187,150 @@ TYPED_TEST(DipoleTest, convergesAtSecondOrder)
 
     auto const ratio = coarse.maxErrorOnDomain() / fine.maxErrorOnDomain();
     EXPECT_GT(ratio, 3.5);
+}
+
+
+namespace
+{
+/**
+ * @brief a dipole of finite radius, placed on an A0 node inside the domain
+ */
+template<std::size_t dim_>
+struct FiniteRadiusSetup
+{
+    auto static constexpr dim    = dim_;
+    auto static constexpr cells  = 32;
+    auto static constexpr radius = 0.25;
+    auto static constexpr dx     = 1. / cells;
+
+    using Point_t   = DipoleSetup<dim, cells>;
+    using Updater_t = Point_t::Updater_t;
+
+    //! the domain center, a primal node in every direction, hence an A0 node
+    typename Point_t::Position_t static position()
+    {
+        if constexpr (dim == 2)
+            return {0.5, 0.5};
+        else
+            return {0.5, 0.5, 0.5};
+    }
+
+    //! the field inside: 2m/(4 pi R^3) for the sphere, m/(2 pi R^2) for the cylinder
+    Point<double, 3> static uniformInside()
+    {
+        auto const m = Point_t::moment();
+        if constexpr (dim == 2)
+        {
+            double const factor = 1. / (2. * std::numbers::pi * radius * radius);
+            return {factor * m[0], factor * m[1], 0.};
+        }
+        else
+        {
+            double const factor = 2. / (4. * std::numbers::pi * radius * radius * radius);
+            return {factor * m[0], factor * m[1], factor * m[2]};
+        }
+    }
+
+    TestGridLayout<typename Point_t::GridLayout_t> layout{cells};
+
+    UsableExternalField<dim> finite{"finite", layout};
+    UsableExternalField<dim> point{"point", layout};
+
+    FiniteRadiusSetup()
+    {
+        Updater_t{position(), Point_t::moment(), radius}(finite, layout, 0.);
+        Updater_t{position(), Point_t::moment(), 0.}(point, layout, 0.);
+    }
+
+    double distance(Point<double, dim> const& x) const
+    {
+        auto const r = x - position();
+        return std::sqrt(std::inner_product(r.begin(), r.end(), r.begin(), 0.0));
+    }
+
+    /**
+     * @brief apply fn(component, finiteValue, pointValue, distance) to every B0 node
+     */
+    template<typename Fn>
+    void forEachNode(Fn&& fn)
+    {
+        for_N<3>([&](auto i) {
+            constexpr auto component = static_cast<Component>(decltype(i)::value);
+            auto& field              = finite.B0(component);
+            auto& pointField         = point.B0(component);
+            layout.evalOnGhostBox(field, [&](auto... ijk) {
+                auto const x = layout.fieldNodeCoordinates(field, layout.localToAMR(Point{ijk...}));
+                fn(std::size_t{i}, field(ijk...), pointField(ijk...), distance(x));
+            });
+        });
+    }
+};
+
+template<typename SetupT>
+struct FiniteRadiusDipoleTest : public ::testing::Test
+{
+    SetupT setup;
+};
+
+using FiniteRadiusSetups = ::testing::Types<FiniteRadiusSetup<2>, FiniteRadiusSetup<3>>;
+TYPED_TEST_SUITE(FiniteRadiusDipoleTest, FiniteRadiusSetups);
+
+} // namespace
+
+
+//! even with the dipole sitting on a node, where the point dipole divides by zero
+TYPED_TEST(FiniteRadiusDipoleTest, isFiniteEverywhere)
+{
+    std::size_t nonFinite = 0;
+    this->setup.forEachNode([&](auto, double value, double, double) {
+        if (!std::isfinite(value))
+            ++nonFinite;
+    });
+    EXPECT_EQ(nonFinite, 0u);
+}
+
+//! A0 is linear inside, so the discrete curl gives the uniform field up to round-off
+TYPED_TEST(FiniteRadiusDipoleTest, isUniformInside)
+{
+    auto& setup         = this->setup;
+    auto const expected = setup.uniformInside();
+    double const scale
+        = std::sqrt(std::inner_product(expected.begin(), expected.end(), expected.begin(), 0.0));
+    double maxError      = 0.;
+    std::size_t nbInside = 0;
+    // the curl stencil reaches half a cell away along each axis: keep it all inside
+    setup.forEachNode([&](std::size_t c, double value, double, double r) {
+        if (r + TypeParam::dx < TypeParam::radius)
+        {
+            maxError = std::max(maxError, std::abs(value - expected[c]));
+            ++nbInside;
+        }
+    });
+    ASSERT_GT(nbInside, 0u);
+    EXPECT_LT(maxError, 1e-10 * scale);
+}
+
+//! outside the radius, the potential is that of the point dipole: so is the discrete curl
+TYPED_TEST(FiniteRadiusDipoleTest, isThePointDipoleOutside)
+{
+    std::size_t differences = 0, nbOutside = 0;
+    this->setup.forEachNode([&](auto, double value, double pointValue, double r) {
+        if (r > TypeParam::radius + TypeParam::dx)
+        {
+            if (value != pointValue)
+                ++differences;
+            ++nbOutside;
+        }
+    });
+    ASSERT_GT(nbOutside, 0u);
+    EXPECT_EQ(differences, 0u);
+}
+
+TYPED_TEST(FiniteRadiusDipoleTest, rejectsANegativeRadius)
+{
+    using Updater_t = typename TypeParam::Updater_t;
+    EXPECT_THROW((Updater_t{TypeParam::position(), TypeParam::Point_t::moment(), -1.}),
+                 std::invalid_argument);
 }
 
 
