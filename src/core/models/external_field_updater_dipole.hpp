@@ -3,33 +3,17 @@
 
 #include "core/models/external_field_updater_builtin.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <numbers>
 #include <numeric>
 #include <stdexcept>
+#include <string>
 
 namespace PHARE::core
 {
 /**
- * @brief Implement a static dipole external field.
- *
- * Provides the vector potential @f$\mathbf{A}_0@f$ of a magnetic dipole of moment
- * @f$\mathbf{m}@f$ placed at @f$\mathbf{x}_0@f$. In what follows @f$\mathbf{r} = \mathbf{x} -
- * \mathbf{x}_0@f$ and @f$r = \lVert\mathbf{r}\rVert@f$.
- *
- * The moment has one component per dimension: in 2D the configuration is invariant along
- * @f$z@f$, the moment lies in the @f$(x,y)@f$ plane, and only the @f$z@f$ component of the
- * potential is non-zero:
- * @f[
- *   A_{0,z}(\mathbf{x}) = \frac{1}{2\pi}\,
- *                         \frac{\left(\mathbf{m}\times\mathbf{r}\right)_z}{r^{2}}
- *                       = \frac{1}{2\pi}\,\frac{m_x r_y - m_y r_x}{r^{2}}
- * @f]
- * and in 3D:
- * @f[
- *   \mathbf{A}_0(\mathbf{x}) = \frac{1}{4\pi}\,
- *                              \frac{\mathbf{m}\times\mathbf{r}}{r^{3}}
- * @f]
- *
+ * @brief Implements a static dipole external field.
  */
 template<typename VecFieldT, typename GridLayoutT>
 class ExternalFieldUpdaterDipole
@@ -48,9 +32,21 @@ public:
 
     static constexpr std::size_t dimension = Super::dimension;
 
-    ExternalFieldUpdaterDipole(point_type position, vector_type moment)
+    /**
+     * @param position where the dipole is placed
+     * @param moment the moment, one component per dimension
+     * @param radius radius of the uniformly magnetized sphere (3D) or cylinder (2D) the dipole
+     * is, 0 for a point dipole. Inside it, B0 is constant.
+     */
+    ExternalFieldUpdaterDipole(point_type position, vector_type moment, double radius)
         : position_{position}
-        , moment_{moment} {};
+        , moment_{moment}
+        , radiusSquared_{radius * radius}
+    {
+        if (!(radius >= 0.)) // also rejects NaN
+            throw std::invalid_argument("dipole radius must be positive or zero, got "
+                                        + std::to_string(radius));
+    };
 
     template<component_type i>
     double potential(point_type const& coords, double /*time*/) const
@@ -65,7 +61,8 @@ public:
             {
                 constexpr double factor = 1. / (2. * std::numbers::pi);
                 point_type const r      = coords - position_;
-                double const rSquared   = std::inner_product(r.begin(), r.end(), r.begin(), 0.0);
+                double const rSquared   = std::max(
+                    std::inner_product(r.begin(), r.end(), r.begin(), 0.0), radiusSquared_);
                 // z component of the cross product `moment_` times `r`
                 return factor * (moment_[0] * r[1] - moment_[1] * r[0]) / rSquared;
             }
@@ -74,8 +71,9 @@ public:
         }
         else // 3D case
         {
-            point_type const r      = coords - position_;
-            double rSquared         = std::inner_product(r.begin(), r.end(), r.begin(), 0.0);
+            point_type const r = coords - position_;
+            double const rSquared
+                = std::max(std::inner_product(r.begin(), r.end(), r.begin(), 0.0), radiusSquared_);
             double constexpr factor = 1. / (4. * std::numbers::pi);
             // elegant trick to express component i of cross product `moment_` times `r`
             constexpr auto j = (static_cast<std::size_t>(i) + 1) % 3;
@@ -86,8 +84,9 @@ public:
     }
 
 private:
-    point_type position_; //!< where is placed the dipole in space
-    vector_type moment_;  //!< the moment vector, one component per dimension
+    point_type position_;  //!< where is placed the dipole in space
+    vector_type moment_;   //!< the moment vector, one component per dimension
+    double radiusSquared_; //!< below this squared distance to the dipole, B0 is uniform
 };
 
 } // namespace PHARE::core

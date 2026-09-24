@@ -55,7 +55,10 @@ public:
                     = point_type{initializer::parseDimXYZType<double, dimension>(dict, "position")};
                 auto moment = typename Dipole::vector_type{
                     initializer::parseDimXYZType<value_type, dimension>(dict, "moment")};
-                return std::make_unique<Dipole>(position, moment);
+                if (!dict.contains("radius")) // no default: 0 (a point dipole) must be explicit
+                    throw std::runtime_error("dipole external field requires a 'radius'");
+                auto const radius = dict["radius"].template to<double>();
+                return std::make_unique<Dipole>(position, moment, radius);
             }
 
             case ExternalFieldUpdaterType::UserDefined: {
