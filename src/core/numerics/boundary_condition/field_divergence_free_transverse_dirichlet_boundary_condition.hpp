@@ -26,12 +26,12 @@ namespace PHARE::core
  * @tparam GridLayoutT Grid layout configuration.
  *
  */
-template<typename VecFieldT, typename GridLayoutT>
+template<typename VecFieldT, typename GridLayoutT, typename StateT>
 class FieldDivergenceFreeTransverseDirichletBoundaryCondition
-    : public IFieldBoundaryCondition<VecFieldT, GridLayoutT>
+    : public IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>
 {
 public:
-    using Super                = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+    using Super                = IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>;
     using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type           = Super::field_type;
     using value_type           = field_type::value_type;
@@ -104,8 +104,9 @@ public:
     }
 
 private:
-    using _scalar_dirichlet_bc_type = FieldDirichletBoundaryCondition<field_type, GridLayoutT>;
-    using _index                    = Point<std::uint32_t, dimension>;
+    using _scalar_dirichlet_bc_type
+        = FieldDirichletBoundaryCondition<field_type, GridLayoutT, StateT>;
+    using _index = Point<std::uint32_t, dimension>;
 
     std::array<_scalar_dirichlet_bc_type, N> scalar_dirichlet_conditions_;
 

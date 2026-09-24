@@ -1,13 +1,10 @@
 #ifndef PHARE_AMR_FIELD_REFINE_PATCH_STRATEGY_HPP
 #define PHARE_AMR_FIELD_REFINE_PATCH_STRATEGY_HPP
 
-#include "amr/data/field/field_data.hpp"
 #include "amr/data/field/field_data_traits.hpp"
-#include "amr/data/tensorfield/tensor_field_data.hpp"
 #include "amr/data/tensorfield/tensor_field_data_traits.hpp"
 
 #include "core/boundary/boundary_defs.hpp"
-#include "core/data/patch_field_accessor.hpp"
 #include "core/data/vecfield/vecfield.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
@@ -20,10 +17,11 @@
 #include "SAMRAI/tbox/Dimension.h"
 #include "SAMRAI/xfer/RefinePatchStrategy.h"
 
+#include <algorithm>
 #include <cassert>
 #include <memory>
 #include <stdexcept>
-#include <unordered_map>
+#include <vector>
 
 namespace PHARE::amr
 {
@@ -67,83 +65,10 @@ public:
     using cartesian_patch_geometry_type = SAMRAI::geom::CartesianPatchGeometry;
 
     using boundary_type = BoundaryManagerT::boundary_type;
+    using state_type    = BoundaryManagerT::state_type;
     using boundary_condition_type
-        = core::IFieldBoundaryCondition<scalar_or_tensor_field_type, gridlayout_type>;
+        = core::IFieldBoundaryCondition<scalar_or_tensor_field_type, gridlayout_type, state_type>;
     using boundary_condition_context_type = boundary_condition_type::context_type;
-    using scalar_id_map_type              = std::unordered_map<scalar_quantity_type, int>;
-    using vector_id_map_type              = std::unordered_map<vector_quantity_type, int>;
-    using scalar_field_data_type = FieldData<gridlayout_type, grid_type, scalar_quantity_type>;
-    using vector_field_data_type
-        = TensorFieldData<1, gridlayout_type, grid_type, physical_quantity_type>;
-
-    /**
-     * @brief Concrete accessor to retrieve any field from a SAMRAI patch by physical quantity.
-     *
-     * Implements the core::IPatchFieldAccessor interface. Constructed once per
-     * setPhysicalBoundaryConditions call and passed to boundary condition apply() methods,
-     * allowing coupled BCs to read other fields.
-     *
-     */
-    class PatchFieldAccessor : public core::IPatchFieldAccessor<field_type, physical_quantity_type>
-    {
-    public:
-        PatchFieldAccessor(SAMRAI::hier::Patch const& patch, scalar_id_map_type const& scalarIds,
-                           vector_id_map_type const& vectorIds)
-            : patch_{patch}
-            , scalarIds_{scalarIds}
-            , vectorIds_{vectorIds}
-        {
-        }
-
-        field_type& getField(scalar_quantity_type qty) const override
-        {
-            auto it = scalarIds_.find(qty);
-            if (it == scalarIds_.end())
-                throw std::runtime_error("PatchFieldAccessor: scalar quantity not registered");
-            if (!patch_.checkAllocated(it->second))
-                throw std::runtime_error(
-                    "PatchFieldAccessor: scalar quantity not allocated on patch");
-            return *(&(scalar_field_data_type::getField(patch_, it->second)));
-        }
-
-        vectorfield_type getVecField(vector_quantity_type qty) const override
-        {
-            if (auto cit = vecFieldCache_.find(qty); cit != vecFieldCache_.end())
-                return cit->second;
-
-            auto it = vectorIds_.find(qty);
-            if (it == vectorIds_.end())
-                throw std::runtime_error("PatchFieldAccessor: vector quantity not registered");
-            if (!patch_.checkAllocated(it->second))
-                throw std::runtime_error(
-                    "PatchFieldAccessor: vector quantity not allocated on patch");
-            auto vf = vector_field_data_type::getTensorField(patch_, it->second);
-            vecFieldCache_.emplace(qty, vf);
-            return vf;
-        }
-
-        bool hasField(scalar_quantity_type qty) const override
-        {
-            auto it = scalarIds_.find(qty);
-            return it != scalarIds_.end() && patch_.checkAllocated(it->second);
-        }
-
-        bool hasVecField(vector_quantity_type qty) const override
-        {
-            auto it = vectorIds_.find(qty);
-            return it != vectorIds_.end() && patch_.checkAllocated(it->second);
-        }
-
-    private:
-        SAMRAI::hier::Patch const& patch_;
-        scalar_id_map_type const& scalarIds_;
-        vector_id_map_type const& vectorIds_;
-        mutable std::unordered_map<vector_quantity_type, vectorfield_type>
-            vecFieldCache_; // allows to build a VecField once, not each time it is retrieved via
-                            // getVecField. The mutable keyword allows to keep getVecField const.
-    };
-
-    using patch_field_accessor_type = PatchFieldAccessor;
 
     /**
      * @brief Constructor.
@@ -154,8 +79,6 @@ public:
         : rm_{resourcesManager}
         , boundaryManager_{boundaryManager}
         , data_id_{-1}
-        , all_scalar_ids_{}
-        , all_vector_ids_{}
     {
     }
 
@@ -170,15 +93,14 @@ public:
     /**
      * @brief Register the SAMRAI patch data identifier.
      * @param field_id Integer ID from the SAMRAI variable database.
-     * @param all_scalar_ids id-map of scalar fields exposed to BC appliers as the *current* state.
-     * @param all_vector_ids id-map of vector fields exposed to BC appliers as the *current* state.
+     * @param state view of the sub-state bound to the patch and exposed to BC appliers; null if
+     * none.
      */
-    void registerIDs(int const field_id, scalar_id_map_type all_scalar_ids = {},
-                     vector_id_map_type all_vector_ids = {})
+    void registerIDs(int const field_id, std::shared_ptr<state_type> state = nullptr)
     {
-        data_id_        = field_id;
-        all_scalar_ids_ = std::move(all_scalar_ids);
-        all_vector_ids_ = std::move(all_vector_ids);
+        data_id_  = field_id;
+        state_    = std::move(state);
+        stateIds_ = state_ ? rm_.getIDs(*state_) : std::vector<int>{};
     }
 
     /**
@@ -194,6 +116,45 @@ public:
     void
     setPhysicalBoundaryConditions(SAMRAI::hier::Patch& patch, double const fill_time,
                                   SAMRAI::hier::IntVector const& /*ghost_width_to_fill*/) override
+    {
+        if (!state_ || !patch.inHierarchy())
+        {
+            applyBoundaryConditions_(patch, fill_time, nullptr);
+            return;
+        }
+        if (!std::all_of(stateIds_.begin(), stateIds_.end(),
+                         [&](int const id) { return patch.checkAllocated(id); }))
+            throw std::runtime_error(
+                "FieldRefinePatchStrategy: sub-state not fully allocated on a hierarchy patch");
+        auto _ = rm_.setOnPatch(patch, *state_);
+        applyBoundaryConditions_(patch, fill_time, state_.get());
+    }
+
+
+    SAMRAI::hier::IntVector
+    getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
+    {
+        return SAMRAI::hier::IntVector{dim, 1};
+    }
+
+
+    void preprocessRefine(SAMRAI::hier::Patch& fine, SAMRAI::hier::Patch const& coarse,
+                          SAMRAI::hier::Box const& fine_box,
+                          SAMRAI::hier::IntVector const& ratio) override
+    {
+    }
+
+
+    void postprocessRefine(SAMRAI::hier::Patch& fine, SAMRAI::hier::Patch const& coarse,
+                           SAMRAI::hier::Box const& fine_box,
+                           SAMRAI::hier::IntVector const& ratio) override
+    {
+    }
+
+
+protected:
+    void applyBoundaryConditions_(SAMRAI::hier::Patch& patch, double const fill_time,
+                                  state_type* state)
     {
         gridlayout_type const& gridLayout = ScalarOrTensorFieldDataT::getLayout(patch, data_id_);
 
@@ -220,12 +181,8 @@ public:
             };
         }();
 
-        // accessor for the current substage state; BCs read siblings through it and write into
-        // ghost cells.
-        patch_field_accessor_type fieldAccessor{patch, all_scalar_ids_, all_vector_ids_};
-
-        // wrap field accessor and current time into a single struct
-        boundary_condition_context_type const ctx{fieldAccessor, fill_time};
+        // wrap the current sub-state (null if unavailable) and time into a single struct
+        boundary_condition_context_type const ctx{state, fill_time};
 
         // must be retrieved to pass as argument to patchGeom->getBoundaryFillBox later
         SAMRAI::hier::Box const& patch_box = patch.getBox();
@@ -276,7 +233,8 @@ public:
                 //
                 // Why are there situations where the boundary condition cannot be applied:
                 // SAMRAI can call this on temporary, single-quantity patches it builds for
-                // cross-level (coarse->fine) interpolation. PHARE's coupled field conditions need
+                // cross-level (coarse->fine) interpolation, on temporary levels that are not in the
+                // hierarchy (patch.inHierarchy() is false). PHARE's coupled field conditions need
                 // extra fields off the patch than the quantity it applies to. For instance energy
                 // BC usually requires knowing rho/P/rhoV/B; those extra fields are not allocated
                 // on the interpolation temp patches dedicated to the total energy.
@@ -306,7 +264,7 @@ public:
                         << static_cast<int>(masterBoundaryLocation) << " | fill_time=" << fill_time
                         << " | patch_box=" << patch_box << " | localBox=" << localBox);
                     core::FieldNeumannBoundaryCondition<scalar_or_tensor_field_type,
-                                                        gridlayout_type>
+                                                        gridlayout_type, state_type>
                         neumannFallback;
                     neumannFallback.apply(scalarOrTensorField, masterBoundaryLocation, localBox,
                                           gridLayout, ctx);
@@ -315,35 +273,11 @@ public:
         });
     }
 
-
-
-    SAMRAI::hier::IntVector
-    getRefineOpStencilWidth(SAMRAI::tbox::Dimension const& dim) const override
-    {
-        return SAMRAI::hier::IntVector{dim, 1};
-    }
-
-
-    void preprocessRefine(SAMRAI::hier::Patch& fine, SAMRAI::hier::Patch const& coarse,
-                          SAMRAI::hier::Box const& fine_box,
-                          SAMRAI::hier::IntVector const& ratio) override
-    {
-    }
-
-
-    void postprocessRefine(SAMRAI::hier::Patch& fine, SAMRAI::hier::Patch const& coarse,
-                           SAMRAI::hier::Box const& fine_box,
-                           SAMRAI::hier::IntVector const& ratio) override
-    {
-    }
-
-
-protected:
     ResMan& rm_;
     BoundaryManagerT& boundaryManager_;
     int data_id_;
-    scalar_id_map_type all_scalar_ids_;
-    vector_id_map_type all_vector_ids_;
+    std::shared_ptr<state_type> state_;
+    std::vector<int> stateIds_;
 };
 
 } // namespace PHARE::amr

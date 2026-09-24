@@ -4,7 +4,7 @@
 #include "core/data/grid/grid.hpp"
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
-#include "core/data/patch_field_accessor.hpp"
+#include "core/data/vecfield/vecfield.hpp"
 #include "core/models/options/hybrid_options.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/utilities/box/box.hpp"
@@ -57,28 +57,13 @@ using Field3D      = Grid3D::field_type;
 using VecField3D   = VecField<Field3D, HybridQuantity>;
 
 
-template<typename FieldT>
-struct NullFieldAccessorT : IPatchFieldAccessor<FieldT, HybridQuantity>
+struct HybridBCState
 {
-    FieldT& getField(HybridQuantity::Scalar) const override
-    {
-        throw std::runtime_error("NullFieldAccessorT: getField() should not be called");
-    }
-    VecField<FieldT, HybridQuantity> getVecField(HybridQuantity::Vector) const override
-    {
-        throw std::runtime_error("NullFieldAccessorT: getVecField() should not be called");
-    }
-    bool hasField(HybridQuantity::Scalar) const override { return false; }
-    bool hasVecField(HybridQuantity::Vector) const override { return false; }
 };
 
-using NullFieldAccessor = NullFieldAccessorT<Field1D>;
-
-
-template<typename FieldT>
-auto makeCtx(NullFieldAccessorT<FieldT> const& acc, double time = 0.0)
+inline auto makeCtx(HybridBCState* state, double time = 0.0)
 {
-    return BoundaryConditionContext<FieldT, HybridQuantity>{acc, time};
+    return BoundaryConditionContext<HybridBCState>{state, time};
 }
 
 
@@ -151,7 +136,7 @@ inline Box<std::uint32_t, 3> zUpperGhostCellBox3D()
 struct FieldBC1D : testing::Test
 {
     GridLayout1D layout{{0.1}, {nCells}, {0.0}};
-    NullFieldAccessor acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto qty = HybridQuantity::Scalar::rho;
     Grid1D grid{"rho", qty, layout.allocSize(qty)};
@@ -173,7 +158,7 @@ struct FieldBC1D : testing::Test
 struct FieldBC2D : testing::Test
 {
     GridLayout2D layout{{0.1, 0.1}, {nCellsX2D, nCellsY2D}, {0.0, 0.0}};
-    NullFieldAccessorT<Field2D> acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto qty = HybridQuantity::Scalar::rho;
     Grid2D grid{"rho", qty, layout.allocSize(qty)};
@@ -199,7 +184,7 @@ struct FieldBC2D : testing::Test
 struct FieldBC3D : testing::Test
 {
     GridLayout3D layout{{0.1, 0.1, 0.1}, {nCellsX3D, nCellsY3D, nCellsZ3D}, {0.0, 0.0, 0.0}};
-    NullFieldAccessorT<Field3D> acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto qty = HybridQuantity::Scalar::rho;
     Grid3D grid{"rho", qty, layout.allocSize(qty)};
@@ -229,7 +214,7 @@ struct FieldBC3D : testing::Test
 struct VecFieldBC1D : testing::Test
 {
     GridLayout1D layout{{0.1}, {nCells}, {0.0}};
-    NullFieldAccessor acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto vecQty = HybridQuantity::Vector::B;
     UsableTensorField<1, 1> B{"B", layout, vecQty};
@@ -254,7 +239,7 @@ struct VecFieldBC1D : testing::Test
 struct VecFieldBC2D : testing::Test
 {
     GridLayout2D layout{{0.1, 0.1}, {nCellsX2D, nCellsY2D}, {0.0, 0.0}};
-    NullFieldAccessorT<Field2D> acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto vecQty = HybridQuantity::Vector::B;
     UsableTensorField<2, 1> B{"B", layout, vecQty};
@@ -284,7 +269,7 @@ struct VecFieldBC2D : testing::Test
 struct VecFieldBC2DNonUniformBy : testing::Test
 {
     GridLayout2D layout{{0.1, 0.1}, {nCellsX2D, nCellsY2D}, {0.0, 0.0}};
-    NullFieldAccessorT<Field2D> acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto vecQty = HybridQuantity::Vector::B;
     UsableTensorField<2, 1> B{"B", layout, vecQty};
@@ -316,7 +301,7 @@ struct VecFieldBC2DNonUniformBy : testing::Test
 struct VecFieldBC2DNonUniformByAnisotropic : testing::Test
 {
     GridLayout2D layout{{0.1, 0.2}, {nCellsX2D, nCellsY2D}, {0.0, 0.0}};
-    NullFieldAccessorT<Field2D> acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto vecQty = HybridQuantity::Vector::B;
     UsableTensorField<2, 1> B{"B", layout, vecQty};
@@ -348,7 +333,7 @@ struct VecFieldBC2DNonUniformByAnisotropic : testing::Test
 struct VecFieldBC3D : testing::Test
 {
     GridLayout3D layout{{0.1, 0.1, 0.1}, {nCellsX3D, nCellsY3D, nCellsZ3D}, {0.0, 0.0, 0.0}};
-    NullFieldAccessorT<Field3D> acc;
+    HybridBCState* bcState = nullptr;
 
     static constexpr auto vecQty = HybridQuantity::Vector::B;
     UsableTensorField<3, 1> B{"B", layout, vecQty};

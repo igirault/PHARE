@@ -3,7 +3,6 @@
 
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
-#include "core/data/patch_field_accessor.hpp"
 #include "core/data/tensorfield/tensorfield_traits.hpp"
 #include "core/utilities/box/box.hpp"
 
@@ -28,12 +27,12 @@ enum class FieldBoundaryConditionType : int {
 };
 
 /** @brief Context data passed to boundary conditions */
-template<typename FieldT, typename PhysicalQuantityT>
+template<typename StateT>
 struct BoundaryConditionContext
 {
-    using patch_field_accessor_type = IPatchFieldAccessor<FieldT, PhysicalQuantityT>;
+    using state_type = StateT;
 
-    patch_field_accessor_type const& accessor_new;
+    StateT* state;
     double time;
 };
 
@@ -47,7 +46,7 @@ struct BoundaryConditionContext
  * @tparam GridLayoutT The grid layout type .
  *
  */
-template<typename ScalarOrTensorFieldT, typename GridLayoutT>
+template<typename ScalarOrTensorFieldT, typename GridLayoutT, typename StateT>
     requires(IsField<ScalarOrTensorFieldT> || IsTensorField<ScalarOrTensorFieldT>)
 class IFieldBoundaryCondition
 {
@@ -56,14 +55,14 @@ public:
     static constexpr size_t dimension = GridLayoutT::dimension;
     static constexpr size_t N = NumberOfComponentsSelector<ScalarOrTensorFieldT, is_scalar>::value;
 
-    using This = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
+    using This = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>;
     // the quantity category (HybridQuantity / MHDQuantity) is carried by the layout options
     using physical_quantity_type = typename decltype(GridLayoutT::options.field_options)::Quantity;
     using tensor_quantity_type
         = PhysicalQuantityTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
-    using field_type                = FieldTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
-    using context_type              = BoundaryConditionContext<field_type, physical_quantity_type>;
-    using patch_field_accessor_type = context_type::patch_field_accessor_type;
+    using field_type   = FieldTypeSelector<ScalarOrTensorFieldT, is_scalar>::type;
+    using state_type   = StateT;
+    using context_type = BoundaryConditionContext<StateT>;
 
     /** @brief Return the type of the boundary condition. */
     virtual FieldBoundaryConditionType getType() const = 0;
@@ -90,8 +89,9 @@ public:
      * @param boundaryLocation The location of the physical boundary.
      * @param localGhostBox The box containing the ghost cells/nodes to fill.
      * @param gridLayout The grid layout.
-     * @param ctx Bundle of context data: accessor to the current substage state and the
-     *            simulation time. BCs read siblings through `ctx.accessor_new` and use `ctx.time`.
+     * @param ctx Bundle of context data: pointer to the current substage state (null when
+     *            unavailable) and the simulation time. BCs read siblings through `ctx.state` and
+     *            use `ctx.time`.
      */
     virtual void apply(ScalarOrTensorFieldT& scalarOrTensorField,
                        BoundaryLocation const boundaryLocation,

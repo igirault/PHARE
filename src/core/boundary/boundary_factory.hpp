@@ -41,11 +41,11 @@ concept HasInflowQuantities = requires {
  * @tparam FieldT The type for scalar fields.
  * @tparam GridLayoutT The type for the grid layout.
  */
-template<typename PhysicalQuantityT, IsField FieldT, typename GridLayoutT>
+template<typename PhysicalQuantityT, IsField FieldT, typename GridLayoutT, typename StateT>
 class BoundaryFactory
 {
 public:
-    using boundary_type             = Boundary<PhysicalQuantityT, FieldT, GridLayoutT>;
+    using boundary_type             = Boundary<PhysicalQuantityT, FieldT, GridLayoutT, StateT>;
     using boundary_ptr_type         = std::unique_ptr<boundary_type>;
     using scalar_quantity_list_type = std::vector<typename PhysicalQuantityT::Scalar>;
     using vector_quantity_list_type = std::vector<typename PhysicalQuantityT::Vector>;
@@ -172,20 +172,21 @@ private:
                                           _model_menu_type const& quantities, double const gamma)
     {
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
-        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
-        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>;
 
         auto rho_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
-                                                  GridLayoutT>()};
+                                                  GridLayoutT, StateT>()};
         auto P_bc = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
-                                                  GridLayoutT>()};
+                                                  GridLayoutT, StateT>()};
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
-                                                  GridLayoutT>()};
+                                                  GridLayoutT, StateT>()};
         auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
-            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT>()};
+            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT,
+            StateT>()};
 
         for (auto const quantity : quantities.scalars)
         {
@@ -251,29 +252,29 @@ private:
                 "BoundaryFactory: SuperMagnetofastInflow requires the magnetic field 'B'.");
 
         using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
-        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT>;
-        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+        using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>;
 
 
         auto const pressure = data["pressure"].template to<double>();
         auto P_bc           = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
-                                                  GridLayoutT>(pressure)};
+                                                  GridLayoutT, StateT>(pressure)};
 
         double const rho = data["density"].template to<double>();
         auto rho_bc      = std::shared_ptr<ScalarBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
-                                                  GridLayoutT>(rho)};
+                                                  GridLayoutT, StateT>(rho)};
 
         auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
-                                                  GridLayoutT>(vToRhoV(rho, v))};
+                                                  GridLayoutT, StateT>(vToRhoV(rho, v))};
 
         auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
         auto B_bc    = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
-            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT, GridLayoutT>(
-            B)};
+            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT, GridLayoutT,
+            StateT>(B)};
 
         for (auto const quantity : quantities.scalars)
         {

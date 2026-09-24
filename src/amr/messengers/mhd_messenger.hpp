@@ -46,18 +46,16 @@ namespace amr
         using patch_t     = amr_types::patch_t;
         using hierarchy_t = amr_types::hierarchy_t;
 
-        using IPhysicalModel     = MHDModel::Interface;
-        using FieldT             = MHDModel::field_type;
-        using VecFieldT          = MHDModel::vecfield_type;
-        using MHDStateT          = MHDModel::state_type;
-        using GridLayoutT        = MHDModel::gridlayout_type;
-        using GridT              = MHDModel::grid_type;
-        using ResourcesManagerT  = MHDModel::resources_manager_type;
-        using BoundaryManagerT   = MHDModel::boundary_manager_type;
-        using FieldDataT         = FieldData<GridLayoutT, GridT, core::MHDQuantity::Scalar>;
-        using VectorFieldDataT   = TensorFieldData<1, GridLayoutT, GridT, core::MHDQuantity>;
-        using scalar_id_map_type = std::unordered_map<core::MHDQuantity::Scalar, int>;
-        using vector_id_map_type = std::unordered_map<core::MHDQuantity::Vector, int>;
+        using IPhysicalModel    = MHDModel::Interface;
+        using FieldT            = MHDModel::field_type;
+        using VecFieldT         = MHDModel::vecfield_type;
+        using MHDStateT         = MHDModel::state_type;
+        using GridLayoutT       = MHDModel::gridlayout_type;
+        using GridT             = MHDModel::grid_type;
+        using ResourcesManagerT = MHDModel::resources_manager_type;
+        using BoundaryManagerT  = MHDModel::boundary_manager_type;
+        using FieldDataT        = FieldData<GridLayoutT, GridT, core::MHDQuantity::Scalar>;
+        using VectorFieldDataT  = TensorFieldData<1, GridLayoutT, GridT, core::MHDQuantity>;
 
         static constexpr auto dimension = MHDModel::dimension;
 
@@ -104,8 +102,7 @@ namespace amr
                     "MHDMessengerStrategy: missing magnetic field variable IDs");
             }
 
-            magneticRefinePatchStrategy_.registerIDs(*b_id, {},
-                                                     {{core::MHDQuantity::Vector::B, *b_id}});
+            magneticRefinePatchStrategy_.registerIDs(*b_id);
 
             BalgoPatchGhost.registerRefine(*b_id, *b_id, *b_id, BfieldRefineOp_,
                                            nonOverwriteInteriorTFfillPattern);
@@ -270,7 +267,7 @@ namespace amr
                                                    EfieldRefineOp_,
                                                    nonOverwriteInteriorTFfillPattern);
 
-            buildFieldIdMaps_(mhdInfo);
+            buildGhostStates_(mhdInfo);
             registerGhostComms_(mhdInfo);
             registerInitComms_(mhdInfo);
         }
@@ -582,35 +579,12 @@ namespace amr
 
 
 
-        void buildFieldIdMaps_(std::unique_ptr<MHDMessengerInfo> const& info)
+        void buildGhostStates_(std::unique_ptr<MHDMessengerInfo> const& info)
         {
-            auto resolveID = [&](std::string const& name) {
-                auto id = resourcesManager_->getID(name);
-                if (!id)
-                    throw std::runtime_error("MHDMessenger: cannot resolve ID for " + name);
-                return *id;
-            };
-
-            // Every ghost-name vector is pushed once per integrator sub-state (model state
-            // included), so they all share the same length and are indexed in lockstep.
-            auto const nStates = info->ghostDensity.size();
-            allScalarIdMaps_.resize(nStates);
-            allVectorIdMaps_.resize(nStates);
-
-            for (std::size_t i = 0; i < nStates; ++i)
-            {
-                allScalarIdMaps_[i] = {
-                    {core::MHDQuantity::Scalar::rho, resolveID(info->ghostDensity[i])},
-                    {core::MHDQuantity::Scalar::Etot, resolveID(info->ghostTotalEnergy[i])},
-                    {core::MHDQuantity::Scalar::P, resolveID(info->ghostPressure[i])},
-                };
-
-                allVectorIdMaps_[i] = {
-                    {core::MHDQuantity::Vector::B, resolveID(info->ghostMagnetic[i])},
-                    {core::MHDQuantity::Vector::rhoV, resolveID(info->ghostMomentum[i])},
-                    {core::MHDQuantity::Vector::E, resolveID(info->ghostElectric[i])},
-                };
-            }
+            ghostStates_.clear();
+            ghostStates_.reserve(info->ghostStateNames.size());
+            for (auto const& name : info->ghostStateNames)
+                ghostStates_.push_back(std::make_shared<MHDStateT>(name));
         }
 
 
@@ -630,18 +604,18 @@ namespace amr
             patchStrategies.clear(); // registerQuantities must be idempotent
             patchStrategies.reserve(keys.size());
             // Every ghost-name list has exactly one entry per integrator sub-state (model state
-            // included), in lockstep with the per-sub-state id-maps built in buildFieldIdMaps_.
-            // A key list longer than the id-map count would silently pair a ghost field with the
-            // wrong sub-state's sibling ids, so require the invariant rather than papering over it.
-            if (keys.size() != allScalarIdMaps_.size() || keys.size() != allVectorIdMaps_.size())
+            // included), in lockstep with the per-sub-state views built in buildGhostStates_.
+            // A key list longer than the view count would silently pair a ghost field with the
+            // wrong sub-state, so require the invariant rather than papering over it.
+            if (keys.size() != ghostStates_.size())
                 throw std::runtime_error(
-                    "MHDMessenger: ghost list length does not match sub-state id-map count");
+                    "MHDMessenger: ghost list length does not match sub-state count");
             for (std::size_t i = 0; i < keys.size(); ++i)
             {
                 auto&& [id] = resourcesManager_->getIDsList(keys[i]);
                 auto patchStrat
                     = std::make_shared<RefinePatchStrategyT>(*resourcesManager_, *boundaryManager_);
-                patchStrat->registerIDs(id, allScalarIdMaps_[i], allVectorIdMaps_[i]);
+                patchStrat->registerIDs(id, ghostStates_[i]);
                 patchStrategies.push_back(patchStrat);
             }
         }
@@ -652,7 +626,7 @@ namespace amr
         void registerInitComms_(std::unique_ptr<MHDMessengerInfo> const& info)
         {
             // Give the init refiners the model-state moment patch strategies (index 0 of each
-            // ghost-strategy list: ghostX[0] == modelX == initX, carrying the full sibling id-maps
+            // ghost-strategy list: ghostX[0] == modelX == initX, carrying the model sub-state view
             // the coupled TotalEnergyFromPressure condition needs). The InitField schedule already
             // fills interior + coarse-fine from the coarser level via createSchedule(level,
             // nullptr, coarser, hierarchy, patchStrat) — the same call B uses in BalgoInit — and
@@ -895,8 +869,7 @@ namespace amr
         using MagneticRefinePatchStrategyList
             = std::vector<std::shared_ptr<MagneticRefinePatchStrategyT>>;
 
-        std::vector<scalar_id_map_type> allScalarIdMaps_;
-        std::vector<vector_id_map_type> allVectorIdMaps_;
+        std::vector<std::shared_ptr<MHDStateT>> ghostStates_;
 
         MagneticRefinePatchStrategyT magneticRefinePatchStrategy_{*resourcesManager_,
                                                                   *boundaryManager_};

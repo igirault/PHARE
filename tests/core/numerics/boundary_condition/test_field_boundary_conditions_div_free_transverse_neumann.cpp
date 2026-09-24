@@ -11,15 +11,15 @@ struct DivFreeTransverseNeumannBC2D : testing::Test
 {
     GridLayoutMHD2D layout{{0.1, 0.1}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
 
-    GridMHD2D rhoGrid{"rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
-    GridMHD2D PGrid{"P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
-    GridMHD2D EtotGrid{"Etot", MHDQuantity::Scalar::Etot,
+    GridMHD2D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD2D PGrid{"bc_test_P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD2D EtotGrid{"bc_test_Etot", MHDQuantity::Scalar::Etot,
                        layout.allocSize(MHDQuantity::Scalar::Etot)};
 
-    UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
-    UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B};
+    UsableVecFieldMHD<2> rhoV{"bc_test_rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<2> Bvec{"bc_test_B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<2> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     DivFreeTransverseNeumannBC2D()
     {
@@ -72,8 +72,10 @@ struct DivFreeTransverseNeumannBC2D : testing::Test
     void applyAndCheck(BoundaryLocation loc, Box<std::uint32_t, 2> const& ghostBox)
     {
         auto B = Bvec.super();
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D> bc;
-        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D,
+                                                              MHDBCState<2>>
+            bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(bcState));
 
         checkTransverseMirrored(loc, ghostBox);
         checkGhostCellsDivergenceFree(loc, ghostBox);
@@ -105,15 +107,15 @@ struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
 {
     GridLayoutMHD2D layout{{0.1, 0.2}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
 
-    GridMHD2D rhoGrid{"rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
-    GridMHD2D PGrid{"P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
-    GridMHD2D EtotGrid{"Etot", MHDQuantity::Scalar::Etot,
+    GridMHD2D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD2D PGrid{"bc_test_P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD2D EtotGrid{"bc_test_Etot", MHDQuantity::Scalar::Etot,
                        layout.allocSize(MHDQuantity::Scalar::Etot)};
 
-    UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
-    UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B};
+    UsableVecFieldMHD<2> rhoV{"bc_test_rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<2> Bvec{"bc_test_B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<2> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     DivFreeTransverseNeumannBC2DAnisotropic()
     {
@@ -131,8 +133,10 @@ struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
     void applyAndCheckSpaced(BoundaryLocation loc, Box<std::uint32_t, 2> const& ghostBox)
     {
         auto B = Bvec.super();
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D> bc;
-        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D,
+                                                              MHDBCState<2>>
+            bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(bcState));
 
         auto& Bx        = Bvec[0];
         auto& By        = Bvec[1];
@@ -166,15 +170,15 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
     GridLayoutMHD3D layout{
         {0.1, 0.1, 0.1}, {nCellsMHDX3D, nCellsMHDY3D, nCellsMHDZ3D}, {0.0, 0.0, 0.0}};
 
-    GridMHD3D rhoGrid{"rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
-    GridMHD3D PGrid{"P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
-    GridMHD3D EtotGrid{"Etot", MHDQuantity::Scalar::Etot,
+    GridMHD3D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD3D PGrid{"bc_test_P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
+    GridMHD3D EtotGrid{"bc_test_Etot", MHDQuantity::Scalar::Etot,
                        layout.allocSize(MHDQuantity::Scalar::Etot)};
 
-    UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
-    UsableVecFieldMHD<3> Bvec{"B", layout, MHDQuantity::Vector::B};
+    UsableVecFieldMHD<3> rhoV{"bc_test_rhoV", layout, MHDQuantity::Vector::rhoV};
+    UsableVecFieldMHD<3> Bvec{"bc_test_B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<3> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     DivFreeTransverseNeumannBC3D()
     {
@@ -198,8 +202,10 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
         std::size_t const iNormal = static_cast<std::size_t>(direction);
 
         auto B = Bvec.super();
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D> bc;
-        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D,
+                                                              MHDBCState<3>>
+            bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(bcState));
 
         for (std::size_t comp = 0; comp < 3; ++comp)
         {

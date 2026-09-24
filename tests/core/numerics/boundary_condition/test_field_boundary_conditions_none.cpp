@@ -8,9 +8,9 @@ using namespace PHARE::core;
 
 TEST_F(FieldBC1D, NoneDoesNotModifyGhostCells)
 {
-    FieldNoneBoundaryCondition<Field1D, GridLayout1D> bc;
-    bc.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
+    FieldNoneBoundaryCondition<Field1D, GridLayout1D, HybridBCState> bc;
+    bc.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(bcState, 0.0));
+    bc.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(bcState, 0.0));
 
     for (std::uint32_t g = 0; g < ghostWidth; ++g)
     {

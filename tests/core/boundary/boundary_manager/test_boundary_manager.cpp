@@ -1,4 +1,5 @@
 #include "core/boundary/boundary_manager.hpp"
+#include "core/models/mhd_state.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -23,8 +24,10 @@ using grid_type              = types::Grid_t;
 using field_type             = types::Field_t;
 using grid_layout_type       = types::GridLayout_t;
 using physical_quantity_type = MHDQuantity;
-using boundary_type          = Boundary<physical_quantity_type, field_type, grid_layout_type>;
-using boundary_manager_type = BoundaryManager<physical_quantity_type, field_type, grid_layout_type>;
+using state_type             = MHDState<types::VecField_t>;
+using boundary_type = Boundary<physical_quantity_type, field_type, grid_layout_type, state_type>;
+using boundary_manager_type
+    = BoundaryManager<physical_quantity_type, field_type, grid_layout_type, state_type>;
 
 boundary_manager_type createBoundaryManager()
 {

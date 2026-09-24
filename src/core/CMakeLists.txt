@@ -10,7 +10,6 @@ set( SOURCES_INC
      data/grid/gridlayout_impl.hpp
      data/grid/gridlayoutimplyee.hpp
      data/ndarray/ndarray_vector.hpp
-     data/patch_field_accessor.hpp
      data/particles/particle.hpp
      data/particles/particle_utilities.hpp
      data/particles/particle_array.hpp

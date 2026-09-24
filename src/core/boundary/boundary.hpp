@@ -26,17 +26,18 @@ namespace PHARE::core
  * @tparam FieldT The type for scalar fields.
  * @tparam GridLayoutT The type for the grid layout.
  */
-template<typename PhysicalQuantityT, IsField FieldT, typename GridLayoutT>
+template<typename PhysicalQuantityT, IsField FieldT, typename GridLayoutT, typename StateT>
 class Boundary
 {
 public:
-    using This                 = Boundary<PhysicalQuantityT, FieldT, GridLayoutT>;
+    using This                 = Boundary<PhysicalQuantityT, FieldT, GridLayoutT, StateT>;
     using scalar_quantity_type = FieldT::physical_quantity_type;
     static_assert(std::same_as<scalar_quantity_type, typename PhysicalQuantityT::Scalar>);
     using vector_quantity_type        = PhysicalQuantityT::Vector;
     using vector_field_type           = VecField<FieldT, PhysicalQuantityT>;
-    using scalar_field_condition_type = IFieldBoundaryCondition<FieldT, GridLayoutT>;
-    using vector_field_condition_type = IFieldBoundaryCondition<vector_field_type, GridLayoutT>;
+    using scalar_field_condition_type = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+    using vector_field_condition_type
+        = IFieldBoundaryCondition<vector_field_type, GridLayoutT, StateT>;
 
     Boundary() = delete;
     Boundary(BoundaryType type, BoundaryLocation location)
@@ -98,14 +99,14 @@ public:
         if constexpr (std::same_as<TensorPhysicalQuantityT, scalar_quantity_type>)
         {
             scalar_field_conditions_[quantity]
-                = FieldBoundaryConditionFactory::create<type, FieldT, GridLayoutT>(
+                = FieldBoundaryConditionFactory::create<type, FieldT, GridLayoutT, StateT>(
                     std::forward<Args>(args)...);
         }
         else if constexpr (std::same_as<TensorPhysicalQuantityT, vector_quantity_type>)
         {
             vector_field_conditions_[quantity]
-                = FieldBoundaryConditionFactory::create<type, vector_field_type, GridLayoutT>(
-                    std::forward<Args>(args)...);
+                = FieldBoundaryConditionFactory::create<type, vector_field_type, GridLayoutT,
+                                                        StateT>(std::forward<Args>(args)...);
         }
         else
         {

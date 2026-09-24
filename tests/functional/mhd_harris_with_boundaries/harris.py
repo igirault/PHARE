@@ -27,8 +27,6 @@ timestamps = np.arange(0, final_time + time_step, final_time / 5)
 diag_dir = "phare_outputs/mhd_harris_with_boundaries"
 
 hall = True
-res = False
-hyper_res = True
 
 BN_WALL_TOL = 1e-6
 
@@ -61,8 +59,6 @@ def config():
         riemann="Rusanov",
         mhd_timestepper="TVDRK3",
         hall=hall,
-        res=res,
-        hyper_res=hyper_res,
         model_options=["MHDModel"],
         boundary_types=("physical", "physical"),
         boundary_conditions={

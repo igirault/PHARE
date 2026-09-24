@@ -6,7 +6,7 @@
 #include "core/models/options/mhd_options.hpp"
 #include "phare_simulator_options.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
-#include "core/data/patch_field_accessor.hpp"
+#include "core/models/mhd_state.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/utilities/box/box.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
@@ -28,59 +28,29 @@ inline constexpr PHARE::MHDFieldOptions<mhdSimOptions<dim>> mhdFieldOptions{};
 static constexpr std::uint32_t mhdGhostWidth = mhdFieldOptions<1>.field_ghost_width;
 
 template<std::size_t dim>
-struct MHDPatchFieldAccessorTest : IPatchFieldAccessor<FieldMHD<dim>, MHDQuantity>
+using MHDBCState = MHDState<VecFieldMHD<dim>>;
+
+template<std::size_t dim>
+struct MHDBCTestState : MHDBCState<dim>
 {
-    using GridMHD        = Grid<NdArrayVector<dim, double>, MHDQuantity::Scalar>;
-    using UsableVecField = UsableVecFieldMHD<dim>;
-    using VecField_      = VecFieldMHD<dim>;
-    GridMHD& rho;
-    GridMHD& P;
-    GridMHD& Etot;
-    UsableVecField& rhoV;
-    UsableVecField& Bvec;
-    MHDPatchFieldAccessorTest(GridMHD& rho_, GridMHD& P_, GridMHD& Etot_, UsableVecField& rhoV_,
-                              UsableVecField& Bvec_)
-        : rho{rho_}
-        , P{P_}
-        , Etot{Etot_}
-        , rhoV{rhoV_}
-        , Bvec{Bvec_}
+    using GridMHD = Grid<NdArrayVector<dim, double>, MHDQuantity::Scalar>;
+
+    MHDBCTestState(GridMHD& rho_, GridMHD& P_, GridMHD& Etot_, UsableVecFieldMHD<dim>& rhoV_,
+                   UsableVecFieldMHD<dim>& B_)
+        : MHDBCState<dim>{"bc_test"}
     {
-    }
-    FieldMHD<dim>& getField(MHDQuantity::Scalar qty) const override
-    {
-        switch (qty)
-        {
-            case MHDQuantity::Scalar::rho: return *(&rho);
-            case MHDQuantity::Scalar::P: return *(&P);
-            case MHDQuantity::Scalar::Etot: return *(&Etot);
-            default: throw std::runtime_error("MHDPatchFieldAccessorTest: unsupported scalar qty");
-        }
-    }
-    VecField_ getVecField(MHDQuantity::Vector qty) const override
-    {
-        switch (qty)
-        {
-            case MHDQuantity::Vector::rhoV: return rhoV.super();
-            case MHDQuantity::Vector::B: return Bvec.super();
-            default: throw std::runtime_error("MHDPatchFieldAccessorTest: unsupported vector qty");
-        }
-    }
-    bool hasField(MHDQuantity::Scalar qty) const override
-    {
-        return qty == MHDQuantity::Scalar::rho || qty == MHDQuantity::Scalar::P
-               || qty == MHDQuantity::Scalar::Etot;
-    }
-    bool hasVecField(MHDQuantity::Vector qty) const override
-    {
-        return qty == MHDQuantity::Vector::rhoV || qty == MHDQuantity::Vector::B;
+        this->rho.setBuffer(&rho_);
+        this->P.setBuffer(&P_);
+        this->Etot.setBuffer(&Etot_);
+        rhoV_.set_on(this->rhoV);
+        B_.set_on(this->B);
     }
 };
 
 template<std::size_t dim>
-auto makeCtx(MHDPatchFieldAccessorTest<dim> const& acc, double time = 0.0)
+auto makeCtx(MHDBCTestState<dim>& state, double time = 0.0)
 {
-    return BoundaryConditionContext<FieldMHD<dim>, MHDQuantity>{acc, time};
+    return BoundaryConditionContext<MHDBCState<dim>>{&state, time};
 }
 
 

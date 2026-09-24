@@ -15,7 +15,7 @@ using PHARE::initializer::PHAREDict;
 
 namespace
 {
-using Factory = BoundaryFactory<MHDQuantity, FieldMHD<1>, GridLayoutMHD1D>;
+using Factory = BoundaryFactory<MHDQuantity, FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>;
 using Scalar  = MHDQuantity::Scalar;
 using Vector  = MHDQuantity::Vector;
 using FBC     = FieldBoundaryConditionType;

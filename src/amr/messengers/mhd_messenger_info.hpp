@@ -29,6 +29,7 @@ namespace amr
         std::vector<std::string> initMagnetic;
         std::vector<std::string> initTotalEnergy;
 
+        std::vector<std::string> ghostStateNames;
         std::vector<std::string> ghostDensity;
         std::vector<std::string> ghostVelocity;
         std::vector<std::string> ghostMagnetic; // not actually to fill ghost cells but rather for

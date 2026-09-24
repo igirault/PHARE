@@ -25,20 +25,20 @@ namespace PHARE::core
  * @tparam FieldT       Scalar field type (must satisfy IsField).
  * @tparam GridLayoutT  Grid layout type.
  */
-template<typename FieldT, typename GridLayoutT>
+template<typename FieldT, typename GridLayoutT, typename StateT>
 class FieldTotalEnergyFromPressureBoundaryCondition
-    : public IFieldBoundaryCondition<FieldT, GridLayoutT>
+    : public IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>
 {
 public:
-    using Super                  = IFieldBoundaryCondition<FieldT, GridLayoutT>;
+    using Super                  = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
     using field_type             = Super::field_type;
     using physical_quantity_type = typename decltype(GridLayoutT::options.field_options)::Quantity;
     using scalar_quantity_type   = typename physical_quantity_type::Scalar;
     using vector_quantity_type   = typename physical_quantity_type::Vector;
     using vectorfield_type       = VecField<FieldT, physical_quantity_type>;
 
-    using scalar_bc_type = IFieldBoundaryCondition<FieldT, GridLayoutT>;
-    using vector_bc_type = IFieldBoundaryCondition<vectorfield_type, GridLayoutT>;
+    using scalar_bc_type = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+    using vector_bc_type = IFieldBoundaryCondition<vectorfield_type, GridLayoutT, StateT>;
 
     static constexpr size_t dimension = Super::dimension;
     static constexpr size_t N         = Super::N;
@@ -74,13 +74,9 @@ public:
         return FieldBoundaryConditionType::TotalEnergyFromPressure;
     }
 
-    // check ρ, P, ρv and B fields availability
     bool canApply(typename Super::context_type const& ctx) const override
     {
-        auto const& acc = ctx.accessor_new;
-        return acc.hasField(scalar_quantity_type::rho) && acc.hasField(scalar_quantity_type::P)
-               && acc.hasVecField(vector_quantity_type::rhoV)
-               && acc.hasVecField(vector_quantity_type::B);
+        return ctx.state != nullptr;
     }
 
     void apply(FieldT& EtotField, BoundaryLocation const boundaryLocation,
@@ -96,11 +92,11 @@ public:
         QtyCentering const centering
             = GridLayoutT::centering(EtotField.physicalQuantity())[static_cast<size_t>(direction)];
 
-        auto const& fieldAccessor = ctx.accessor_new;
-        auto& rhoField            = fieldAccessor.getField(scalar_quantity_type::rho);
-        auto& PField              = fieldAccessor.getField(scalar_quantity_type::P);
-        auto rhoVField            = fieldAccessor.getVecField(vector_quantity_type::rhoV);
-        auto BField               = fieldAccessor.getVecField(vector_quantity_type::B);
+        auto& state     = *ctx.state;
+        auto& rhoField  = state.rho;
+        auto& PField    = state.P;
+        auto& rhoVField = state.rhoV;
+        auto& BField    = state.B;
 
         auto rhoVComps = rhoVField.components();
         auto BComps    = BField.components();

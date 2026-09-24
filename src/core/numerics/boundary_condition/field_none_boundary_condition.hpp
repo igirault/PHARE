@@ -15,12 +15,12 @@ namespace PHARE::core
  * @tparam ScalarOrTensorFieldT Type of the field or tensor field.
  * @tparam GridLayoutT Grid layout configuration.
  */
-template<typename ScalarOrTensorFieldT, typename GridLayoutT>
+template<typename ScalarOrTensorFieldT, typename GridLayoutT, typename StateT>
 class FieldNoneBoundaryCondition
-    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>
+    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>
 {
 public:
-    using Super                    = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
+    using Super = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>;
     static constexpr size_t dimension = Super::dimension;
 
     FieldNoneBoundaryCondition() = default;

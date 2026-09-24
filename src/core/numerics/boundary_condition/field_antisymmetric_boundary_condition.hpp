@@ -19,12 +19,12 @@ namespace PHARE::core
  * @tparam GridLayoutT Grid layout configuration.
  *
  */
-template<typename ScalarOrTensorFieldT, typename GridLayoutT>
+template<typename ScalarOrTensorFieldT, typename GridLayoutT, typename StateT>
 class FieldAntiSymmetricBoundaryCondition
-    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>
+    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>
 {
 public:
-    using Super                = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
+    using Super                = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>;
     using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type           = Super::field_type;
 
@@ -47,8 +47,7 @@ public:
         return FieldBoundaryConditionType::AntiSymmetric;
     }
 
-    void apply(ScalarOrTensorFieldT& scalarOrTensorField,
-               BoundaryLocation const boundaryLocation,
+    void apply(ScalarOrTensorFieldT& scalarOrTensorField, BoundaryLocation const boundaryLocation,
                Box<std::uint32_t, dimension> const& localGhostBox, GridLayoutT const& gridLayout,
                Super::context_type const& ctx) override
     {
@@ -76,9 +75,10 @@ public:
     }
 
 private:
-    using _scalar_neumann_condition_type = FieldNeumannBoundaryCondition<field_type, GridLayoutT>;
+    using _scalar_neumann_condition_type
+        = FieldNeumannBoundaryCondition<field_type, GridLayoutT, StateT>;
     using _scalar_dirichlet_condition_type
-        = FieldDirichletBoundaryCondition<field_type, GridLayoutT>;
+        = FieldDirichletBoundaryCondition<field_type, GridLayoutT, StateT>;
 
     _scalar_neumann_condition_type scalar_neumann_condition_{};
     _scalar_dirichlet_condition_type scalar_dirichlet_condition_{};
