@@ -38,11 +38,6 @@ public:
 
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    explicit IExternalFieldUpdater(bool is_time_dependent)
-        : is_time_dependent_{is_time_dependent}
-    {
-    }
-
     virtual ~IExternalFieldUpdater() = default;
 
     /**
@@ -58,7 +53,7 @@ public:
     {
         computePotential(externalField.scratch, time, layout);
         curlOnGhostBox_(externalField.B0, externalField.scratch, layout);
-        if (is_time_dependent_)
+        if (isTimeDependent())
         {
             computePotentialTimeDerivative(externalField.scratch, time, layout);
             curlOnGhostBox_(externalField.dB0dt, externalField.scratch, layout);
@@ -73,11 +68,9 @@ public:
     void virtual computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
                                                 GridLayoutT const& layout)                   = 0;
 
-    NO_DISCARD bool isTimeDependent() const { return is_time_dependent_; }
+    NO_DISCARD bool virtual isTimeDependent() const = 0;
 
 private:
-    bool is_time_dependent_;
-
     void curlOnGhostBox_(vecfield_type& out, vecfield_type const& in, GridLayoutT const& layout)
     {
         auto& outX = out(component_type::X);

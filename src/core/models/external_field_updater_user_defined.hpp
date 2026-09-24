@@ -38,11 +38,15 @@ public:
     ExternalFieldUpdaterUserDefined(space_time_function_array_type potential,
                                     std::optional<space_time_function_array_type> derivative
                                     = std::nullopt)
-        : Super{derivative.has_value()}
-        , potential_{std::move(potential)}
+        : potential_{std::move(potential)}
         , potential_time_derivative_{std::move(derivative)} {};
 
     virtual ~ExternalFieldUpdaterUserDefined() = default;
+
+    NO_DISCARD bool isTimeDependent() const final
+    {
+        return potential_time_derivative_.has_value();
+    }
 
     void virtual computePotential(vecfield_type& a0, double time, GridLayoutT const& layout) final
     {

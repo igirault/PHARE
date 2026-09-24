@@ -49,8 +49,7 @@ public:
     static constexpr std::size_t dimension = Super::dimension;
 
     ExternalFieldUpdaterDipole(point_type position, vector_type moment)
-        : Super()
-        , position_{position}
+        : position_{position}
         , moment_{moment} {};
 
     template<component_type i>
