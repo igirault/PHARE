@@ -185,6 +185,27 @@ class ExternalFieldTest(SimulatorTest):
         for time in timestamps:
             self.assert_b0_is_exact(run, time, min_levels=2)
 
+    def test_time_dependent_b0_is_exact_after_regrid(self):
+        """Covers the coordinates cache of a time dependent field: patches born from
+        a regrid must refill it, or later updates evaluate A0 at stale coordinates."""
+        sim, timestamps = self.config(
+            nbr_steps=10,
+            external_field={
+                "type": "user-defined",
+                "potential": (None, None, az_t),
+                "potential_time_derivative": (None, None, dazdt),
+            },
+            refinement="tagging",
+            max_nbr_levels=2,
+            nesting_buffer=1,
+            clustering="tile",
+            tag_buffer="1",
+        )
+        run = self.run_sim(sim)
+
+        for time in timestamps:
+            self.assert_b0_is_exact(run, time, t_expected=time, min_levels=2)
+
     def test_time_dependent_b0_follows_the_dump_time(self):
         """Covers the end-of-step update: B0 dumped at t must be B0(t), not B0(0)."""
         sim, timestamps = self.config(

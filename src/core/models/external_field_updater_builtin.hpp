@@ -40,8 +40,10 @@ public:
     static constexpr std::size_t dimension = Super::dimension;
 
     NO_DISCARD bool isTimeDependent() const final { return isTimeDependent_(); }
+    NO_DISCARD bool needsCoordinates() const final { return false; }
 
-    void computePotential(vecfield_type& a0, double time, GridLayoutT const& layout) final
+    void computePotential(vecfield_type& a0, double time, GridLayoutT const& layout,
+                          std::span<vecfield_type const> /*coordinates*/) final
     {
         applyPointWiseFormula_(a0, time, layout, [this](auto c, auto const& coords, double t) {
             return derived().template potential<decltype(c)::value>(coords, t);
@@ -49,7 +51,8 @@ public:
     }
 
     void computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
-                                        GridLayoutT const& layout) final
+                                        GridLayoutT const& layout,
+                                        std::span<vecfield_type const> /*coordinates*/) final
     {
         if constexpr (isTimeDependent_())
         {

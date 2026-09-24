@@ -81,12 +81,13 @@ struct UpdaterRun
 {
     TestGridLayout<GridLayout_t> layout{cells};
 
-    UsableExternalField<2> externalField{"external", layout};
+    UsableExternalField<2> externalField;
 
     template<typename Updater>
     explicit UpdaterRun(Updater& updater, double time = 0.)
+        : externalField{"external", layout, updater.needsCoordinates()}
     {
-        updater(externalField, layout, time);
+        updater.initialize(externalField, layout, time);
     }
 };
 

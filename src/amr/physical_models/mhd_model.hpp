@@ -48,9 +48,9 @@ public:
     static inline std::string const model_name{model_type_name};
 
     state_type state;
-    external_field_type externalField;
     std::shared_ptr<resources_manager_type> resourcesManager;
     std::unique_ptr<external_field_updater_type> externalFieldUpdater;
+    external_field_type externalField;
 
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
@@ -86,11 +86,11 @@ public:
                       std::shared_ptr<resources_manager_type> const& _resourcesManager)
         : IPhysicalModel<AMR_Types>{model_name}
         , state{dict["mhd_state"]}
-        , externalField{model_name}
         , resourcesManager{_resourcesManager}
         , externalFieldUpdater{dict.contains("external_field")
                                    ? external_field_factory_type::create(dict["external_field"])
                                    : external_field_factory_type::createZero()}
+        , externalField{model_name + "_external_field", externalFieldUpdater->needsCoordinates()}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);
@@ -104,14 +104,17 @@ public:
         for (auto const& patch : resourcesManager->enumerate(level, externalField))
         {
             auto const layout = amr::layoutFromPatch<GridLayoutT>(*patch);
-            (*externalFieldUpdater)(externalField, layout, time);
+            externalFieldUpdater->initialize(externalField, layout, time);
         }
     }
 
     void updateExternalField(level_t& level, double time) override
     {
-        if (externalFieldUpdater->isTimeDependent())
-            initializeExternalField(level, time);
+        for (auto const& patch : resourcesManager->enumerate(level, externalField))
+        {
+            auto const layout = amr::layoutFromPatch<GridLayoutT>(*patch);
+            externalFieldUpdater->update(externalField, layout, time);
+        }
     }
 
     ~MHDModel() override = default;

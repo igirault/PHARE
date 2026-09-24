@@ -3,11 +3,14 @@
 
 #include "core/def.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/data/user/user_field_updater.hpp"
 #include "core/models/external_field.hpp"
 #include "core/utilities/point/point.hpp"
 
 #include <cassert>
 #include <cstddef>
+#include <span>
+#include <utility>
 
 namespace PHARE::core
 {
@@ -41,34 +44,65 @@ public:
     virtual ~IExternalFieldUpdater() = default;
 
     /**
-     * @brief fill an external field at a given time
+     * @brief fill an external field on a new patch: fill its coordinates cache when the
+     * updater needs one, then compute B0 and dB0/dt
      *
      * @param externalField the external field to fill, whose E-centered scratch vecfield holds
      * the vector potential on output
-     * @param layout the current grid layout
+     * @param layout the grid layout of the patch
      * @param time the current time
      */
-    virtual void operator()(external_field_type& externalField, GridLayoutT const& layout,
-                            double time)
+    void initialize(external_field_type& externalField, GridLayoutT const& layout, double time)
     {
-        computePotential(externalField.scratch, time, layout);
+        if (needsCoordinates())
+            UserFieldUpdater::fillCoordinates(layout, externalField.coordinates());
+        compute_(externalField, layout, time);
+    }
+
+    /**
+     * @brief advance an external field to a new time: recompute B0 and dB0/dt if the field is
+     * time dependent, no-op otherwise
+     */
+    void update(external_field_type& externalField, GridLayoutT const& layout, double time)
+    {
+        if (isTimeDependent())
+            compute_(externalField, layout, time);
+    }
+
+    /**
+     * @brief fill the vector potential, respectively its time derivative
+     *
+     * @param coordinates node coordinates cache of the external field (see
+     * ExternalField::coordinates()), empty when the updater does not need one
+     */
+    void virtual computePotential(vecfield_type& a0, double time, GridLayoutT const& layout,
+                                  std::span<vecfield_type const> coordinates)               = 0;
+    void virtual computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
+                                                GridLayoutT const& layout,
+                                                std::span<vecfield_type const> coordinates) = 0;
+
+    NO_DISCARD bool virtual isTimeDependent() const  = 0;
+    NO_DISCARD bool virtual needsCoordinates() const = 0;
+
+protected:
+    //! compute B0 and dB0/dt, as the curl of the vector potential and of its time derivative
+    virtual void compute_(external_field_type& externalField, GridLayoutT const& layout,
+                          double time)
+    {
+        auto const coordinates = std::as_const(externalField).coordinates();
+
+        computePotential(externalField.scratch, time, layout, coordinates);
         curlOnGhostBox_(externalField.B0, externalField.scratch, layout);
         if (isTimeDependent())
         {
-            computePotentialTimeDerivative(externalField.scratch, time, layout);
+            computePotentialTimeDerivative(externalField.scratch, time, layout, coordinates);
             curlOnGhostBox_(externalField.dB0dt, externalField.scratch, layout);
         }
         else
         {
             externalField.dB0dt.zero();
         }
-    };
-
-    void virtual computePotential(vecfield_type& a0, double time, GridLayoutT const& layout) = 0;
-    void virtual computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
-                                                GridLayoutT const& layout)                   = 0;
-
-    NO_DISCARD bool virtual isTimeDependent() const = 0;
+    }
 
 private:
     void curlOnGhostBox_(vecfield_type& out, vecfield_type const& in, GridLayoutT const& layout)

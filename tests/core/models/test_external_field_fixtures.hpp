@@ -64,8 +64,9 @@ public:
     using Super = ExternalField<VecFieldMHD<dim>>;
 
     template<typename GridLayout>
-    UsableExternalField(std::string const& name, GridLayout const& layout)
-        : Super{name}
+    UsableExternalField(std::string const& name, GridLayout const& layout,
+                        bool withCoordinates = false)
+        : Super{name, withCoordinates}
         , b0_{name + "_B0", layout, MHDQuantity::Vector::B}
         , dB0dt_{name + "_dB0dt", layout, MHDQuantity::Vector::B}
         , scratch_{name + "_scratch", layout, MHDQuantity::Vector::E}
@@ -73,6 +74,14 @@ public:
         b0_.set_on(this->B0);
         dB0dt_.set_on(this->dB0dt);
         scratch_.set_on(this->scratch);
+
+        // the grids are all created before any buffer is set: growing the vector moves them
+        auto coordinates = this->coordinates();
+        coordinates_.reserve(coordinates.size());
+        for (auto const& vecfield : coordinates)
+            coordinates_.emplace_back(vecfield.name(), layout, MHDQuantity::Vector::E);
+        for (std::size_t d = 0; d < coordinates.size(); ++d)
+            coordinates_[d].set_on(coordinates[d]);
     }
 
     Super& super() { return *this; }
@@ -81,6 +90,7 @@ private:
     UsableVecFieldMHD<dim> b0_;
     UsableVecFieldMHD<dim> dB0dt_;
     UsableVecFieldMHD<dim> scratch_;
+    std::vector<UsableVecFieldMHD<dim>> coordinates_;
 };
 
 } // namespace PHARE::core

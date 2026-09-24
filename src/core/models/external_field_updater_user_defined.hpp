@@ -43,28 +43,47 @@ public:
 
     virtual ~ExternalFieldUpdaterUserDefined() = default;
 
-    NO_DISCARD bool isTimeDependent() const final
-    {
-        return potential_time_derivative_.has_value();
-    }
+    NO_DISCARD bool isTimeDependent() const final { return potential_time_derivative_.has_value(); }
 
-    void virtual computePotential(vecfield_type& a0, double time, GridLayoutT const& layout) final
+    NO_DISCARD bool needsCoordinates() const final { return isTimeDependent(); }
+
+    void virtual computePotential(vecfield_type& a0, double time, GridLayoutT const& layout,
+                                  std::span<vecfield_type const> coordinates) final
     {
-        UserFieldUpdater::update(a0, layout, potential_, time);
+        evaluate_(a0, potential_, time, layout, coordinates);
     };
+
     void virtual computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
-                                                GridLayoutT const& layout) final
+                                                GridLayoutT const& layout,
+                                                std::span<vecfield_type const> coordinates) final
     {
-        if (potential_time_derivative_)
-            UserFieldUpdater::update(da0_dt, layout, potential_time_derivative_.value(), time);
-        else
+        if (!potential_time_derivative_)
             throw std::runtime_error(
                 "computePotentialTimeDerivative called on a constant external field.");
+        evaluate_(da0_dt, *potential_time_derivative_, time, layout, coordinates);
     };
 
 private:
     space_time_function_array_type potential_;
     std::optional<space_time_function_array_type> potential_time_derivative_;
+
+    /**
+     * @brief evaluate the user functions from the coordinates cache when there is one, computing
+     * the coordinates on the fly otherwise: a static field is evaluated once per patch lifetime,
+     * so it gets no cache
+     */
+    void evaluate_(vecfield_type& vecfield, space_time_function_array_type const& funcs,
+                   double time, GridLayoutT const& layout,
+                   std::span<vecfield_type const> coordinates) const
+    {
+        // a time dependent field without its cache is a wiring bug: correct, but slow
+        assert(!isTimeDependent() or !coordinates.empty());
+
+        if (coordinates.empty())
+            UserFieldUpdater::update(vecfield, layout, funcs, time);
+        else
+            UserFieldUpdater::update(vecfield, funcs, time, coordinates);
+    }
 };
 
 } // namespace PHARE::core

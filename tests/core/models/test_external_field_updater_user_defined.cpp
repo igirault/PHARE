@@ -12,6 +12,7 @@
 #include <array>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 using namespace PHARE;
 using namespace PHARE::core;
@@ -116,11 +117,14 @@ struct UserDefinedSetup
 
     TestGridLayout<GridLayout_t> layout{cells};
 
-    UsableExternalField<dim> externalField{"external", layout};
-
     Updater_t updater{makeUpdater()};
 
-    void update(double time = evalTime) { updater(externalField, layout, time); }
+    //! with the coordinates cache exactly when the updater asks for one, as the models do
+    UsableExternalField<dim> externalField{"external", layout, updater.needsCoordinates()};
+
+    void initialize(double time = evalTime) { updater.initialize(externalField, layout, time); }
+
+    void update(double time = evalTime) { updater.update(externalField, layout, time); }
 
     //! largest |field - factor * curl(a)| over the ghost box, all components
     double maxErrorAgainstCurl(VecField_t& vecfield, double factor)
@@ -177,7 +181,7 @@ struct UserDefinedSetup
 template<typename SetupT>
 struct UserDefinedTest : public ::testing::Test
 {
-    void SetUp() override { setup.update(); }
+    void SetUp() override { setup.initialize(); }
 
     SetupT setup;
 };
@@ -190,6 +194,23 @@ TYPED_TEST_SUITE(UserDefinedTest, TimeDependentSetups);
 TYPED_TEST(UserDefinedTest, isTimeDependentWhenGivenADerivative)
 {
     EXPECT_TRUE(this->setup.updater.isTimeDependent());
+}
+
+//! evaluated at every time update, so the coordinates are worth caching
+TYPED_TEST(UserDefinedTest, usesTheCoordinatesCache)
+{
+    auto& setup = this->setup;
+    EXPECT_TRUE(setup.updater.needsCoordinates());
+    EXPECT_EQ(setup.externalField.coordinates().size(), TypeParam::dim);
+}
+
+//! a time dependent updater given an external field without cache is a wiring bug
+TYPED_TEST(UserDefinedTest, initializeThrowsWithoutTheCoordinatesCache)
+{
+    auto& setup = this->setup;
+    UsableExternalField<TypeParam::dim> noCache{"noCache", setup.layout,
+                                                /*withCoordinates=*/false};
+    EXPECT_THROW(setup.updater.initialize(noCache, setup.layout, 0.), std::runtime_error);
 }
 
 TYPED_TEST(UserDefinedTest, retrievesTheCurlOfTheUserPotential)
@@ -228,8 +249,8 @@ TYPED_TEST(UserDefinedTest, convergesAtSecondOrder)
 
     Coarse coarse;
     Fine fine;
-    coarse.update();
-    fine.update();
+    coarse.initialize();
+    fine.initialize();
 
     EXPECT_GT(coarse.maxErrorOnB0() / fine.maxErrorOnB0(), 3.5);
 }
@@ -238,7 +259,7 @@ TYPED_TEST(UserDefinedTest, convergesAtSecondOrder)
 template<typename SetupT>
 struct StaticUserDefinedTest : public ::testing::Test
 {
-    void SetUp() override { setup.update(); }
+    void SetUp() override { setup.initialize(); }
 
     SetupT setup;
 };
@@ -251,6 +272,28 @@ TYPED_TEST_SUITE(StaticUserDefinedTest, StaticSetups);
 TYPED_TEST(StaticUserDefinedTest, isNotTimeDependentWithoutADerivative)
 {
     EXPECT_FALSE(this->setup.updater.isTimeDependent());
+}
+
+//! evaluated once per patch lifetime, so a cache would never be reused
+TYPED_TEST(StaticUserDefinedTest, usesNoCoordinatesCache)
+{
+    auto& setup = this->setup;
+    EXPECT_FALSE(setup.updater.needsCoordinates());
+    EXPECT_TRUE(setup.externalField.coordinates().empty());
+}
+
+TYPED_TEST(StaticUserDefinedTest, updateLeavesTheFieldUntouched)
+{
+    auto& setup = this->setup;
+    setup.externalField.B0.zero();
+    setup.update(2.);
+
+    double maxAbs = 0.;
+    for_N<3>([&](auto i) {
+        for (auto const& v : setup.externalField.B0(static_cast<Component>(decltype(i)::value)))
+            maxAbs = std::max(maxAbs, std::abs(v));
+    });
+    EXPECT_EQ(maxAbs, 0.);
 }
 
 TYPED_TEST(StaticUserDefinedTest, retrievesTheCurlOfTheUserPotential)

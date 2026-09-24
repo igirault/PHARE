@@ -107,7 +107,7 @@ struct DipoleSetup
 
     Updater_t updater{position(), moment(), /*radius=*/0.};
 
-    void update(double time = 0.) { updater(externalField, layout, time); }
+    void update(double time = 0.) { updater.initialize(externalField, layout, time); }
 
     //! largest |B0 - B_analytical| over the physical domain, all components
     double maxErrorOnDomain()

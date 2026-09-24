@@ -32,21 +32,25 @@ public:
     virtual ~ExternalFieldUpdaterZero() = default;
 
     NO_DISCARD bool isTimeDependent() const final { return false; }
+    NO_DISCARD bool needsCoordinates() const final { return false; }
 
-    void virtual operator()(external_field_type& externalField, GridLayoutT const& layout,
-                            double time) final
+    // never called: compute_ below is final and fills B0/dB0dt without a potential
+    void virtual computePotential(vecfield_type& /*a0*/, double /*time*/,
+                                  GridLayoutT const& /*layout*/,
+                                  std::span<vecfield_type const> /*coordinates*/) final{};
+
+    void virtual computePotentialTimeDerivative(
+        vecfield_type& /*da0_dt*/, double /*time*/, GridLayoutT const& /*layout*/,
+        std::span<vecfield_type const> /*coordinates*/) final{};
+
+protected:
+    void compute_(external_field_type& externalField, GridLayoutT const& /*layout*/,
+                  double /*time*/) final
     {
         externalField.B0.zero();
         externalField.dB0dt.zero();
         externalField.scratch.zero(); // registered resource: never leave the sentinel in place
     }
-
-    // never called: operator() above is final and fills B0/dB0dt without a potential
-    void virtual computePotential(vecfield_type& a0, double time,
-                                  GridLayoutT const& layout) final{};
-
-    void virtual computePotentialTimeDerivative(vecfield_type& da0_dt, double time,
-                                                GridLayoutT const& layout) final{};
 };
 
 } // namespace PHARE::core
