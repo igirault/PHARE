@@ -66,6 +66,8 @@ namespace core
             return ss.str();
         }
 
+        NO_DISCARD std::string const& name() const { return name_; }
+
         MHDState(PHARE::initializer::PHAREDict const& dict)
             : rho{dict["name"].template to<std::string>() + "_" + "rho", MHDQuantity::Scalar::rho}
             , V{dict["name"].template to<std::string>() + "_" + "V", MHDQuantity::Vector::V}
@@ -90,6 +92,7 @@ namespace core
             , Pinit_{dict["pressure"]["initializer"]
                          .template to<initializer::InitFunction<dimension>>()}
             , gamma_{dict["to_conservative_init"]["heat_capacity_ratio"].template to<double>()}
+            , name_{dict["name"].template to<std::string>()}
         {
         }
 
@@ -108,6 +111,7 @@ namespace core
             , J{name + "_" + "J", MHDQuantity::Vector::J}
 
             , gamma_{}
+            , name_{name}
         {
         }
 
@@ -142,6 +146,7 @@ namespace core
         initializer::InitFunction<dimension> Pinit_;
 
         double const gamma_;
+        std::string name_;
     };
 } // namespace core
 } // namespace PHARE

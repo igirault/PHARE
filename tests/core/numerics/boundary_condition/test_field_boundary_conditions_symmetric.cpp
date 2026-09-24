@@ -14,15 +14,15 @@ TEST_F(FieldBC1D, SymmetricScalarEquivalentToNeumann)
     Field1D& refField{*(&refGrid)};
     for (std::uint32_t i = 0; i < refGrid.shape()[0]; ++i)
         refField(i) = (i >= physStart && i <= physEnd) ? interiorValue : ghostSentinel;
-    FieldNeumannBoundaryCondition<Field1D, GridLayout1D> neumann;
+    FieldNeumannBoundaryCondition<Field1D, GridLayout1D, HybridBCState> neumann;
     neumann.apply(refField, BoundaryLocation::XLower, lowerGhostCellBox(), layout,
-                  makeCtx(acc, 0.0));
+                  makeCtx(bcState, 0.0));
     neumann.apply(refField, BoundaryLocation::XUpper, upperGhostCellBox(), layout,
-                  makeCtx(acc, 0.0));
+                  makeCtx(bcState, 0.0));
 
-    FieldSymmetricBoundaryCondition<Field1D, GridLayout1D> sym;
-    sym.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
-    sym.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<Field1D, GridLayout1D, HybridBCState> sym;
+    sym.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(bcState, 0.0));
+    sym.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(bcState, 0.0));
 
     for (std::uint32_t i = 0; i < grid.shape()[0]; ++i)
         EXPECT_DOUBLE_EQ(field(i), refField(i)) << "at index " << i;
@@ -31,9 +31,9 @@ TEST_F(FieldBC1D, SymmetricScalarEquivalentToNeumann)
 
 TEST_F(VecFieldBC1D, SymmetricNormalComponentBxSetToDirichletZero)
 {
-    FieldSymmetricBoundaryCondition<VecField1D, GridLayout1D> bc;
-    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<VecField1D, GridLayout1D, HybridBCState> bc;
+    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(bcState, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(bcState, 0.0));
 
     auto& Bx                  = B[0];
     auto bxQty                = HybridQuantity::Scalar::Bx;
@@ -47,9 +47,9 @@ TEST_F(VecFieldBC1D, SymmetricNormalComponentBxSetToDirichletZero)
 
 TEST_F(VecFieldBC1D, SymmetricTangentialComponentsByBzSetToNeumann)
 {
-    FieldSymmetricBoundaryCondition<VecField1D, GridLayout1D> bc;
-    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<VecField1D, GridLayout1D, HybridBCState> bc;
+    bc.apply(B, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(bcState, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(bcState, 0.0));
 
     auto byQty              = HybridQuantity::Scalar::By;
     std::uint32_t byPhysEnd = layout.physicalEndIndex(byQty, Direction::X);
@@ -64,9 +64,9 @@ TEST_F(VecFieldBC1D, SymmetricTangentialComponentsByBzSetToNeumann)
 
 TEST_F(VecFieldBC2D, SymmetricAtXBoundaries)
 {
-    FieldSymmetricBoundaryCondition<VecField2D, GridLayout2D> bc;
-    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
-    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<VecField2D, GridLayout2D, HybridBCState> bc;
+    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(bcState, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(bcState, 0.0));
 
     {
         auto& Bx          = B[0];
@@ -104,9 +104,9 @@ TEST_F(VecFieldBC2D, SymmetricAtXBoundaries)
 
 TEST_F(VecFieldBC2D, SymmetricAtYBoundaries)
 {
-    FieldSymmetricBoundaryCondition<VecField2D, GridLayout2D> bc;
-    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
-    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<VecField2D, GridLayout2D, HybridBCState> bc;
+    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, makeCtx(bcState, 0.0));
+    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, makeCtx(bcState, 0.0));
 
     {
         auto& By          = B[1];
@@ -145,9 +145,9 @@ TEST_F(VecFieldBC2D, SymmetricAtYBoundaries)
 
 TEST_F(VecFieldBC3D, SymmetricAtZBoundaries)
 {
-    FieldSymmetricBoundaryCondition<VecField3D, GridLayout3D> bc;
-    bc.apply(B, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
-    bc.apply(B, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<VecField3D, GridLayout3D, HybridBCState> bc;
+    bc.apply(B, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, makeCtx(bcState, 0.0));
+    bc.apply(B, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, makeCtx(bcState, 0.0));
 
     {
         auto& Bz          = B[2];
@@ -196,9 +196,9 @@ TEST_F(VecFieldBC3D, SymmetricAtZBoundaries)
 
 TEST_F(VecFieldBC3D, SymmetricAtXBoundaries)
 {
-    FieldSymmetricBoundaryCondition<VecField3D, GridLayout3D> bc;
-    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
-    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<VecField3D, GridLayout3D, HybridBCState> bc;
+    bc.apply(B, BoundaryLocation::XLower, xLowerGhostCellBox3D(), layout, makeCtx(bcState, 0.0));
+    bc.apply(B, BoundaryLocation::XUpper, xUpperGhostCellBox3D(), layout, makeCtx(bcState, 0.0));
 
     {
         auto& Bx          = B[0];
@@ -240,9 +240,9 @@ TEST_F(VecFieldBC3D, SymmetricAtXBoundaries)
 
 TEST_F(VecFieldBC3D, SymmetricAtYBoundaries)
 {
-    FieldSymmetricBoundaryCondition<VecField3D, GridLayout3D> bc;
-    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
-    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    FieldSymmetricBoundaryCondition<VecField3D, GridLayout3D, HybridBCState> bc;
+    bc.apply(B, BoundaryLocation::YLower, yLowerGhostCellBox3D(), layout, makeCtx(bcState, 0.0));
+    bc.apply(B, BoundaryLocation::YUpper, yUpperGhostCellBox3D(), layout, makeCtx(bcState, 0.0));
 
     {
         auto& By          = B[1];

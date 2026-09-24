@@ -43,37 +43,38 @@ public:
      * @return A unique pointer to the created field boundary condition.
      */
     template<FieldBoundaryConditionType type, IsScalarOrTensorField ScalarOrTensorFieldT,
-             typename GridLayoutT, typename... Args>
-    static std::unique_ptr<IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>
+             typename GridLayoutT, typename StateT, typename... Args>
+    static std::unique_ptr<IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>>
     create(Args&&... args)
     {
         if constexpr (type == FieldBoundaryConditionType::None)
         {
-            return std::make_unique<FieldNoneBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+            return std::make_unique<
+                FieldNoneBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>>(
                 std::forward<Args>(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::Neumann)
         {
             return std::make_unique<
-                FieldNeumannBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+                FieldNeumannBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>>(
                 std::forward<Args>(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::Dirichlet)
         {
             return std::make_unique<
-                FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+                FieldDirichletBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>>(
                 std::forward<Args>(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::Symmetric)
         {
             return std::make_unique<
-                FieldSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+                FieldSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>>(
                 std::forward<Args>(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::AntiSymmetric)
         {
             return std::make_unique<
-                FieldAntiSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>>(
+                FieldAntiSymmetricBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>>(
                 std::forward<Args>(args)...);
         }
         else if constexpr (type == FieldBoundaryConditionType::DivergenceFreeTransverseNeumann)
@@ -81,7 +82,7 @@ public:
             if constexpr (IsVecField<ScalarOrTensorFieldT>)
             {
                 return std::make_unique<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
-                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
+                    ScalarOrTensorFieldT, GridLayoutT, StateT>>(std::forward<Args>(args)...);
             }
             else
             {
@@ -94,7 +95,7 @@ public:
             if constexpr (IsVecField<ScalarOrTensorFieldT>)
             {
                 return std::make_unique<FieldDivergenceFreeTransverseDirichletBoundaryCondition<
-                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
+                    ScalarOrTensorFieldT, GridLayoutT, StateT>>(std::forward<Args>(args)...);
             }
             else
             {
@@ -107,7 +108,7 @@ public:
             if constexpr (IsField<ScalarOrTensorFieldT>)
             {
                 return std::make_unique<FieldTotalEnergyFromPressureBoundaryCondition<
-                    ScalarOrTensorFieldT, GridLayoutT>>(std::forward<Args>(args)...);
+                    ScalarOrTensorFieldT, GridLayoutT, StateT>>(std::forward<Args>(args)...);
             }
             else
             {

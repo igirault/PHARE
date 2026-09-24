@@ -43,7 +43,7 @@ struct DirichletBEnergySubBC1D : testing::Test
     UsableVecFieldMHD<1> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<1> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<1> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<1> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     FieldMHD<1>& rhoField{*(&rhoGrid)};
     FieldMHD<1>& PField{*(&PGrid)};
@@ -76,22 +76,23 @@ struct DirichletBEnergySubBC1D : testing::Test
     void applyAndCheck()
     {
         double const time = 0.0;
-        auto rho_bc
-            = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-        auto P_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-        auto rhoV_bc
-            = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
-        auto B_bc
-            = std::make_shared<FieldDirichletBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>(
-                Bprescribed);
+        auto rho_bc       = std::make_shared<
+            FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+        auto P_bc = std::make_shared<
+            FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+        auto rhoV_bc = std::make_shared<
+            FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+        auto B_bc = std::make_shared<
+            FieldDirichletBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>(
+            Bprescribed);
 
-        FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
-            rho_bc, rhoV_bc, B_bc, P_bc, gamma};
+        FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>
+            bc{rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
         bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout,
-                 makeCtx(acc, time));
+                 makeCtx(bcState, time));
         bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
-                 makeCtx(acc, time));
+                 makeCtx(bcState, time));
 
         for (std::size_t comp = 0; comp < 3; ++comp)
         {

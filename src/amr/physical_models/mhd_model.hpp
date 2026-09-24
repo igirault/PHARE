@@ -39,7 +39,7 @@ public:
     using grid_type              = Grid_t;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, Grid_t>;
     using boundary_manager_type
-        = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type>;
+        = core::BoundaryManager<core::MHDQuantity, field_type, gridlayout_type, state_type>;
 
     static constexpr std::string_view model_type_name = "MHDModel";
     static inline std::string const model_name{model_type_name};
@@ -161,6 +161,7 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.initMagnetic.push_back(MHDInfo.modelMagnetic);
     MHDInfo.initTotalEnergy.push_back(MHDInfo.modelTotalEnergy);
 
+    MHDInfo.ghostStateNames.push_back(state.name());
     MHDInfo.ghostDensity.push_back(MHDInfo.modelDensity);
     MHDInfo.ghostVelocity.push_back(MHDInfo.modelVelocity);
     MHDInfo.ghostMagnetic.push_back(MHDInfo.modelMagnetic);

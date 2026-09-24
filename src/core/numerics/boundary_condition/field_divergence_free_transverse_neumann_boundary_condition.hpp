@@ -24,12 +24,12 @@ namespace PHARE::core
  * @tparam GridLayoutT Grid layout configuration.
  *
  */
-template<typename VecFieldT, typename GridLayoutT>
+template<typename VecFieldT, typename GridLayoutT, typename StateT>
 class FieldDivergenceFreeTransverseNeumannBoundaryCondition
-    : public IFieldBoundaryCondition<VecFieldT, GridLayoutT>
+    : public IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>
 {
 public:
-    using Super                = IFieldBoundaryCondition<VecFieldT, GridLayoutT>;
+    using Super                = IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>;
     using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type           = Super::field_type;
 
@@ -42,17 +42,13 @@ public:
     FieldDivergenceFreeTransverseNeumannBoundaryCondition() = default;
 
     FieldDivergenceFreeTransverseNeumannBoundaryCondition(
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition const&)
-        = default;
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition const&) = default;
     FieldDivergenceFreeTransverseNeumannBoundaryCondition&
-    operator=(FieldDivergenceFreeTransverseNeumannBoundaryCondition const&)
-        = default;
+    operator=(FieldDivergenceFreeTransverseNeumannBoundaryCondition const&) = default;
     FieldDivergenceFreeTransverseNeumannBoundaryCondition(
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition&&)
-        = default;
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition&&) = default;
     FieldDivergenceFreeTransverseNeumannBoundaryCondition&
-    operator=(FieldDivergenceFreeTransverseNeumannBoundaryCondition&&)
-        = default;
+    operator=(FieldDivergenceFreeTransverseNeumannBoundaryCondition&&) = default;
 
     virtual ~FieldDivergenceFreeTransverseNeumannBoundaryCondition() = default;
 
@@ -82,8 +78,8 @@ public:
             {
                 field_type& Bc = std::get<iTransverse>(fields);
 
-                QtyCentering const centering = GridLayoutT::centering(
-                    Bc.physicalQuantity())[static_cast<size_t>(direction)];
+                QtyCentering const centering
+                    = GridLayoutT::centering(Bc.physicalQuantity())[static_cast<size_t>(direction)];
                 auto fieldBox = gridLayout.toFieldBox(localGhostBox, Bc.physicalQuantity());
 
                 for (_index const& index : fieldBox)
@@ -98,7 +94,7 @@ public:
         // set the normal component so the discrete divergence of B is zero, given the transverse
         // ghosts filled above (shared with the transverse-Dirichlet condition).
         applyDivergenceFreeNormalComponent<dimension>(fields, iNormal, side, gridLayout,
-                                                       localGhostBox);
+                                                      localGhostBox);
     }
 
 private:

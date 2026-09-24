@@ -39,7 +39,7 @@ struct EtotFromPressureBC1D : testing::Test
     UsableVecFieldMHD<1> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<1> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<1> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<1> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     FieldMHD<1>& rhoField{*(&rhoGrid)};
     FieldMHD<1>& PField{*(&PGrid)};
@@ -72,19 +72,22 @@ struct EtotFromPressureBC1D : testing::Test
 
 TEST_F(EtotFromPressureBC1D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
-    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
     bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
     bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -97,21 +100,43 @@ TEST_F(EtotFromPressureBC1D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
     }
 }
 
+TEST_F(EtotFromPressureBC1D, CanApplyOnlyWithState)
+{
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>> bc{
+        rho_bc, rhoV_bc, B_bc, P_bc, gamma};
+
+    BoundaryConditionContext<MHDBCState<1>> const noState{nullptr, 0.0};
+    EXPECT_FALSE(bc.canApply(noState));
+    EXPECT_TRUE(bc.canApply(makeCtx(bcState, 0.0)));
+}
+
 TEST_F(EtotFromPressureBC1D, InteriorEtotUnchangedAfterBC)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
-    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
     bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
     bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -130,19 +155,22 @@ TEST_F(EtotFromPressureBC1D, MirrorPressureReconstructedOtherInteriorPressureUnc
     for (std::uint32_t i = ps; i <= pe; ++i)
         PField(i) = pMarker;
 
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
-    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
     bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
     bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
 
     for (std::uint32_t g = 0; g < mhdGhostWidth; ++g)
     {
@@ -190,7 +218,7 @@ struct EtotFromPressureBC2D : testing::Test
     UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<2> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     FieldMHD<2>& rhoField{*(&rhoGrid)};
     FieldMHD<2>& PField{*(&PGrid)};
@@ -228,19 +256,26 @@ struct EtotFromPressureBC2D : testing::Test
 
 TEST_F(EtotFromPressureBC2D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
-    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
-    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     for (auto const& idx : mhd2DXLowerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
@@ -258,19 +293,26 @@ TEST_F(EtotFromPressureBC2D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
 
 TEST_F(EtotFromPressureBC2D, InteriorEtotUnchangedAfterBC)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
-    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
-    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
@@ -315,7 +357,7 @@ struct EtotFromPressureBC3D : testing::Test
     UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<3> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<3> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     FieldMHD<3>& rhoField{*(&rhoGrid)};
     FieldMHD<3>& PField{*(&PGrid)};
@@ -357,21 +399,30 @@ struct EtotFromPressureBC3D : testing::Test
 
 TEST_F(EtotFromPressureBC3D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
-    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
-    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     for (auto const& idx : mhd3DXLowerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_val, 1e-12)
@@ -395,21 +446,30 @@ TEST_F(EtotFromPressureBC3D, NeumannSubBCsGhostEtotEqualsInteriorEtot)
 
 TEST_F(EtotFromPressureBC3D, InteriorEtotUnchangedAfterBC)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
-    auto P_bc   = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
-    auto B_bc = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto P_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto B_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
@@ -520,7 +580,7 @@ struct DirichletPressureBC1D : testing::Test
     UsableVecFieldMHD<1> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<1> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<1> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<1> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     FieldMHD<1>& rhoField{*(&rhoGrid)};
     FieldMHD<1>& PField{*(&PGrid)};
@@ -553,21 +613,22 @@ struct DirichletPressureBC1D : testing::Test
 
 TEST_F(DirichletPressureBC1D, DirichletPressureGhostEtotMatchesExpected)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto P_bc
-        = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>(P_fixed);
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
-    auto B_bc = std::make_shared<
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto P_bc = std::make_shared<
+        FieldDirichletBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>(P_fixed);
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto B_bc = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
+        VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
     bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
     bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -582,21 +643,22 @@ TEST_F(DirichletPressureBC1D, DirichletPressureGhostEtotMatchesExpected)
 
 TEST_F(DirichletPressureBC1D, InteriorEtotUnchangedAfterBC)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>();
-    auto P_bc
-        = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D>>(P_fixed);
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
-    auto B_bc = std::make_shared<
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto P_bc = std::make_shared<
+        FieldDirichletBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>(P_fixed);
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
+    auto B_bc = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
+        VecFieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<1>, GridLayoutMHD1D, MHDBCState<1>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
     bc.apply(EtotField, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
     bc.apply(EtotField, BoundaryLocation::XUpper, mhdUpperGhostCellBox(), layout,
-             makeCtx(acc, 0.0));
+             makeCtx(bcState, 0.0));
 
     auto etotQty     = MHDQuantity::Scalar::Etot;
     std::uint32_t ps = layout.physicalStartIndex(etotQty, Direction::X);
@@ -643,7 +705,7 @@ struct DirichletPressureBC2D : testing::Test
     UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<2> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     FieldMHD<2>& rhoField{*(&rhoGrid)};
     FieldMHD<2>& PField{*(&PGrid)};
@@ -674,21 +736,26 @@ struct DirichletPressureBC2D : testing::Test
 
 TEST_F(DirichletPressureBC2D, DirichletPressureGhostEtotMatchesExpected)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
-    auto P_bc
-        = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>(P_fixed);
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
-    auto B_bc = std::make_shared<
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto P_bc = std::make_shared<
+        FieldDirichletBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>(P_fixed);
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto B_bc = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
+        VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     for (auto const& idx : fp2DXLowerNonCornerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_ghost, 1e-12)
@@ -706,21 +773,26 @@ TEST_F(DirichletPressureBC2D, DirichletPressureGhostEtotMatchesExpected)
 
 TEST_F(DirichletPressureBC2D, InteriorEtotUnchangedAfterBC)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>();
-    auto P_bc
-        = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D>>(P_fixed);
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
-    auto B_bc = std::make_shared<
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto P_bc = std::make_shared<
+        FieldDirichletBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>(P_fixed);
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
+    auto B_bc = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
+        VecFieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<2>, GridLayoutMHD2D, MHDBCState<2>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd2DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd2DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd2DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd2DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);
@@ -772,7 +844,7 @@ struct DirichletPressureBC3D : testing::Test
     UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<3> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<3> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     FieldMHD<3>& rhoField{*(&rhoGrid)};
     FieldMHD<3>& PField{*(&PGrid)};
@@ -804,23 +876,30 @@ struct DirichletPressureBC3D : testing::Test
 
 TEST_F(DirichletPressureBC3D, DirichletPressureGhostEtotMatchesExpected)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
-    auto P_bc
-        = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>(P_fixed);
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
-    auto B_bc = std::make_shared<
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto P_bc = std::make_shared<
+        FieldDirichletBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>(P_fixed);
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto B_bc = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
+        VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     for (auto const& idx : fp3DXLowerNonCornerGhostBox())
         EXPECT_NEAR(EtotField(idx), etot_ghost, 1e-12)
@@ -844,23 +923,30 @@ TEST_F(DirichletPressureBC3D, DirichletPressureGhostEtotMatchesExpected)
 
 TEST_F(DirichletPressureBC3D, InteriorEtotUnchangedAfterBC)
 {
-    auto rho_bc = std::make_shared<FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>();
-    auto P_bc
-        = std::make_shared<FieldDirichletBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D>>(P_fixed);
-    auto rhoV_bc
-        = std::make_shared<FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
-    auto B_bc = std::make_shared<
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D>>();
+    auto rho_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto P_bc = std::make_shared<
+        FieldDirichletBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>(P_fixed);
+    auto rhoV_bc = std::make_shared<
+        FieldNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
+    auto B_bc = std::make_shared<FieldDivergenceFreeTransverseNeumannBoundaryCondition<
+        VecFieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>>>();
 
-    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D> bc{
+    FieldTotalEnergyFromPressureBoundaryCondition<FieldMHD<3>, GridLayoutMHD3D, MHDBCState<3>> bc{
         rho_bc, rhoV_bc, B_bc, P_bc, gamma};
 
-    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout, makeCtx(acc, 0.0));
-    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout, makeCtx(acc, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XLower, mhd3DXLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::XUpper, mhd3DXUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YLower, mhd3DYLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::YUpper, mhd3DYUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZLower, mhd3DZLowerGhostBox(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(EtotField, BoundaryLocation::ZUpper, mhd3DZUpperGhostBox(), layout,
+             makeCtx(bcState, 0.0));
 
     auto etotQty       = MHDQuantity::Scalar::Etot;
     std::uint32_t ps_x = layout.physicalStartIndex(etotQty, Direction::X);

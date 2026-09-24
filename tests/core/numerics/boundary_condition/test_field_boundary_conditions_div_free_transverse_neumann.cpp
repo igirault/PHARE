@@ -19,7 +19,7 @@ struct DivFreeTransverseNeumannBC2D : testing::Test
     UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<2> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     DivFreeTransverseNeumannBC2D()
     {
@@ -72,8 +72,10 @@ struct DivFreeTransverseNeumannBC2D : testing::Test
     void applyAndCheck(BoundaryLocation loc, Box<std::uint32_t, 2> const& ghostBox)
     {
         auto B = Bvec.super();
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D> bc;
-        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D,
+                                                              MHDBCState<2>>
+            bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(bcState));
 
         checkTransverseMirrored(loc, ghostBox);
         checkGhostCellsDivergenceFree(loc, ghostBox);
@@ -113,7 +115,7 @@ struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
     UsableVecFieldMHD<2> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<2> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<2> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<2> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     DivFreeTransverseNeumannBC2DAnisotropic()
     {
@@ -131,8 +133,10 @@ struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
     void applyAndCheckSpaced(BoundaryLocation loc, Box<std::uint32_t, 2> const& ghostBox)
     {
         auto B = Bvec.super();
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D> bc;
-        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<2>, GridLayoutMHD2D,
+                                                              MHDBCState<2>>
+            bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(bcState));
 
         auto& Bx        = Bvec[0];
         auto& By        = Bvec[1];
@@ -174,7 +178,7 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
     UsableVecFieldMHD<3> rhoV{"rhoV", layout, MHDQuantity::Vector::rhoV};
     UsableVecFieldMHD<3> Bvec{"B", layout, MHDQuantity::Vector::B};
 
-    MHDPatchFieldAccessorTest<3> acc{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
+    MHDBCTestState<3> bcState{rhoGrid, PGrid, EtotGrid, rhoV, Bvec};
 
     DivFreeTransverseNeumannBC3D()
     {
@@ -198,8 +202,10 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
         std::size_t const iNormal = static_cast<std::size_t>(direction);
 
         auto B = Bvec.super();
-        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D> bc;
-        bc.apply(B, loc, ghostBox, layout, makeCtx(acc));
+        FieldDivergenceFreeTransverseNeumannBoundaryCondition<VecFieldMHD<3>, GridLayoutMHD3D,
+                                                              MHDBCState<3>>
+            bc;
+        bc.apply(B, loc, ghostBox, layout, makeCtx(bcState));
 
         for (std::size_t comp = 0; comp < 3; ++comp)
         {

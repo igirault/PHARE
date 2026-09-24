@@ -21,12 +21,12 @@ namespace PHARE::core
  * @tparam GridLayoutT Grid layout configuration.
  *
  */
-template<typename ScalarOrTensorFieldT, typename GridLayoutT>
+template<typename ScalarOrTensorFieldT, typename GridLayoutT, typename StateT>
 class FieldDirichletBoundaryCondition
-    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>
+    : public IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>
 {
 public:
-    using Super                = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT>;
+    using Super                = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>;
     using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type           = Super::field_type;
     using value_type           = field_type::value_type;

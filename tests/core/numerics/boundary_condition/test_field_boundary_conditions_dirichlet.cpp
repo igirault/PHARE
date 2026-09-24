@@ -9,8 +9,8 @@ using namespace PHARE::core;
 TEST_F(FieldBC1D, DirichletSetsLowerGhostByLinearExtrapolation)
 {
     double const value = 3.0;
-    FieldDirichletBoundaryCondition<Field1D, GridLayout1D> bc{value};
-    bc.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(acc, 0.0));
+    FieldDirichletBoundaryCondition<Field1D, GridLayout1D, HybridBCState> bc{value};
+    bc.apply(field, BoundaryLocation::XLower, lowerGhostCellBox(), layout, makeCtx(bcState, 0.0));
 
     double expected = 2.0 * value - interiorValue;
     for (std::uint32_t g = 0; g < ghostWidth; ++g)
@@ -20,8 +20,8 @@ TEST_F(FieldBC1D, DirichletSetsLowerGhostByLinearExtrapolation)
 TEST_F(FieldBC1D, DirichletSetsUpperGhostByLinearExtrapolation)
 {
     double const value = 3.0;
-    FieldDirichletBoundaryCondition<Field1D, GridLayout1D> bc{value};
-    bc.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(acc, 0.0));
+    FieldDirichletBoundaryCondition<Field1D, GridLayout1D, HybridBCState> bc{value};
+    bc.apply(field, BoundaryLocation::XUpper, upperGhostCellBox(), layout, makeCtx(bcState, 0.0));
 
     double expected       = 2.0 * value - interiorValue;
     std::uint32_t allocSz = grid.shape()[0];
@@ -34,9 +34,11 @@ TEST_F(FieldBC2D, DirichletAtXBoundaries)
 {
     double const value    = 3.0;
     double const expected = 2.0 * value - interiorValue;
-    FieldDirichletBoundaryCondition<Field2D, GridLayout2D> bc{value};
-    bc.apply(field, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
-    bc.apply(field, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    FieldDirichletBoundaryCondition<Field2D, GridLayout2D, HybridBCState> bc{value};
+    bc.apply(field, BoundaryLocation::XLower, xLowerGhostCellBox2D(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(field, BoundaryLocation::XUpper, xUpperGhostCellBox2D(), layout,
+             makeCtx(bcState, 0.0));
 
     std::uint32_t const allocX = grid.shape()[0];
     std::uint32_t sy           = layout.physicalStartIndex(qty, Direction::Y);
@@ -53,9 +55,11 @@ TEST_F(FieldBC2D, DirichletAtYBoundaries)
 {
     double const value    = 3.0;
     double const expected = 2.0 * value - interiorValue;
-    FieldDirichletBoundaryCondition<Field2D, GridLayout2D> bc{value};
-    bc.apply(field, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout, makeCtx(acc, 0.0));
-    bc.apply(field, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout, makeCtx(acc, 0.0));
+    FieldDirichletBoundaryCondition<Field2D, GridLayout2D, HybridBCState> bc{value};
+    bc.apply(field, BoundaryLocation::YLower, yLowerGhostCellBox2D(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(field, BoundaryLocation::YUpper, yUpperGhostCellBox2D(), layout,
+             makeCtx(bcState, 0.0));
 
     std::uint32_t const allocY = grid.shape()[1];
     std::uint32_t sx           = layout.physicalStartIndex(qty, Direction::X);
@@ -73,9 +77,11 @@ TEST_F(FieldBC3D, DirichletAtZBoundaries)
 {
     double const value    = 3.0;
     double const expected = 2.0 * value - interiorValue;
-    FieldDirichletBoundaryCondition<Field3D, GridLayout3D> bc{value};
-    bc.apply(field, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout, makeCtx(acc, 0.0));
-    bc.apply(field, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout, makeCtx(acc, 0.0));
+    FieldDirichletBoundaryCondition<Field3D, GridLayout3D, HybridBCState> bc{value};
+    bc.apply(field, BoundaryLocation::ZLower, zLowerGhostCellBox3D(), layout,
+             makeCtx(bcState, 0.0));
+    bc.apply(field, BoundaryLocation::ZUpper, zUpperGhostCellBox3D(), layout,
+             makeCtx(bcState, 0.0));
 
     std::uint32_t const allocZ = grid.shape()[2];
     std::uint32_t sx           = layout.physicalStartIndex(qty, Direction::X);
