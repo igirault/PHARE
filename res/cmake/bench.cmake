@@ -52,6 +52,7 @@ if (bench)
   add_subdirectory(tools/bench/amr/data/particles)
   add_subdirectory(tools/bench/core/numerics/ion_updater)
   add_subdirectory(tools/bench/core/numerics/interpolator)
+  add_subdirectory(tools/bench/initializer)
 
   add_subdirectory(tools/bench/hi5)
 
