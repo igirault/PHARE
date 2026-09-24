@@ -29,10 +29,9 @@ public:
 
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
-    ExternalFieldUpdaterZero()
-        : Super(false) {};
-
     virtual ~ExternalFieldUpdaterZero() = default;
+
+    NO_DISCARD bool isTimeDependent() const final { return false; }
 
     void virtual operator()(external_field_type& externalField, GridLayoutT const& layout,
                             double time) final

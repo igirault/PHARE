@@ -39,8 +39,7 @@ public:
 
     static constexpr std::size_t dimension = Super::dimension;
 
-    ExternalFieldUpdaterBuiltin()
-        : Super{isTimeDependent_()} {};
+    NO_DISCARD bool isTimeDependent() const final { return isTimeDependent_(); }
 
     void computePotential(vecfield_type& a0, double time, GridLayoutT const& layout) final
     {
