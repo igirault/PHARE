@@ -25,9 +25,8 @@ using field_type             = types::Field_t;
 using grid_layout_type       = types::GridLayout_t;
 using physical_quantity_type = MHDQuantity;
 using state_type             = MHDState<types::VecField_t>;
-using boundary_type = Boundary<physical_quantity_type, field_type, grid_layout_type, state_type>;
-using boundary_manager_type
-    = BoundaryManager<physical_quantity_type, field_type, grid_layout_type, state_type>;
+using boundary_type          = Boundary<grid_layout_type, state_type>;
+using boundary_manager_type  = BoundaryManager<grid_layout_type, state_type>;
 
 boundary_manager_type createBoundaryManager()
 {

@@ -111,6 +111,7 @@ namespace core
 
         using This     = GridLayout<options>;
         using implT    = Options::GridLayoutImpl;
+        using Quantity = FieldOptions::Quantity;
         using AMRBox_t = Box<int, dimension>;
 
         /**

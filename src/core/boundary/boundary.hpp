@@ -21,21 +21,21 @@ namespace PHARE::core
  * condition applied to a physical quantity is controled by the @cBoundaryFactory following the
  * desired @c BoundaryType.
  *
- * @tparam PhysicalQuantityT The model category of physical quantities (MHDQuantity or
- * HybridQuantity).
- * @tparam FieldT The type for scalar fields.
  * @tparam GridLayoutT The type for the grid layout.
  */
-template<typename PhysicalQuantityT, IsField FieldT, typename GridLayoutT, typename StateT>
+template<typename GridLayoutT, typename StateT>
 class Boundary
 {
 public:
-    using This                 = Boundary<PhysicalQuantityT, FieldT, GridLayoutT, StateT>;
-    using scalar_quantity_type = FieldT::physical_quantity_type;
-    static_assert(std::same_as<scalar_quantity_type, typename PhysicalQuantityT::Scalar>);
-    using vector_quantity_type        = PhysicalQuantityT::Vector;
-    using vector_field_type           = VecField<FieldT, PhysicalQuantityT>;
-    using scalar_field_condition_type = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+    using physical_quantity_type = GridLayoutT::Quantity;
+    using field_type             = StateT::field_type;
+    static_assert(IsField<field_type>);
+    using This                 = Boundary<GridLayoutT, StateT>;
+    using scalar_quantity_type = field_type::physical_quantity_type;
+    static_assert(std::same_as<scalar_quantity_type, typename physical_quantity_type::Scalar>);
+    using vector_quantity_type        = physical_quantity_type::Vector;
+    using vector_field_type           = VecField<field_type, physical_quantity_type>;
+    using scalar_field_condition_type = IFieldBoundaryCondition<field_type, GridLayoutT, StateT>;
     using vector_field_condition_type
         = IFieldBoundaryCondition<vector_field_type, GridLayoutT, StateT>;
 
@@ -52,7 +52,7 @@ public:
      * @brief Retrieve the registered field boundary condition corresponding to a physical quantity.
      *
      * @tparam TensorPhysicalQuantityT Type of the physical quantity, expected to be either @c
-     * PhysicalQuantity::Scalar, or @c PhysicalQuantityT::Vector.
+     * PhysicalQuantity::Scalar, or @c physical_quantity_type::Vector.
      *
      * @param quantity The physical quantity whose field boundary condition is wanted
      * @return A shared pointer to the boundary condition if a one has been previously registered
@@ -61,13 +61,14 @@ public:
     template<typename TensorPhysicalQuantityT>
     auto getFieldCondition(TensorPhysicalQuantityT quantity) const
     {
-        if constexpr (std::same_as<TensorPhysicalQuantityT, typename PhysicalQuantityT::Scalar>)
+        if constexpr (std::same_as<TensorPhysicalQuantityT,
+                                   typename physical_quantity_type::Scalar>)
         {
             auto it = scalar_field_conditions_.find(quantity);
             return (it != scalar_field_conditions_.end()) ? it->second : nullptr;
         }
         else if constexpr (std::same_as<TensorPhysicalQuantityT,
-                                        typename PhysicalQuantityT::Vector>)
+                                        typename physical_quantity_type::Vector>)
         {
             auto it = vector_field_conditions_.find(quantity);
             return (it != vector_field_conditions_.end()) ? it->second : nullptr;
@@ -85,7 +86,7 @@ public:
      * @tparam type The corresponding value of the @c BoundaryType enum corresponding to the desired
      * boundary type.
      * @tparam TensorPhysicalQuantityT Type of the physical quantity, expected to be either @c
-     * PhysicalQuantity::Scalar, or @c PhysicalQuantityT::Vector.
+     * PhysicalQuantity::Scalar, or @c physical_quantity_type::Vector.
      * @tparam Args Types of the arguments for the FieldConditionT constructor.
      *
      * @param quantity The physical quantity (scalar or vector) to which the field condition should
@@ -99,7 +100,7 @@ public:
         if constexpr (std::same_as<TensorPhysicalQuantityT, scalar_quantity_type>)
         {
             scalar_field_conditions_[quantity]
-                = FieldBoundaryConditionFactory::create<type, FieldT, GridLayoutT, StateT>(
+                = FieldBoundaryConditionFactory::create<type, field_type, GridLayoutT, StateT>(
                     std::forward<Args>(args)...);
         }
         else if constexpr (std::same_as<TensorPhysicalQuantityT, vector_quantity_type>)

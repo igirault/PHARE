@@ -45,8 +45,7 @@ public:
     using particle_array_type    = Ions::particle_array_type;
     using resources_manager_type = amr::ResourcesManager<gridlayout_type, grid_type>;
     using state_type             = core::HybridState<Electromag, Ions, Electrons>;
-    using boundary_manager_type
-        = core::BoundaryManager<core::HybridQuantity, field_type, gridlayout_type, state_type>;
+    using boundary_manager_type  = core::BoundaryManager<gridlayout_type, state_type>;
     using ParticleInitializerFactory
         = core::ParticleInitializerFactory<particle_array_type, gridlayout_type>;
 

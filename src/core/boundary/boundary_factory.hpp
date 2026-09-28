@@ -36,19 +36,19 @@ concept HasInflowQuantities = requires {
  * an Inflow condition for instance), and create the right boundary conditions associated to each
  * physical quantity that requires one.
  *
- * @tparam PhysicalQuantityT The model category of physical quantities (MHDQuantity or
- * HybridQuantity).
- * @tparam FieldT The type for scalar fields.
  * @tparam GridLayoutT The type for the grid layout.
  */
-template<typename PhysicalQuantityT, IsField FieldT, typename GridLayoutT, typename StateT>
+template<typename GridLayoutT, typename StateT>
 class BoundaryFactory
 {
 public:
-    using boundary_type             = Boundary<PhysicalQuantityT, FieldT, GridLayoutT, StateT>;
+    using physical_quantity_type = GridLayoutT::Quantity;
+    using field_type             = StateT::field_type;
+    static_assert(IsField<field_type>);
+    using boundary_type             = Boundary<GridLayoutT, StateT>;
     using boundary_ptr_type         = std::unique_ptr<boundary_type>;
-    using scalar_quantity_list_type = std::vector<typename PhysicalQuantityT::Scalar>;
-    using vector_quantity_list_type = std::vector<typename PhysicalQuantityT::Vector>;
+    using scalar_quantity_list_type = std::vector<typename physical_quantity_type::Scalar>;
+    using vector_quantity_list_type = std::vector<typename physical_quantity_type::Vector>;
 
     static constexpr std::size_t dimension = GridLayoutT::dimension;
 
@@ -90,7 +90,7 @@ public:
                 register_reflective_conditions_(boundary, quantities);
                 break;
             case BoundaryType::SuperMagnetofastInflow:
-                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                if constexpr (HasInflowQuantities<physical_quantity_type>)
                     register_inflow_conditions_(boundary, data, quantities, gamma);
                 else
                     throw std::runtime_error(
@@ -98,7 +98,7 @@ public:
                         "model.");
                 break;
             case BoundaryType::Open:
-                if constexpr (HasInflowQuantities<PhysicalQuantityT>)
+                if constexpr (HasInflowQuantities<physical_quantity_type>)
                     register_open_conditions_(boundary, quantities, gamma);
                 else
                     throw std::runtime_error(
@@ -143,18 +143,18 @@ private:
         {
             switch (quantity)
             {
-                case (PhysicalQuantityT::Vector::B):
+                case (physical_quantity_type::Vector::B):
                     // Fill outside-domain B ghosts with a divergence-free transverse Neumann
                     // extrapolation of the interior field (Faraday runs on the interior box only,
                     // so the ghost B must be provided by this condition rather than CT).
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
                     break;
-                case (PhysicalQuantityT::Vector::J):
+                case (physical_quantity_type::Vector::J):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::AntiSymmetric>(quantity);
                     break;
-                case (PhysicalQuantityT::Vector::E):
+                case (physical_quantity_type::Vector::E):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::AntiSymmetric>(quantity);
                     break;
@@ -171,15 +171,15 @@ private:
     static void register_open_conditions_(boundary_ptr_type& boundary,
                                           _model_menu_type const& quantities, double const gamma)
     {
-        using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
-        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+        using VecFieldT    = VecField<field_type, physical_quantity_type>;
+        using ScalarBcType = IFieldBoundaryCondition<field_type, GridLayoutT, StateT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>;
 
         auto rho_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, field_type,
                                                   GridLayoutT, StateT>()};
         auto P_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, FieldT,
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, field_type,
                                                   GridLayoutT, StateT>()};
         auto rhoV_bc = std::shared_ptr<VectorBcType>{
             FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
@@ -192,10 +192,10 @@ private:
         {
             switch (quantity)
             {
-                case (PhysicalQuantityT::Scalar::rho):
+                case (physical_quantity_type::Scalar::rho):
                     boundary->registerFieldCondition(quantity, rho_bc);
                     break;
-                case (PhysicalQuantityT::Scalar::Etot):
+                case (physical_quantity_type::Scalar::Etot):
                     if (!(gamma > 1.0))
                         throw std::runtime_error(
                             "BoundaryFactory: a heat capacity ratio > 1 is required for Open "
@@ -214,13 +214,13 @@ private:
         {
             switch (quantity)
             {
-                case (PhysicalQuantityT::Vector::rhoV):
+                case (physical_quantity_type::Vector::rhoV):
                     boundary->registerFieldCondition(quantity, rhoV_bc);
                     break;
-                case (PhysicalQuantityT::Vector::B):
+                case (physical_quantity_type::Vector::B):
                     boundary->registerFieldCondition(quantity, B_bc);
                     break;
-                case (PhysicalQuantityT::Vector::E):
+                case (physical_quantity_type::Vector::E):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
                         quantity);
                     break;
@@ -240,7 +240,7 @@ private:
     static void register_inflow_conditions_(boundary_ptr_type& boundary,
                                             initializer::PHAREDict const& data,
                                             _model_menu_type const& quantities, double const gamma)
-        requires HasInflowQuantities<PhysicalQuantityT>
+        requires HasInflowQuantities<physical_quantity_type>
     {
         if (!(gamma > 1.0))
             throw std::runtime_error("BoundaryFactory: a heat capacity ratio > 1 is required for "
@@ -251,19 +251,19 @@ private:
             throw std::runtime_error(
                 "BoundaryFactory: SuperMagnetofastInflow requires the magnetic field 'B'.");
 
-        using VecFieldT    = VecField<FieldT, PhysicalQuantityT>;
-        using ScalarBcType = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+        using VecFieldT    = VecField<field_type, physical_quantity_type>;
+        using ScalarBcType = IFieldBoundaryCondition<field_type, GridLayoutT, StateT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>;
 
 
         auto const pressure = data["pressure"].template to<double>();
         auto P_bc           = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, field_type,
                                                   GridLayoutT, StateT>(pressure)};
 
         double const rho = data["density"].template to<double>();
         auto rho_bc      = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, FieldT,
+            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, field_type,
                                                   GridLayoutT, StateT>(rho)};
 
         auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
@@ -280,10 +280,10 @@ private:
         {
             switch (quantity)
             {
-                case (PhysicalQuantityT::Scalar::rho):
+                case (physical_quantity_type::Scalar::rho):
                     boundary->registerFieldCondition(quantity, rho_bc);
                     break;
-                case (PhysicalQuantityT::Scalar::Etot):
+                case (physical_quantity_type::Scalar::Etot):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::TotalEnergyFromPressure>(
                         quantity, rho_bc, rhoV_bc, B_bc, P_bc, gamma);
@@ -299,13 +299,13 @@ private:
         {
             switch (quantity)
             {
-                case (PhysicalQuantityT::Vector::rhoV):
+                case (physical_quantity_type::Vector::rhoV):
                     boundary->registerFieldCondition(quantity, rhoV_bc);
                     break;
-                case (PhysicalQuantityT::Vector::B):
+                case (physical_quantity_type::Vector::B):
                     boundary->registerFieldCondition(quantity, B_bc);
                     break;
-                case (PhysicalQuantityT::Vector::E):
+                case (physical_quantity_type::Vector::E):
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
                         quantity);
                     break;

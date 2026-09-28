@@ -29,6 +29,9 @@ namespace core
         using VecField = typename Electromag::vecfield_type;
 
     public:
+        using vecfield_type = Electromag::vecfield_type;
+        using field_type    = vecfield_type::field_type;
+
         static constexpr auto dimension = Ions::dimension;
 
         HybridState(PHARE::initializer::PHAREDict const& dict)

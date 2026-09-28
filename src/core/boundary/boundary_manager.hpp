@@ -62,23 +62,22 @@ inline void validatePhysicalBoundariesDeclared(initializer::PHAREDict const& gri
  * Store and provide access to boundary condition objects for both
  * scalar and vector fields based on the boundary location and physical quantity.
  *
- * @tparam PhysicalQuantityT Type defining scalar and vector quantities (MHDQuantity or
- * HybridQuantity).
- * @tparam FieldT The scalar field type.
  * @tparam GridLayoutT The grid layout type.
  */
-template<typename PhysicalQuantityT, IsField FieldT, typename GridLayoutT, typename StateT>
+template<typename GridLayoutT, typename StateT>
 class BoundaryManager
 {
 public:
-    using boundary_type          = Boundary<PhysicalQuantityT, FieldT, GridLayoutT, StateT>;
-    using boundary_factory_type  = BoundaryFactory<PhysicalQuantityT, FieldT, GridLayoutT, StateT>;
-    using physical_quantity_type = PhysicalQuantityT;
-    using state_type             = StateT;
-    using scalar_quantity_type   = FieldT::physical_quantity_type;
+    using physical_quantity_type = GridLayoutT::Quantity;
+    using field_type             = StateT::field_type;
+    static_assert(IsField<field_type>);
+    using boundary_type         = Boundary<GridLayoutT, StateT>;
+    using boundary_factory_type = BoundaryFactory<GridLayoutT, StateT>;
+    using state_type            = StateT;
+    using scalar_quantity_type  = field_type::physical_quantity_type;
     static_assert(std::same_as<scalar_quantity_type, typename physical_quantity_type::Scalar>);
-    using vector_field_type     = VecField<FieldT, PhysicalQuantityT>;
-    using scalar_condition_type = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
+    using vector_field_type     = VecField<field_type, physical_quantity_type>;
+    using scalar_condition_type = IFieldBoundaryCondition<field_type, GridLayoutT, StateT>;
     using vector_condition_type = IFieldBoundaryCondition<vector_field_type, GridLayoutT, StateT>;
 
     /** @brief Describes how the master boundary is chosen at corner and edges */
@@ -97,8 +96,8 @@ public:
      * @param gamma Heat capacity ratio, required by the dependent boundary conditions
      */
     BoundaryManager(PHARE::initializer::PHAREDict const& dict,
-                    std::vector<typename PhysicalQuantityT::Scalar> const& scalarQuantities,
-                    std::vector<typename PhysicalQuantityT::Vector> const& vectorQuantities,
+                    std::vector<typename physical_quantity_type::Scalar> const& scalarQuantities,
+                    std::vector<typename physical_quantity_type::Vector> const& vectorQuantities,
                     double const gamma            = 0.0,
                     PriorityPolicy priorityPolicy = PriorityPolicy::ByDirection)
 

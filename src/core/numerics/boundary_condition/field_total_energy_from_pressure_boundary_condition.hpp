@@ -32,7 +32,7 @@ class FieldTotalEnergyFromPressureBoundaryCondition
 public:
     using Super                  = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
     using field_type             = Super::field_type;
-    using physical_quantity_type = typename decltype(GridLayoutT::options.field_options)::Quantity;
+    using physical_quantity_type = GridLayoutT::Quantity;
     using scalar_quantity_type   = typename physical_quantity_type::Scalar;
     using vector_quantity_type   = typename physical_quantity_type::Vector;
     using vectorfield_type       = VecField<FieldT, physical_quantity_type>;
