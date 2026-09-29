@@ -32,7 +32,7 @@ set( SOURCES_INC
      boundary/boundary_manager.hpp
      numerics/boundary_condition/boundary_condition.hpp
      numerics/boundary_condition/field_boundary_condition.hpp
-     numerics/boundary_condition/field_boundary_condition_factory.hpp
+     numerics/boundary_condition/field_boundary_condition_resolver.hpp
      numerics/boundary_condition/field_none_boundary_condition.hpp
      numerics/boundary_condition/field_neumann_boundary_condition.hpp
      numerics/boundary_condition/field_dirichlet_boundary_condition.hpp

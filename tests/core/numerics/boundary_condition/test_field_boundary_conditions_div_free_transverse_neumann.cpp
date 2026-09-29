@@ -11,7 +11,8 @@ struct DivFreeTransverseNeumannBC2D : testing::Test
 {
     GridLayoutMHD2D layout{{0.1, 0.1}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
 
-    GridMHD2D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD2D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho,
+                      layout.allocSize(MHDQuantity::Scalar::rho)};
     GridMHD2D PGrid{"bc_test_P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
     GridMHD2D EtotGrid{"bc_test_Etot", MHDQuantity::Scalar::Etot,
                        layout.allocSize(MHDQuantity::Scalar::Etot)};
@@ -63,7 +64,7 @@ struct DivFreeTransverseNeumannBC2D : testing::Test
         for (auto const& cell : ghostBox)
         {
             double const div
-                = (Bx(cell.neighbor(0, 1)) - Bx(cell)) + (By(cell.neighbor(1, 1)) - By(cell));
+                = (Bx(cell.shift(0, 1)) - Bx(cell)) + (By(cell.shift(1, 1)) - By(cell));
             EXPECT_NEAR(div, 0.0, 1e-12)
                 << "cell=(" << cell[0] << "," << cell[1] << ") at " << static_cast<int>(loc);
         }
@@ -107,7 +108,8 @@ struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
 {
     GridLayoutMHD2D layout{{0.1, 0.2}, {nCellsMHDX2D, nCellsMHDY2D}, {0.0, 0.0}};
 
-    GridMHD2D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD2D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho,
+                      layout.allocSize(MHDQuantity::Scalar::rho)};
     GridMHD2D PGrid{"bc_test_P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
     GridMHD2D EtotGrid{"bc_test_Etot", MHDQuantity::Scalar::Etot,
                        layout.allocSize(MHDQuantity::Scalar::Etot)};
@@ -144,8 +146,8 @@ struct DivFreeTransverseNeumannBC2DAnisotropic : testing::Test
         double const dy = layout.meshSize()[1];
         for (auto const& cell : ghostBox)
         {
-            double const div = (Bx(cell.neighbor(0, 1)) - Bx(cell)) / dx
-                               + (By(cell.neighbor(1, 1)) - By(cell)) / dy;
+            double const div
+                = (Bx(cell.shift(0, 1)) - Bx(cell)) / dx + (By(cell.shift(1, 1)) - By(cell)) / dy;
             EXPECT_NEAR(div, 0.0, 1e-12)
                 << "cell=(" << cell[0] << "," << cell[1] << ") at " << static_cast<int>(loc);
         }
@@ -170,7 +172,8 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
     GridLayoutMHD3D layout{
         {0.1, 0.1, 0.1}, {nCellsMHDX3D, nCellsMHDY3D, nCellsMHDZ3D}, {0.0, 0.0, 0.0}};
 
-    GridMHD3D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho, layout.allocSize(MHDQuantity::Scalar::rho)};
+    GridMHD3D rhoGrid{"bc_test_rho", MHDQuantity::Scalar::rho,
+                      layout.allocSize(MHDQuantity::Scalar::rho)};
     GridMHD3D PGrid{"bc_test_P", MHDQuantity::Scalar::P, layout.allocSize(MHDQuantity::Scalar::P)};
     GridMHD3D EtotGrid{"bc_test_Etot", MHDQuantity::Scalar::Etot,
                        layout.allocSize(MHDQuantity::Scalar::Etot)};
@@ -229,9 +232,9 @@ struct DivFreeTransverseNeumannBC3D : testing::Test
         double const dz = layout.meshSize()[2];
         for (auto const& cell : ghostBox)
         {
-            double const div = (Bx(cell.neighbor(0, 1)) - Bx(cell)) / dx
-                               + (By(cell.neighbor(1, 1)) - By(cell)) / dy
-                               + (Bz(cell.neighbor(2, 1)) - Bz(cell)) / dz;
+            double const div = (Bx(cell.shift(0, 1)) - Bx(cell)) / dx
+                               + (By(cell.shift(1, 1)) - By(cell)) / dy
+                               + (Bz(cell.shift(2, 1)) - Bz(cell)) / dz;
             EXPECT_NEAR(div, 0.0, 1e-12) << "at " << static_cast<int>(loc);
         }
     }

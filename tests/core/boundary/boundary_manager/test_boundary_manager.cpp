@@ -12,7 +12,7 @@
 
 using namespace PHARE::core;
 
-constexpr size_t dimension = 3;
+constexpr std::size_t dimension = 3;
 constexpr PHARE::SimOpts opts{.dimension           = dimension,
                               .interp_order        = 1,
                               .reconstruction_type = PHARE::MHDOpts::ReconstructionType::Constant,
@@ -49,7 +49,7 @@ TEST(BoundaryManager, hasPriorityPolicyByDirection)
     auto bm = createBoundaryManager();
     bm.setPriorityPolicy(boundary_manager_type::PriorityPolicy::ByDirection);
 
-    for (size_t i = 0; i < NUM_3D_EDGES; ++i)
+    for (std::size_t i = 0; i < NUM_3D_EDGES; ++i)
     {
         auto codim2loc            = static_cast<Codim2BoundaryLocation>(i);
         BoundaryLocation actual   = bm.getMasterBoundaryLocation(codim2loc);
@@ -57,11 +57,11 @@ TEST(BoundaryManager, hasPriorityPolicyByDirection)
         EXPECT_EQ(actual, expected);
     }
 
-    for (size_t i = 0; i < NUM_3D_NODES; ++i)
+    for (std::size_t i = 0; i < NUM_3D_NODES; ++i)
     {
-        auto codim3loc            = static_cast<Codim2BoundaryLocation>(i);
+        auto codim3loc            = static_cast<Codim3BoundaryLocation>(i);
         BoundaryLocation actual   = bm.getMasterBoundaryLocation(codim3loc);
-        BoundaryLocation expected = getAdjacentBoundaryLocations(codim3loc)[1];
+        BoundaryLocation expected = getAdjacentBoundaryLocations(codim3loc)[2];
         EXPECT_EQ(actual, expected);
     }
 }
@@ -71,7 +71,7 @@ TEST(BoundaryManager, hasPriorityPolicyByBoundaryTypes)
     auto bm = createBoundaryManager();
     bm.setPriorityPolicy(boundary_manager_type::PriorityPolicy::ByBoundaryType);
 
-    for (size_t i = 0; i < NUM_3D_EDGES; ++i)
+    for (std::size_t i = 0; i < NUM_3D_EDGES; ++i)
     {
         auto codim2loc                = static_cast<Codim2BoundaryLocation>(i);
         BoundaryLocation masterLoc    = bm.getMasterBoundaryLocation(codim2loc);
@@ -84,9 +84,9 @@ TEST(BoundaryManager, hasPriorityPolicyByBoundaryTypes)
         }
     }
 
-    for (size_t i = 0; i < NUM_3D_NODES; ++i)
+    for (std::size_t i = 0; i < NUM_3D_NODES; ++i)
     {
-        auto codim3loc                = static_cast<Codim2BoundaryLocation>(i);
+        auto codim3loc                = static_cast<Codim3BoundaryLocation>(i);
         BoundaryLocation masterLoc    = bm.getMasterBoundaryLocation(codim3loc);
         boundary_type& masterBoundary = *(bm.getBoundary(masterLoc));
         std::array adjacentLocations  = getAdjacentBoundaryLocations(codim3loc);
@@ -98,7 +98,7 @@ TEST(BoundaryManager, hasPriorityPolicyByBoundaryTypes)
     }
 }
 
-// --- validatePhysicalBoundariesDeclared (F09) ---------------------------------------------------
+// --- validatePhysicalBoundariesDeclared ---------------------------------------------------
 
 namespace
 {

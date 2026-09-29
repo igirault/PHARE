@@ -48,10 +48,10 @@ void applyDivergenceFreeNormalComponent(FieldTuple& fields, std::size_t const iN
 
             double transverseDiv = 0.0;
             for_N<dimension>([&](auto iTransverse) {
-                if (static_cast<size_t>(iTransverse) != iNormal)
+                if (static_cast<std::size_t>(iTransverse) != iNormal)
                 {
                     field_type& tField       = std::get<iTransverse>(fields);
-                    _index const upper_index = index.neighbor(iTransverse, 1);
+                    _index const upper_index = index.shift(iTransverse, 1);
                     double const invDxT      = gridLayout.inverseMeshSize(
                         static_cast<Direction>(static_cast<std::uint32_t>(iTransverse)));
                     transverseDiv += (tField(upper_index) - tField(index)) * invDxT;
@@ -61,14 +61,14 @@ void applyDivergenceFreeNormalComponent(FieldTuple& fields, std::size_t const iN
             double const dxN = gridLayout.meshSize()[iNormal];
             if (side == Side::Upper)
             {
-                _index const index_to_set      = index.neighbor(iNormal, 1);
+                _index const index_to_set      = index.shift(iNormal, 1);
                 _index const index_already_set = index;
                 nField(index_to_set)           = nField(index_already_set) - dxN * transverseDiv;
             }
             else
             {
                 _index const index_to_set      = index;
-                _index const index_already_set = index.neighbor(iNormal, 1);
+                _index const index_already_set = index.shift(iNormal, 1);
                 nField(index_to_set)           = nField(index_already_set) + dxN * transverseDiv;
             }
         }

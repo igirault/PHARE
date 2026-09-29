@@ -28,9 +28,9 @@ public:
     using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type           = Super::field_type;
 
-    static constexpr size_t dimension = Super::dimension;
-    static constexpr size_t N         = Super::N;
-    static constexpr bool is_scalar   = Super::is_scalar;
+    static constexpr std::size_t dimension = Super::dimension;
+    static constexpr std::size_t N         = Super::N;
+    static constexpr bool is_scalar        = Super::is_scalar;
 
     FieldSymmetricBoundaryCondition() = default;
 
@@ -63,7 +63,7 @@ public:
             }
             else
             {
-                if (static_cast<size_t>(i) != static_cast<size_t>(direction))
+                if (static_cast<std::size_t>(i) != static_cast<std::size_t>(direction))
                     scalar_neumann_condition_.apply(field, boundaryLocation, localGhostBox,
                                                     gridLayout, ctx);
                 else

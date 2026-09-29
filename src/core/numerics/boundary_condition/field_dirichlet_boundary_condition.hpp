@@ -31,9 +31,9 @@ public:
     using field_type           = Super::field_type;
     using value_type           = field_type::value_type;
 
-    static constexpr size_t dimension = Super::dimension;
-    static constexpr size_t N         = Super::N;
-    static constexpr bool is_scalar   = Super::is_scalar;
+    static constexpr std::size_t dimension = Super::dimension;
+    static constexpr std::size_t N         = Super::N;
+    static constexpr bool is_scalar        = Super::is_scalar;
 
     FieldDirichletBoundaryCondition() = default;
 
@@ -63,33 +63,28 @@ public:
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
 
-        if (static_cast<size_t>(direction) >= dimension)
-            return;
-
         auto fields = Super::asComponentTuple(scalarOrTensorField);
 
-        size_t const iDir = static_cast<size_t>(direction);
+        std::size_t const iDir = static_cast<std::size_t>(direction);
 
         for_N<N>([&](auto i) {
             field_type& field            = std::get<i>(fields);
             QtyCentering const centering = GridLayoutT::centering(field.physicalQuantity())[iDir];
             auto fieldBox = gridLayout.toFieldBox(localGhostBox, field.physicalQuantity());
 
-            auto extrapolate = [&](_index_type const& index, value_type const v) {
-                _index_type mirrorIndex
+            auto extrapolate = [&](auto const& index, value_type const v) {
+                auto const mirrorIndex
                     = gridLayout.boundaryMirrored(direction, side, centering, index);
                 field(index)
                     = (mirrorIndex[iDir] == index[iDir]) ? v : 2.0 * v - field(mirrorIndex);
             };
 
-            for (_index_type const& index : fieldBox)
+            for (auto const& index : fieldBox)
                 extrapolate(index, value_[i]);
         });
     }
 
 private:
-    using _index_type = Point<std::uint32_t, dimension>;
-
     std::array<value_type, N> value_{0};
 
 }; // class FieldDirichletBoundaryCondition

@@ -40,8 +40,8 @@ public:
     using scalar_bc_type = IFieldBoundaryCondition<FieldT, GridLayoutT, StateT>;
     using vector_bc_type = IFieldBoundaryCondition<vectorfield_type, GridLayoutT, StateT>;
 
-    static constexpr size_t dimension = Super::dimension;
-    static constexpr size_t N         = Super::N;
+    static constexpr std::size_t dimension = Super::dimension;
+    static constexpr std::size_t N         = Super::N;
     static_assert(N == 1,
                   "FieldTotalEnergyFromPressureBoundaryCondition only applies to scalar fields.");
 
@@ -86,11 +86,8 @@ public:
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
 
-        if (static_cast<size_t>(direction) >= dimension)
-            return;
-
-        QtyCentering const centering
-            = GridLayoutT::centering(EtotField.physicalQuantity())[static_cast<size_t>(direction)];
+        QtyCentering const centering = GridLayoutT::centering(
+            EtotField.physicalQuantity())[static_cast<std::size_t>(direction)];
 
         auto& state     = *ctx.state;
         auto& rhoField  = state.rho;

@@ -31,8 +31,8 @@ public:
     using gridlayout_type     = VecFieldDataT::gridlayout_type;
     using Super               = FieldRefinePatchStrategy<ResManT, VecFieldDataT, BoundaryManagerT>;
 
-    static constexpr size_t dimension = VecFieldDataT::dimension;
-    static constexpr size_t N         = VecFieldDataT::N;
+    static constexpr std::size_t dimension = VecFieldDataT::dimension;
+    static constexpr std::size_t N         = VecFieldDataT::N;
 
     using Super::data_id_;
 

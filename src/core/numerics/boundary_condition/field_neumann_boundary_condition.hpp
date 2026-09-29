@@ -30,9 +30,9 @@ public:
     using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type           = Super::field_type;
 
-    static constexpr size_t dimension = Super::dimension;
-    static constexpr size_t N         = Super::N;
-    static constexpr bool is_scalar   = Super::is_scalar;
+    static constexpr std::size_t dimension = Super::dimension;
+    static constexpr std::size_t N         = Super::N;
+    static constexpr bool is_scalar        = Super::is_scalar;
 
     FieldNeumannBoundaryCondition() = default;
 
@@ -56,15 +56,12 @@ public:
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
 
-        if (static_cast<size_t>(direction) >= dimension)
-            return;
-
         auto fields = Super::asComponentTuple(scalarOrTensorField);
 
         for_N<N>([&](auto i) {
-            field_type& field = std::get<i>(fields);
-            QtyCentering const centering
-                = GridLayoutT::centering(field.physicalQuantity())[static_cast<size_t>(direction)];
+            field_type& field            = std::get<i>(fields);
+            QtyCentering const centering = GridLayoutT::centering(
+                field.physicalQuantity())[static_cast<std::size_t>(direction)];
             auto fieldBox = gridLayout.toFieldBox(localGhostBox, field.physicalQuantity());
             for (Index const& index : fieldBox)
             {

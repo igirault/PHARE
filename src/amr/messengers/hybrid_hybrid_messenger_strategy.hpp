@@ -781,8 +781,8 @@ namespace amr
                     auto&& [id] = resourcesManager_->getIDsList(key);
 
                     auto patch_strat = std::make_shared<MagneticRefinePatchStrategy<
-                        ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>>(
-                        *resourcesManager_, *boundaryManager_);
+                        ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>>(*resourcesManager_,
+                                                                                *boundaryManager_);
 
                     patch_strat->registerIDs(id);
 
@@ -791,7 +791,7 @@ namespace amr
                 return result;
             }();
 
-            for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
+            for (std::size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             {
                 // TODO : we could test making this time refined there is probably no
                 // reason to keep it static.
@@ -1166,8 +1166,8 @@ namespace amr
         MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>
             magneticRefinePatchStrategy_{*resourcesManager_, *boundaryManager_};
 
-        std::vector<std::shared_ptr<MagneticRefinePatchStrategy<ResourcesManagerT,
-                                                                VectorFieldDataT, BoundaryManagerT>>>
+        std::vector<std::shared_ptr<
+            MagneticRefinePatchStrategy<ResourcesManagerT, VectorFieldDataT, BoundaryManagerT>>>
             magneticPatchStratPerGhostRefiner_;
     };
 

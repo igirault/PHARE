@@ -33,8 +33,8 @@ public:
     using tensor_quantity_type = Super::tensor_quantity_type;
     using field_type           = Super::field_type;
 
-    static constexpr size_t dimension = Super::dimension;
-    static constexpr size_t N         = Super::N;
+    static constexpr std::size_t dimension = Super::dimension;
+    static constexpr std::size_t N         = Super::N;
     static_assert(
         N == 3,
         "Divergence-free transverse Neumann boundary condition only applies to vector fields.");
@@ -63,10 +63,7 @@ public:
     {
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
-        size_t const iNormal      = static_cast<size_t>(direction);
-
-        if (iNormal >= dimension)
-            return;
+        std::size_t const iNormal = static_cast<std::size_t>(direction);
 
         auto fields = vecField.components();
 
@@ -74,12 +71,12 @@ public:
 
         // transverse components: zero normal gradient, B(index) = B(mirror)
         for_N<N>([&](auto iTransverse) {
-            if (static_cast<size_t>(iTransverse) != iNormal)
+            if (static_cast<std::size_t>(iTransverse) != iNormal)
             {
                 field_type& Bc = std::get<iTransverse>(fields);
 
-                QtyCentering const centering
-                    = GridLayoutT::centering(Bc.physicalQuantity())[static_cast<size_t>(direction)];
+                QtyCentering const centering = GridLayoutT::centering(
+                    Bc.physicalQuantity())[static_cast<std::size_t>(direction)];
                 auto fieldBox = gridLayout.toFieldBox(localGhostBox, Bc.physicalQuantity());
 
                 for (_index const& index : fieldBox)

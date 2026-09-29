@@ -177,7 +177,7 @@ private:
      * @param locations Array of boundary locations.
      * @return The location of the master boundary.
      */
-    template<size_t N>
+    template<std::size_t N>
     BoundaryLocation selectMasterBoundaryInArray_(std::array<BoundaryLocation, N> locations) const
     {
         switch (priority_policy_)

@@ -139,14 +139,14 @@ TEST_F(VecFieldBC2DNonUniformBy, DivergenceFreeTransverseDirichletKeepsXGhostDiv
     auto& By = B[1];
     for (auto const& index : xLowerGhostCellBox2D())
     {
-        EXPECT_NEAR(Bx(index.neighbor(0, 1)) - Bx(index) + By(index.neighbor(1, 1)) - By(index),
-                    0.0, 1e-12)
+        EXPECT_NEAR(Bx(index.shift(0, 1)) - Bx(index) + By(index.shift(1, 1)) - By(index), 0.0,
+                    1e-12)
             << "lower divergence at (" << index[0] << ", " << index[1] << ")";
     }
     for (auto const& index : xUpperGhostCellBox2D())
     {
-        EXPECT_NEAR(Bx(index.neighbor(0, 1)) - Bx(index) + By(index.neighbor(1, 1)) - By(index),
-                    0.0, 1e-12)
+        EXPECT_NEAR(Bx(index.shift(0, 1)) - Bx(index) + By(index.shift(1, 1)) - By(index), 0.0,
+                    1e-12)
             << "upper divergence at (" << index[0] << ", " << index[1] << ")";
     }
 }
@@ -165,8 +165,7 @@ TEST_F(VecFieldBC2DNonUniformByAnisotropic,
     double const dx = layout.meshSize()[0];
     double const dy = layout.meshSize()[1];
     auto divB       = [&](auto const& index) {
-        return (Bx(index.neighbor(0, 1)) - Bx(index)) / dx
-               + (By(index.neighbor(1, 1)) - By(index)) / dy;
+        return (Bx(index.shift(0, 1)) - Bx(index)) / dx + (By(index.shift(1, 1)) - By(index)) / dy;
     };
     for (auto const& index : xLowerGhostCellBox2D())
         EXPECT_NEAR(divB(index), 0.0, 1e-12)

@@ -69,10 +69,15 @@ namespace amr
             , boundaryManager_{std::move(boundaryManager)}
             , firstLevel_{firstLevel}
         {
-            // "old"-time scratch feeding the density/momentum/total-energy time refiners
+            // moment ghosts are primitive quantities
             resourcesManager_->registerResources(rhoOld_);
+            resourcesManager_->registerResources(Vold_);
+            resourcesManager_->registerResources(Pold_);
+
             resourcesManager_->registerResources(rhoVold_);
             resourcesManager_->registerResources(EtotOld_);
+
+            resourcesManager_->registerResources(Jold_); // conditionally register
 
             // also magnetic fluxes ? or should we use static refiners instead ?
         }
@@ -82,8 +87,13 @@ namespace amr
         void allocate(SAMRAI::hier::Patch& patch, double const allocateTime) const override
         {
             resourcesManager_->allocate(rhoOld_, patch, allocateTime);
+            resourcesManager_->allocate(Vold_, patch, allocateTime);
+            resourcesManager_->allocate(Pold_, patch, allocateTime);
+
             resourcesManager_->allocate(rhoVold_, patch, allocateTime);
             resourcesManager_->allocate(EtotOld_, patch, allocateTime);
+
+            resourcesManager_->allocate(Jold_, patch, allocateTime);
         }
 
 
@@ -401,16 +411,23 @@ namespace amr
             for (auto& patch : level)
             {
                 auto dataOnPatch = resourcesManager_->setOnPatch(
-                    *patch, mhdModel.state.rho, mhdModel.state.rhoV, mhdModel.state.Etot, rhoOld_,
-                    rhoVold_, EtotOld_);
+                    *patch, mhdModel.state.rho, mhdModel.state.V, mhdModel.state.P,
+                    mhdModel.state.rhoV, mhdModel.state.Etot, mhdModel.state.J, rhoOld_, Vold_,
+                    Pold_, rhoVold_, EtotOld_, Jold_);
 
                 resourcesManager_->setTime(rhoOld_, *patch, currentTime);
+                resourcesManager_->setTime(Vold_, *patch, currentTime);
+                resourcesManager_->setTime(Pold_, *patch, currentTime);
                 resourcesManager_->setTime(rhoVold_, *patch, currentTime);
                 resourcesManager_->setTime(EtotOld_, *patch, currentTime);
+                resourcesManager_->setTime(Jold_, *patch, currentTime);
 
                 rhoOld_.copyData(mhdModel.state.rho);
+                Vold_.copyData(mhdModel.state.V);
+                Pold_.copyData(mhdModel.state.P);
                 rhoVold_.copyData(mhdModel.state.rhoV);
                 EtotOld_.copyData(mhdModel.state.Etot);
+                Jold_.copyData(mhdModel.state.J);
             }
         }
 
@@ -509,7 +526,7 @@ namespace amr
             // The refiners for the electric field only serve for filling ghosts at physical
             // boundaries.
             registerGhostRefinePatchStrategies_(elecPatchStrats, info->ghostElectric);
-            for (size_t i = 0; i < info->ghostElectric.size(); ++i)
+            for (std::size_t i = 0; i < info->ghostElectric.size(); ++i)
                 elecGhostsRefiners_.addStaticRefiner(
                     info->ghostElectric[i], EfieldRefineOp_, info->ghostElectric[i],
                     nonOverwriteInteriorTFfillPattern, elecPatchStrats[i]);
@@ -522,21 +539,31 @@ namespace amr
             // each ghost refiner gets its own patch strategy so that physical-boundary
             // ghosts are filled by the registered boundary conditions during schedule fills
             registerGhostRefinePatchStrategies_(rhoPatchStrats, info->ghostDensity);
-            for (size_t i = 0; i < info->ghostDensity.size(); ++i)
+            for (std::size_t i = 0; i < info->ghostDensity.size(); ++i)
                 rhoGhostsRefiners_.addTimeRefiner(info->ghostDensity[i], info->modelDensity,
                                                   rhoOld_.name(), mhdFieldRefineOp_, fieldTimeOp_,
                                                   info->ghostDensity[i],
                                                   nonOverwriteFieldFillPattern, rhoPatchStrats[i]);
 
+
+            // velGhostsRefiners_.addTimeRefiners(info->ghostVelocity, info->modelVelocity,
+            //                                    Vold_.name(), mhdVecFieldRefineOp_,
+            //                                    vecFieldTimeOp_,
+            //                                    nonOverwriteInteriorTFfillPattern);
+            //
+            // pressureGhostsRefiners_.addTimeRefiners(info->ghostPressure, info->modelPressure,
+            //                                         Pold_.name(), mhdFieldRefineOp_,
+            //                                         fieldTimeOp_, nonOverwriteFieldFillPattern);
+
             registerGhostRefinePatchStrategies_(momentumPatchStrats, info->ghostMomentum);
-            for (size_t i = 0; i < info->ghostMomentum.size(); ++i)
+            for (std::size_t i = 0; i < info->ghostMomentum.size(); ++i)
                 momentumGhostsRefiners_.addTimeRefiner(
                     info->ghostMomentum[i], info->modelMomentum, rhoVold_.name(),
                     mhdVecFieldRefineOp_, vecFieldTimeOp_, info->ghostMomentum[i],
                     nonOverwriteInteriorTFfillPattern, momentumPatchStrats[i]);
 
             registerGhostRefinePatchStrategies_(totalEnergyPatchStrats, info->ghostTotalEnergy);
-            for (size_t i = 0; i < info->ghostTotalEnergy.size(); ++i)
+            for (std::size_t i = 0; i < info->ghostTotalEnergy.size(); ++i)
                 totalEnergyGhostsRefiners_.addTimeRefiner(
                     info->ghostTotalEnergy[i], info->modelTotalEnergy, EtotOld_.name(),
                     mhdFieldRefineOp_, fieldTimeOp_, info->ghostTotalEnergy[i],
@@ -558,7 +585,7 @@ namespace amr
             // their required ids
             registerGhostRefinePatchStrategies_(magPatchStrats, info->ghostMagnetic);
 
-            for (size_t i = 0; i < info->ghostMagnetic.size(); ++i)
+            for (std::size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             {
                 magGhostsRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], BfieldRegridOp_, info->ghostMagnetic[i],
@@ -716,8 +743,13 @@ namespace amr
 
 
         FieldT rhoOld_{stratName + "rhoOld", core::MHDQuantity::Scalar::rho};
+        VecFieldT Vold_{stratName + "Vold", core::MHDQuantity::Vector::V};
+        FieldT Pold_{stratName + "Pold", core::MHDQuantity::Scalar::P};
+
         VecFieldT rhoVold_{stratName + "rhoVold", core::MHDQuantity::Vector::rhoV};
         FieldT EtotOld_{stratName + "EtotOld", core::MHDQuantity::Scalar::Etot};
+
+        VecFieldT Jold_{stratName + "Jold", core::MHDQuantity::Vector::J};
 
 
         using rm_t = typename MHDModel::resources_manager_type;

@@ -45,9 +45,9 @@ template<typename ResMan, typename ScalarOrTensorFieldDataT, typename BoundaryMa
 class FieldRefinePatchStrategy : public SAMRAI::xfer::RefinePatchStrategy
 {
 public:
-    static constexpr bool is_scalar   = IsFieldData<ScalarOrTensorFieldDataT>;
-    static constexpr bool is_tensor   = !is_scalar;
-    static constexpr size_t dimension = ScalarOrTensorFieldDataT::dimension;
+    static constexpr bool is_scalar        = IsFieldData<ScalarOrTensorFieldDataT>;
+    static constexpr bool is_tensor        = !is_scalar;
+    static constexpr std::size_t dimension = ScalarOrTensorFieldDataT::dimension;
 
     using field_geometry_type    = FieldGeometrySelector<ScalarOrTensorFieldDataT, is_scalar>::type;
     using gridlayout_type        = ScalarOrTensorFieldDataT::gridlayout_type;
@@ -115,9 +115,13 @@ public:
                                        SAMRAI::hier::IntVector const& ghost_width_to_fill) override
     {
         // check that a patch missing some state ids is a temporary one (!patch.inHierarchy())
-        if (!std::all_of(stateIds_.begin(), stateIds_.end(),
-                         [&](int const id) { return patch.checkAllocated(id); }))
-            assert(!patch.inHierarchy() && "not all ids are allocated, but patch is in hierarchy");
+        PHARE_DEBUG_DO({
+            bool const allAllocated
+                = std::all_of(stateIds_.begin(), stateIds_.end(),
+                              [&](int const id) { return patch.checkAllocated(id); });
+            if (state_ && allAllocated && !patch.inHierarchy())
+                throw std::runtime_error("all ids are allocated, but patch is not in hierarchy");
+        })
 
         // if strategy has been set with a null state, or if `patch` is a temporary regrid
         // patch
@@ -207,12 +211,12 @@ protected:
                 auto const currentBoundaryLocation
                     = static_cast<core::CodimNBoundaryLocation<codim>>(bBox.getLocationIndex());
 
-                // get the "master" 1-codimensional boundary that applies at the currently treated
-                // boundary: for instance corner in 2D belongs to two different 1-codimensional
-                // boundaries (edges), so two boundary conditions compete there. The responsibility
-                // of choosing which boundary condition prevails there is on the boundaryManager.
-                // If the current boundary is itself 1-codimensional, then masterBoundaryLocation =
-                // currentBoundaryLocation.
+                // get the "master" 1-codimensional boundary that applies at the currently
+                // treated boundary: for instance corner in 2D belongs to two different
+                // 1-codimensional boundaries (edges), so two boundary conditions compete there.
+                // The responsibility of choosing which boundary condition prevails there is on
+                // the boundaryManager. If the current boundary is itself 1-codimensional, then
+                // masterBoundaryLocation = currentBoundaryLocation.
                 core::BoundaryLocation const masterBoundaryLocation
                     = boundaryManager_.getMasterBoundaryLocation(currentBoundaryLocation);
                 auto* const masterBoundary = boundaryManager_.getBoundary(masterBoundaryLocation);
@@ -225,34 +229,33 @@ protected:
                 if (!bc)
                     throw std::runtime_error("Field boundary condition not found.");
 
-                // if possible, apply the retained boundary condition, as if the current boundary
-                // was belonging to the 1-codimensional master boundary; this essentially defines
-                // which Cartesian direction is considered to be the normal one. Again, if the
-                // current boundary is itself 1-codimensional, the master boundary is just the
-                // current boundary.
+                // if possible, apply the retained boundary condition, as if the current
+                // boundary was belonging to the 1-codimensional master boundary; this
+                // essentially defines which Cartesian direction is considered to be the normal
+                // one. Again, if the current boundary is itself 1-codimensional, the master
+                // boundary is just the current boundary.
                 //
                 // Why are there situations where the boundary condition cannot be applied:
                 // SAMRAI can call this on temporary, single-quantity patches it builds for
                 // cross-level (coarse->fine) interpolation. This is due to current PHARE design
-                // with one refine schedule per quantity. However, PHARE's coupled field conditions
-                // need fields on the patch other than the quantity they apply to. For instance
-                // energy BC usually requires knowing rho/P/rhoV/B; those extra fields are not
-                // allocated on the interpolation temp patches dedicated to the total energy.
-                // `bc->canApply(ctx)` reports if the boundary condition is not applicable because
-                // some quantities are missing. Simple uncoupled boundary conditions will always
-                // be applicable. But for coupled ones, this might not be the case, yet
-                // the first layer of temporary-patch ghost cells at physical boundaries cannot be
-                // left as NaNs and should be assigned a meaningful value; here is a picture to help
-                // you understand why:
-                // coarse:   | c_-1 (ghost) |    c_0      |    c_1      |
+                // with one refine schedule per quantity. However, PHARE's coupled field
+                // conditions need fields on the patch other than the quantity they apply to.
+                // For instance energy BC usually requires knowing rho/P/rhoV/B; those extra
+                // fields are not allocated on the interpolation temp patches dedicated to the
+                // total energy. `bc->canApply(ctx)` reports if the boundary condition is not
+                // applicable because some quantities are missing. Simple uncoupled boundary
+                // conditions will always be applicable. But for coupled ones, this might not be
+                // the case, yet the first layer of temporary-patch ghost cells at physical
+                // boundaries cannot be left as NaNs and should be assigned a meaningful value;
+                // here is a picture to help you understand why: coarse:   | c_-1 (ghost) | c_0
+                // |    c_1      |
                 //           -dx            0            dx           2dx
                 // fine:                    | f0 | f1 | f2 | f3 |
                 //                          0  dx/2 ...
-                // During refinement of a coarse temporary patch, the fine cell f0 needs a value in
-                // c_-1 for linear refinement to be possible.
-                // In such a situation, we therefore fall back to a Neumann boundary condition, that
-                // requires no other fields than the quantity itself. Maybe a better solution exists
-                // to this.
+                // During refinement of a coarse temporary patch, the fine cell f0 needs a value
+                // in c_-1 for linear refinement to be possible. In such a situation, we
+                // therefore fall back to a Neumann boundary condition, that requires no other
+                // fields than the quantity itself. Maybe a better solution exists to this.
                 if (bc->canApply(ctx))
                 {
                     bc->apply(scalarOrTensorField, masterBoundaryLocation, localBox, gridLayout,

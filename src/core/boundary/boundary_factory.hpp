@@ -4,7 +4,7 @@
 #include "core/boundary/boundary.hpp"
 #include "core/boundary/boundary_defs.hpp"
 #include "core/data/field/field_traits.hpp"
-#include "core/numerics/boundary_condition/field_boundary_condition_factory.hpp"
+#include "core/numerics/boundary_condition/field_boundary_condition_resolver.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -175,18 +175,18 @@ private:
         using ScalarBcType = IFieldBoundaryCondition<field_type, GridLayoutT, StateT>;
         using VectorBcType = IFieldBoundaryCondition<VecFieldT, GridLayoutT, StateT>;
 
-        auto rho_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, field_type,
-                                                  GridLayoutT, StateT>()};
-        auto P_bc = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, field_type,
-                                                  GridLayoutT, StateT>()};
-        auto rhoV_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Neumann, VecFieldT,
-                                                  GridLayoutT, StateT>()};
-        auto B_bc = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
-            FieldBoundaryConditionType::DivergenceFreeTransverseNeumann, VecFieldT, GridLayoutT,
-            StateT>()};
+        std::shared_ptr<ScalarBcType> rho_bc
+            = std::make_shared<FieldBoundaryCondition<FieldBoundaryConditionType::Neumann,
+                                                      field_type, GridLayoutT, StateT>>();
+        std::shared_ptr<ScalarBcType> P_bc
+            = std::make_shared<FieldBoundaryCondition<FieldBoundaryConditionType::Neumann,
+                                                      field_type, GridLayoutT, StateT>>();
+        std::shared_ptr<VectorBcType> rhoV_bc
+            = std::make_shared<FieldBoundaryCondition<FieldBoundaryConditionType::Neumann,
+                                                      VecFieldT, GridLayoutT, StateT>>();
+        std::shared_ptr<VectorBcType> B_bc = std::make_shared<
+            FieldBoundaryCondition<FieldBoundaryConditionType::DivergenceFreeTransverseNeumann,
+                                   VecFieldT, GridLayoutT, StateT>>();
 
         for (auto const quantity : quantities.scalars)
         {
@@ -257,24 +257,25 @@ private:
 
 
         auto const pressure = data["pressure"].template to<double>();
-        auto P_bc           = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, field_type,
-                                                  GridLayoutT, StateT>(pressure)};
+        std::shared_ptr<ScalarBcType> P_bc
+            = std::make_shared<FieldBoundaryCondition<FieldBoundaryConditionType::Dirichlet,
+                                                      field_type, GridLayoutT, StateT>>(pressure);
 
         double const rho = data["density"].template to<double>();
-        auto rho_bc      = std::shared_ptr<ScalarBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, field_type,
-                                                  GridLayoutT, StateT>(rho)};
+        std::shared_ptr<ScalarBcType> rho_bc
+            = std::make_shared<FieldBoundaryCondition<FieldBoundaryConditionType::Dirichlet,
+                                                      field_type, GridLayoutT, StateT>>(rho);
 
         auto const v = initializer::parseDimXYZType<double, 3>(data, "velocity");
-        auto rhoV_bc = std::shared_ptr<VectorBcType>{
-            FieldBoundaryConditionFactory::create<FieldBoundaryConditionType::Dirichlet, VecFieldT,
-                                                  GridLayoutT, StateT>(vToRhoV(rho, v))};
+        std::shared_ptr<VectorBcType> rhoV_bc
+            = std::make_shared<FieldBoundaryCondition<FieldBoundaryConditionType::Dirichlet,
+                                                      VecFieldT, GridLayoutT, StateT>>(
+                vToRhoV(rho, v));
 
-        auto const B = initializer::parseDimXYZType<double, 3>(data, "B");
-        auto B_bc    = std::shared_ptr<VectorBcType>{FieldBoundaryConditionFactory::create<
-            FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet, VecFieldT, GridLayoutT,
-            StateT>(B)};
+        auto const B                       = initializer::parseDimXYZType<double, 3>(data, "B");
+        std::shared_ptr<VectorBcType> B_bc = std::make_shared<
+            FieldBoundaryCondition<FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet,
+                                   VecFieldT, GridLayoutT, StateT>>(B);
 
         for (auto const quantity : quantities.scalars)
         {

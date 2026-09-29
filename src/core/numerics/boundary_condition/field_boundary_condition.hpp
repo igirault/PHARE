@@ -51,9 +51,10 @@ template<typename ScalarOrTensorFieldT, typename GridLayoutT, typename StateT>
 class IFieldBoundaryCondition
 {
 public:
-    static constexpr bool is_scalar   = IsField<ScalarOrTensorFieldT>;
-    static constexpr size_t dimension = GridLayoutT::dimension;
-    static constexpr size_t N = NumberOfComponentsSelector<ScalarOrTensorFieldT, is_scalar>::value;
+    static constexpr bool is_scalar        = IsField<ScalarOrTensorFieldT>;
+    static constexpr std::size_t dimension = GridLayoutT::dimension;
+    static constexpr std::size_t N
+        = NumberOfComponentsSelector<ScalarOrTensorFieldT, is_scalar>::value;
 
     using This = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>;
     // the quantity category (HybridQuantity / MHDQuantity) is carried by the layout options

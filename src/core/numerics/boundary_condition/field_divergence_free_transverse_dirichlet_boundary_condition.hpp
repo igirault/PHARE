@@ -36,8 +36,8 @@ public:
     using field_type           = Super::field_type;
     using value_type           = field_type::value_type;
 
-    static constexpr size_t dimension = Super::dimension;
-    static constexpr size_t N         = Super::N;
+    static constexpr std::size_t dimension = Super::dimension;
+    static constexpr std::size_t N         = Super::N;
     static_assert(N == 3,
                   "Divergence-free transverse Dirichlet boundary condition only applies to vector "
                   "fields.");
@@ -46,13 +46,13 @@ public:
 
     FieldDivergenceFreeTransverseDirichletBoundaryCondition(value_type value)
     {
-        for (size_t i = 0; i < N; ++i)
+        for (std::size_t i = 0; i < N; ++i)
             scalar_dirichlet_conditions_[i] = _scalar_dirichlet_bc_type{value};
     }
 
     FieldDivergenceFreeTransverseDirichletBoundaryCondition(std::array<value_type, N> const& values)
     {
-        for (size_t i = 0; i < N; ++i)
+        for (std::size_t i = 0; i < N; ++i)
             scalar_dirichlet_conditions_[i] = _scalar_dirichlet_bc_type{values[i]};
     }
 
@@ -78,10 +78,7 @@ public:
     {
         Direction const direction = getDirection(boundaryLocation);
         Side const side           = getSide(boundaryLocation);
-        size_t const iNormal      = static_cast<size_t>(direction);
-
-        if (iNormal >= dimension)
-            return;
+        std::size_t const iNormal = static_cast<std::size_t>(direction);
 
         auto fields = vecField.components();
 
@@ -89,7 +86,7 @@ public:
 
         // handle transverse components with Dirichlet
         for_N<N>([&](auto iTransverse) {
-            if (static_cast<size_t>(iTransverse) != iNormal)
+            if (static_cast<std::size_t>(iTransverse) != iNormal)
             {
                 field_type& tField = std::get<iTransverse>(fields);
                 scalar_dirichlet_conditions_[iTransverse].apply(tField, boundaryLocation,

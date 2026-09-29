@@ -21,7 +21,7 @@ class FieldNoneBoundaryCondition
 {
 public:
     using Super = IFieldBoundaryCondition<ScalarOrTensorFieldT, GridLayoutT, StateT>;
-    static constexpr size_t dimension = Super::dimension;
+    static constexpr std::size_t dimension = Super::dimension;
 
     FieldNoneBoundaryCondition() = default;
 

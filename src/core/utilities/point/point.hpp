@@ -262,7 +262,7 @@ namespace core
         }
 
 
-        NO_DISCARD constexpr Point<Type, dim> neighbor(std::size_t d, int offset) const
+        NO_DISCARD constexpr Point<Type, dim> shift(std::size_t d, int offset) const
         {
             assert(d < dim);
             Point<Type, dim> result = *this;

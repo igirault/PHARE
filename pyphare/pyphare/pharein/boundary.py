@@ -132,7 +132,6 @@ _TYPE_CTORS = {
     "reflective": ReflectiveBC,
     "super-magnetofast-inflow": SuperMagnetofastInflowBC,
 }
-_DATA_CARRYING = {"super-magnetofast-inflow"}
 _REQUIRED_DATA_KEYS = {
     "super-magnetofast-inflow": ("density", "pressure", "velocity", "B"),
 }
@@ -202,7 +201,7 @@ def resolve_boundary_conditions(ndim, **kwargs):
             )
 
         data = bc.get("data", {})
-        if boundary_type in _DATA_CARRYING:
+        if boundary_type in _REQUIRED_DATA_KEYS.keys():
             for key in _REQUIRED_DATA_KEYS[boundary_type]:
                 if key not in data:
                     raise KeyError(
@@ -217,7 +216,7 @@ def resolve_boundary_conditions(ndim, **kwargs):
                 raise ValueError(
                     f"Boundary type '{boundary_type}' at '{location}' takes no 'data' block, "
                     f"but one was provided. Supported data-carrying types: "
-                    f"{sorted(_DATA_CARRYING)}"
+                    f"{sorted(_REQUIRED_DATA_KEYS.keys())}"
                 )
             resolved[location] = _TYPE_CTORS[boundary_type]()
 
