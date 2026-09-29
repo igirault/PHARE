@@ -9,7 +9,6 @@
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 #include "core/numerics/boundary_condition/field_neumann_boundary_condition.hpp"
 
-#include "SAMRAI/geom/CartesianPatchGeometry.h"
 #include "SAMRAI/hier/BoundaryBox.h"
 #include "SAMRAI/hier/Box.h"
 #include "SAMRAI/hier/IntVector.h"
@@ -27,7 +26,7 @@ namespace PHARE::amr
 {
 
 /**
- * @brief Strategy for filling physical boundary conditions and customizing patch refinment.
+ * @brief Strategy for filling physical boundary conditions and customizing patch refinement.
  *
  * This class implements the SAMRAI::xfer::RefinePatchStrategy interface to
  * specify how physical boundary conditions must be enforced for patches that touch
@@ -61,8 +60,7 @@ public:
     using scalar_quantity_type = physical_quantity_type::Scalar;
     using vector_quantity_type = physical_quantity_type::Vector;
 
-    using patch_geometry_type           = SAMRAI::hier::PatchGeometry;
-    using cartesian_patch_geometry_type = SAMRAI::geom::CartesianPatchGeometry;
+    using patch_geometry_type = SAMRAI::hier::PatchGeometry;
 
     using boundary_type = BoundaryManagerT::boundary_type;
     using state_type    = BoundaryManagerT::state_type;
@@ -113,13 +111,19 @@ public:
      * @param fill_time Simulation time for BC application.
      * @param ghost_width_to_fill Width of ghost cell layer to be filled.
      */
-    void
-    setPhysicalBoundaryConditions(SAMRAI::hier::Patch& patch, double const fill_time,
-                                  SAMRAI::hier::IntVector const& /*ghost_width_to_fill*/) override
+    void setPhysicalBoundaryConditions(SAMRAI::hier::Patch& patch, double const fill_time,
+                                       SAMRAI::hier::IntVector const& ghost_width_to_fill) override
     {
+        // check that a patch missing some state ids is a temporary one (!patch.inHierarchy())
+        if (!std::all_of(stateIds_.begin(), stateIds_.end(),
+                         [&](int const id) { return patch.checkAllocated(id); }))
+            assert(!patch.inHierarchy() && "not all ids are allocated, but patch is in hierarchy");
+
+        // if strategy has been set with a null state, or if `patch` is a temporary regrid
+        // patch
         if (!state_ || !patch.inHierarchy())
         {
-            applyBoundaryConditions_(patch, fill_time, nullptr);
+            applyBoundaryConditions_(patch, fill_time, ghost_width_to_fill, nullptr);
             return;
         }
         if (!std::all_of(stateIds_.begin(), stateIds_.end(),
@@ -127,7 +131,7 @@ public:
             throw std::runtime_error(
                 "FieldRefinePatchStrategy: sub-state not fully allocated on a hierarchy patch");
         auto _ = rm_.setOnPatch(patch, *state_);
-        applyBoundaryConditions_(patch, fill_time, state_.get());
+        applyBoundaryConditions_(patch, fill_time, ghost_width_to_fill, state_.get());
     }
 
 
@@ -154,21 +158,17 @@ public:
 
 protected:
     void applyBoundaryConditions_(SAMRAI::hier::Patch& patch, double const fill_time,
+                                  SAMRAI::hier::IntVector const& ghost_width_to_fill,
                                   state_type* state)
     {
         gridlayout_type const& gridLayout = ScalarOrTensorFieldDataT::getLayout(patch, data_id_);
 
-        /// @todo SAMRAI does not pass a `ghost_width_to_fill` consistent with the layout's
-        /// field ghost width beyond L0, so we ignore the argument and refill the whole ghost
-        /// layer. Making it consistent would require overriding getRefineOpStencilWidth,
-        /// deferred to avoid perturbing the always-return-1 interpolation stencil.
-        SAMRAI::hier::IntVector const ghost_width_to_fill{
-            static_cast<SAMRAI::tbox::Dimension>(static_cast<int>(dimension)),
-            static_cast<int>(gridLayout.options.field_ghost_width)};
+        assert(ghost_width_to_fill <= SAMRAI::hier::IntVector(
+                   static_cast<SAMRAI::tbox::Dimension>(static_cast<int>(dimension)),
+                   static_cast<int>(gridLayout.options.field_ghost_width)));
 
-        // no check this is a valid cast
-        std::shared_ptr<cartesian_patch_geometry_type> patchGeom
-            = std::static_pointer_cast<cartesian_patch_geometry_type>(patch.getPatchGeometry());
+        std::shared_ptr<patch_geometry_type> patchGeom = patch.getPatchGeometry();
+        assert(patchGeom && "patch has no geometry.");
 
         auto scalarOrTensorField = [&]() {
             if constexpr (is_scalar)
@@ -209,7 +209,7 @@ protected:
 
                 // get the "master" 1-codimensional boundary that applies at the currently treated
                 // boundary: for instance corner in 2D belongs to two different 1-codimensional
-                // boundaries (edges), so two boundary conditions compete there. The responsability
+                // boundaries (edges), so two boundary conditions compete there. The responsibility
                 // of choosing which boundary condition prevails there is on the boundaryManager.
                 // If the current boundary is itself 1-codimensional, then masterBoundaryLocation =
                 // currentBoundaryLocation.
@@ -233,18 +233,24 @@ protected:
                 //
                 // Why are there situations where the boundary condition cannot be applied:
                 // SAMRAI can call this on temporary, single-quantity patches it builds for
-                // cross-level (coarse->fine) interpolation, on temporary levels that are not in the
-                // hierarchy (patch.inHierarchy() is false). PHARE's coupled field conditions need
-                // extra fields off the patch than the quantity it applies to. For instance energy
-                // BC usually requires knowing rho/P/rhoV/B; those extra fields are not allocated
-                // on the interpolation temp patches dedicated to the total energy.
-                // `bc->canApply(ctx)` reports if the boundary condition is not appplicable because
+                // cross-level (coarse->fine) interpolation. This is due to current PHARE design
+                // with one refine schedule per quantity. However, PHARE's coupled field conditions
+                // need fields on the patch other than the quantity they apply to. For instance
+                // energy BC usually requires knowing rho/P/rhoV/B; those extra fields are not
+                // allocated on the interpolation temp patches dedicated to the total energy.
+                // `bc->canApply(ctx)` reports if the boundary condition is not applicable because
                 // some quantities are missing. Simple uncoupled boundary conditions will always
                 // be applicable. But for coupled ones, this might not be the case, yet
-                // temporary-patch ghosts cells at physical boundaries cannot be left as NaNs and
-                // should be assigned a meaningful value. Otherwise it propagates to the final patch
-                // resulting from the regrid (tried to vibe-circumvent this, but did not succeed).
-                // In this situation, we therefore fall back to a Neumann boundary condition, that
+                // the first layer of temporary-patch ghost cells at physical boundaries cannot be
+                // left as NaNs and should be assigned a meaningful value; here is a picture to help
+                // you understand why:
+                // coarse:   | c_-1 (ghost) |    c_0      |    c_1      |
+                //           -dx            0            dx           2dx
+                // fine:                    | f0 | f1 | f2 | f3 |
+                //                          0  dx/2 ...
+                // During refinement of a coarse temporary patch, the fine cell f0 needs a value in
+                // c_-1 for linear refinement to be possible.
+                // In such a situation, we therefore fall back to a Neumann boundary condition, that
                 // requires no other fields than the quantity itself. Maybe a better solution exists
                 // to this.
                 if (bc->canApply(ctx))
@@ -254,7 +260,7 @@ protected:
                 }
                 else
                 {
-                    // leave a clear trace in the log when and where this scenario occured
+                    // leave a clear trace in the log when and where this scenario occurred
                     PHARE_LOG_LINE_SS(
                         "Neumann fallback triggered in setPhysicalBoundaryConditions"
                         << " | field=" << scalarOrTensorField.name() << " | quantity="
@@ -273,11 +279,12 @@ protected:
         });
     }
 
-    ResMan& rm_;
-    BoundaryManagerT& boundaryManager_;
-    int data_id_;
-    std::shared_ptr<state_type> state_;
-    std::vector<int> stateIds_;
+    ResMan& rm_;                        //!< a reference to the resources manager
+    BoundaryManagerT& boundaryManager_; //!< a reference to the boundary manager
+    int data_id_; //!< the id of the resource to which this refine patch strategy is attached
+    std::shared_ptr<state_type> state_; //!< a pointer instead of a plain state, to have more
+                                        //!< flexibility and be able to pass a nullptr
+    std::vector<int> stateIds_;         //!< the resource ids of `state_`'s members
 };
 
 } // namespace PHARE::amr
