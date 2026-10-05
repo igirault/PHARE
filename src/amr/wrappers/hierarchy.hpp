@@ -116,7 +116,7 @@ class Hierarchy : public HierarchyRestarter, public SAMRAI::hier::PatchHierarchy
 public:
     NO_DISCARD static auto make();
 
-    NO_DISCARD auto const& boundaryConditions() const { return boundaryConditions_; }
+    NO_DISCARD auto const& periodicities() const { return periodicities_; }
     NO_DISCARD auto const& cellWidth() const { return cellWidth_; }
     NO_DISCARD auto const& domainBox() const { return domainBox_; }
     NO_DISCARD auto const& maxLevel() const { return maxLevel_; }
@@ -140,12 +140,12 @@ protected:
               std::shared_ptr<SAMRAI::tbox::MemoryDatabase>&& db,
               std::array<int, dimension> const domainBox,
               std::array<double, dimension> const cellWidth,
-              std::array<std::string, dimension> const boundaryConditions);
+              std::array<bool, dimension> const periodicities);
 
 private:
     std::vector<double> const cellWidth_;
     std::vector<int> const domainBox_;
-    std::vector<std::string> boundaryConditions_;
+    std::vector<bool> const periodicities_;
     std::size_t maxLevel_ = 0;
 };
 
@@ -236,13 +236,13 @@ Hierarchy::Hierarchy(initializer::PHAREDict const& dict,
                      std::shared_ptr<SAMRAI::tbox::MemoryDatabase>&& db,
                      std::array<int, dimension> const domainBox,
                      std::array<double, dimension> const cellWidth,
-                     std::array<std::string, dimension> const boundaryConditions)
+                     std::array<bool, dimension> const periodicities)
     // needs to open restart database before SAMRAI::PatchHierarcy constructor
     : HierarchyRestarter{dict}
     , SAMRAI::hier::PatchHierarchy{"PHARE_hierarchy", geo, db}
     , cellWidth_(cellWidth.data(), cellWidth.data() + dimension)
     , domainBox_(domainBox.data(), domainBox.data() + dimension)
-    , boundaryConditions_(boundaryConditions.data(), boundaryConditions.data() + dimension)
+    , periodicities_(periodicities.begin(), periodicities.end())
 
 {
     auto const max_nbr_levels = dict["simulation"]["AMR"]["max_nbr_levels"].template to<int>();
@@ -273,7 +273,6 @@ inline auto Hierarchy::writeRestartFile(std::string directory) const
 //-----------------------------------------------------------------------------
 //                       DimHierarchy Definitions
 //-----------------------------------------------------------------------------
-
 
 
 
@@ -327,19 +326,11 @@ auto griddingAlgorithmDatabase(PHARE::initializer::PHAREDict const& grid)
         db->putDoubleArray("x_up", upperCoord, dimension);
     }
 
-    int periodicity[dimension];
-    auto const boundary_types
-        = initializer::parseDimXYZType<std::string, dimension>(grid, "boundary_type");
+    int periodicDimension[dimension];
+    auto const isPeriodic = initializer::parseDimXYZType<bool, dimension>(grid, "periodicities");
     for (std::size_t i = 0; i < dimension; ++i)
-    {
-        if (boundary_types[i] == "periodic")
-            periodicity[i] = 1;
-        else if (boundary_types[i] == "physical")
-            periodicity[i] = 0;
-        else
-            throw std::runtime_error("Error: wrong boundary type " + boundary_types[i]);
-    }
-    db->putIntegerArray("periodic_dimension", periodicity, dimension);
+        periodicDimension[i] = isPeriodic[i] ? 1 : 0;
+    db->putIntegerArray("periodic_dimension", periodicDimension, dimension);
     return db;
 }
 
@@ -440,10 +431,10 @@ DimHierarchy<_dimension>::DimHierarchy(PHARE::initializer::PHAREDict const& dict
               griddingAlgorithmDatabase<dimension>(dict["simulation"]["grid"])),
           patchHierarchyDatabase<dimension>(dict["simulation"]["AMR"]),
           shapeToBox(initializer::parseDimXYZType<int, dimension>(dict["simulation"]["grid"],
-                                                                   "nbr_cells")),
+                                                                  "nbr_cells")),
           initializer::parseDimXYZType<double, dimension>(dict["simulation"]["grid"], "meshsize"),
-          initializer::parseDimXYZType<std::string, dimension>(dict["simulation"]["grid"],
-                                                               "boundary_type")}
+          initializer::parseDimXYZType<bool, dimension>(dict["simulation"]["grid"],
+                                                        "periodicities")}
 {
 }
 

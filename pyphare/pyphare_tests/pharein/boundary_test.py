@@ -4,58 +4,75 @@ from pyphare.pharein import boundary
 
 
 class TestBoundaryStructural(unittest.TestCase):
-    def test_default_all_none(self):
-        resolved = boundary.resolve_boundary_conditions(
-            2, boundary_types=("periodic", "periodic")
-        )
+    def test_default_all_periodic(self):
+        periodicities, resolved = boundary.resolve_boundaries(2)
+        self.assertEqual([True, True], periodicities)
         for loc in ("xlower", "xupper", "ylower", "yupper"):
             self.assertIsInstance(resolved[loc], boundary.NoneBC)
             self.assertEqual("none", resolved[loc].type)
 
-    def test_physical_boundary_requires_type(self):
-        with self.assertRaises(KeyError):
-            boundary.resolve_boundary_conditions(
+    def test_one_given_location_makes_direction_physical(self):
+        periodicities, resolved = boundary.resolve_boundaries(
+            2,
+            boundaries={"xlower": {"type": "open"}, "xupper": {"type": "open"}},
+            model_options=["MHDModel"],
+        )
+        self.assertEqual([False, True], periodicities)
+        self.assertIsInstance(resolved["ylower"], boundary.NoneBC)
+
+    def test_missing_opposite_location_raises(self):
+        for given in ("xlower", "xupper"):
+            with self.assertRaises(ValueError):
+                boundary.resolve_boundaries(
+                    2,
+                    boundaries={given: {"type": "open"}},
+                    model_options=["MHDModel"],
+                )
+
+    def test_none_type_rejected(self):
+        with self.assertRaises(ValueError):
+            boundary.resolve_boundaries(
                 2,
-                boundary_types=("physical", "periodic"),
+                boundaries={"xlower": {"type": "none"}, "xupper": {"type": "open"}},
+                model_options=["MHDModel"],
+            )
+
+    def test_missing_type_raises(self):
+        with self.assertRaises(KeyError):
+            boundary.resolve_boundaries(
+                2,
+                boundaries={"xlower": {}, "xupper": {"type": "open"}},
                 model_options=["MHDModel"],
             )
 
     def test_physical_only_supported_by_mhd_model(self):
         with self.assertRaises(ValueError):
-            boundary.resolve_boundary_conditions(
+            boundary.resolve_boundaries(
                 2,
-                boundary_types=("physical", "periodic"),
-                boundary_conditions={"xlower": {"type": "open"}, "xupper": {"type": "open"}},
+                boundaries={"xlower": {"type": "open"}, "xupper": {"type": "open"}},
                 model_options=["HybridModel"],
-            )
-
-    def test_periodic_location_rejects_non_none_type(self):
-        with self.assertRaises(ValueError):
-            boundary.resolve_boundary_conditions(
-                2,
-                boundary_types=("physical", "periodic"),
-                boundary_conditions={
-                    "xlower": {"type": "open"},
-                    "xupper": {"type": "open"},
-                    "ylower": {"type": "open"},
-                },
-                model_options=["MHDModel"],
             )
 
     def test_unknown_location_rejected(self):
         with self.assertRaises(ValueError):
-            boundary.resolve_boundary_conditions(
+            boundary.resolve_boundaries(
                 2,
-                boundary_types=("physical", "periodic"),
-                boundary_conditions={"not_a_location": {"type": "open"}},
+                boundaries={"not_a_location": {"type": "open"}},
+                model_options=["MHDModel"],
+            )
+
+    def test_location_beyond_dimension_rejected(self):
+        with self.assertRaises(ValueError):
+            boundary.resolve_boundaries(
+                1,
+                boundaries={"ylower": {"type": "open"}, "yupper": {"type": "open"}},
                 model_options=["MHDModel"],
             )
 
     def test_open_and_reflective_resolve(self):
-        resolved = boundary.resolve_boundary_conditions(
+        _, resolved = boundary.resolve_boundaries(
             2,
-            boundary_types=("physical", "periodic"),
-            boundary_conditions={"xlower": {"type": "open"}, "xupper": {"type": "reflective"}},
+            boundaries={"xlower": {"type": "open"}, "xupper": {"type": "reflective"}},
             model_options=["MHDModel"],
         )
         self.assertIsInstance(resolved["xlower"], boundary.OpenBC)
@@ -64,23 +81,20 @@ class TestBoundaryStructural(unittest.TestCase):
 
 class TestInflowOutflowData(unittest.TestCase):
     def _resolve(self, **bcs):
-        return boundary.resolve_boundary_conditions(
+        return boundary.resolve_boundaries(
             2,
-            boundary_types=("physical", "periodic"),
-            boundary_conditions=bcs,
+            boundaries=bcs,
             model_options=["MHDModel"],
-        )
+        )[1]
 
     def test_inflow_velocity_scalar_normalized_signed(self):
         resolved = self._resolve(
             xlower={
                 "type": "super-magnetofast-inflow",
-                "data": {
-                    "velocity": 2.0,
-                    "density": 1.0,
-                    "pressure": 1.0,
-                    "B": [0.5, 1.0, 0.0],
-                },
+                "velocity": 2.0,
+                "density": 1.0,
+                "pressure": 1.0,
+                "B": [0.5, 1.0, 0.0],
             },
             xupper={"type": "open"},
         )
@@ -91,22 +105,36 @@ class TestInflowOutflowData(unittest.TestCase):
             self._resolve(
                 xlower={
                     "type": "super-magnetofast-inflow",
-                    "data": {
-                        "velocity": 2.0,
-                        "density": 1.0,
-                        "pressure": 1.0,
-                        "B": 0.5,
-                    },
+                    "velocity": 2.0,
+                    "density": 1.0,
+                    "pressure": 1.0,
+                    "B": 0.5,
                 },
                 xupper={"type": "open"},
             )
 
-    def test_inflow_missing_data_key_raises_keyerror(self):
+    def test_inflow_missing_parameter_raises_keyerror(self):
         with self.assertRaises(KeyError):
             self._resolve(
                 xlower={
                     "type": "super-magnetofast-inflow",
-                    "data": {"velocity": 2.0, "density": 1.0, "B": [0.5, 1.0, 0.0]},
+                    "velocity": 2.0,
+                    "density": 1.0,
+                    "B": [0.5, 1.0, 0.0],
+                },
+                xupper={"type": "open"},
+            )
+
+    def test_inflow_unknown_parameter_rejected(self):
+        with self.assertRaises(ValueError):
+            self._resolve(
+                xlower={
+                    "type": "super-magnetofast-inflow",
+                    "velocity": 2.0,
+                    "density": 1.0,
+                    "pressure": 1.0,
+                    "B": [0.5, 1.0, 0.0],
+                    "temperature": 1.0,
                 },
                 xupper={"type": "open"},
             )
@@ -116,20 +144,18 @@ class TestInflowOutflowData(unittest.TestCase):
             self._resolve(
                 xlower={
                     "type": "super-magnetofast-inflow",
-                    "data": {
-                        "velocity": 2.0,
-                        "density": 1.0,
-                        "pressure": 1.0,
-                        "B": [lambda x, y, t: 0.5, 1.0, 0.0],
-                    },
+                    "velocity": 2.0,
+                    "density": 1.0,
+                    "pressure": 1.0,
+                    "B": [lambda x, y, t: 0.5, 1.0, 0.0],
                 },
                 xupper={"type": "open"},
             )
 
-    def test_data_block_rejected_on_no_data_type(self):
+    def test_parameter_rejected_on_parameterless_type(self):
         with self.assertRaises(ValueError):
             self._resolve(
-                xlower={"type": "open", "data": {"density": 1.0}},
+                xlower={"type": "open", "density": 1.0},
                 xupper={"type": "open"},
             )
 

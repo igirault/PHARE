@@ -75,8 +75,6 @@ public:
         std::string typeName = dict["type"].to<std::string>();
         BoundaryType type    = getBoundaryTypeFromString(typeName);
         _model_menu_type const quantities{scalars, vectors};
-        initializer::PHAREDict const data
-            = (dict.contains("data")) ? dict["data"] : initializer::PHAREDict{};
 
         // initialize the boundary
         boundary_ptr_type boundary = std::make_unique<boundary_type>(type, location);
@@ -90,7 +88,7 @@ public:
                 break;
             case BoundaryType::SuperMagnetofastInflow:
                 if constexpr (HasInflowQuantities<physical_quantity_type>)
-                    register_inflow_conditions_(boundary, data, quantities, gamma);
+                    register_inflow_conditions_(boundary, dict, quantities, gamma);
                 else
                     throw std::runtime_error(
                         "SuperMagnetofastInflow boundary type is not supported for this physical "

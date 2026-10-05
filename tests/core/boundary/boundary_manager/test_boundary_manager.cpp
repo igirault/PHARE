@@ -100,52 +100,50 @@ TEST(BoundaryManager, hasPriorityPolicyByBoundaryTypes)
 
 namespace
 {
-// Build a grid sub-dict: per-direction boundary_type from `types` ("physical"/"periodic"), and a
-// boundary_conditions entry per (location -> type) in `bcs`.
+// Build a grid sub-dict: per-direction periodicities from `periodicities`, and a
+// boundaries entry per (location -> type) in `bcs`.
 PHARE::initializer::PHAREDict
-makeGridDict(std::array<std::string, 3> const& types,
+makeGridDict(std::array<bool, 3> const& periodicities,
              std::vector<std::pair<std::string, std::string>> const& bcs)
 {
     PHARE::initializer::PHAREDict grid;
-    grid["boundary_type"]["x"] = types[0];
-    grid["boundary_type"]["y"] = types[1];
-    grid["boundary_type"]["z"] = types[2];
+    grid["periodicities"]["x"] = periodicities[0];
+    grid["periodicities"]["y"] = periodicities[1];
+    grid["periodicities"]["z"] = periodicities[2];
     for (auto const& [loc, type] : bcs)
-        grid["boundary_conditions"][loc]["type"] = type;
+        grid["boundaries"][loc]["type"] = type;
     return grid;
 }
 } // namespace
 
 TEST(ValidatePhysicalBoundaries, acceptsDeclaredPhysicalFaces)
 {
-    auto grid = makeGridDict({"physical", "periodic", "periodic"},
-                             {{"xlower", "open"}, {"xupper", "open"}});
+    auto grid = makeGridDict({false, true, true}, {{"xlower", "open"}, {"xupper", "open"}});
     EXPECT_NO_THROW(validatePhysicalBoundariesDeclared<dimension>(grid));
 }
 
 TEST(ValidatePhysicalBoundaries, acceptsAllPeriodic)
 {
-    auto grid = makeGridDict({"periodic", "periodic", "periodic"}, {});
+    auto grid = makeGridDict({true, true, true}, {});
     EXPECT_NO_THROW(validatePhysicalBoundariesDeclared<dimension>(grid));
 }
 
 TEST(ValidatePhysicalBoundaries, throwsWhenPhysicalFaceMissing)
 {
     // physical x, but only xlower declared -> xupper missing
-    auto grid = makeGridDict({"physical", "periodic", "periodic"}, {{"xlower", "open"}});
+    auto grid = makeGridDict({false, true, true}, {{"xlower", "open"}});
     EXPECT_THROW(validatePhysicalBoundariesDeclared<dimension>(grid), std::runtime_error);
 }
 
 TEST(ValidatePhysicalBoundaries, throwsWhenPhysicalFaceIsNone)
 {
-    auto grid = makeGridDict({"physical", "periodic", "periodic"},
-                             {{"xlower", "open"}, {"xupper", "none"}});
+    auto grid = makeGridDict({false, true, true}, {{"xlower", "open"}, {"xupper", "none"}});
     EXPECT_THROW(validatePhysicalBoundariesDeclared<dimension>(grid), std::runtime_error);
 }
 
-TEST(ValidatePhysicalBoundaries, noBoundaryTypeKeyIsSkipped)
+TEST(ValidatePhysicalBoundaries, noPeriodicityKeyIsSkipped)
 {
-    PHARE::initializer::PHAREDict grid; // minimal dict, no boundary_type
+    PHARE::initializer::PHAREDict grid; // minimal dict, no periodicities
     EXPECT_NO_THROW(validatePhysicalBoundariesDeclared<dimension>(grid));
 }
 

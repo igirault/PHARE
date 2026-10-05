@@ -103,16 +103,13 @@ def config():
         riemann="Rusanov",
         mhd_timestepper="TVDRK2",
         model_options=["MHDModel"],
-        boundary_types="physical",
-        boundary_conditions={
+        boundaries={
             "xlower": {
                 "type": "super-magnetofast-inflow",
-                "data": {
-                    "velocity": U_INIT,
-                    "density": LEFT_INIT.rho,
-                    "pressure": LEFT_INIT.p,
-                    "B" : [BX, LEFT_INIT.by, 0.0],
-                },
+                "velocity": U_INIT,
+                "density": LEFT_INIT.rho,
+                "pressure": LEFT_INIT.p,
+                "B" : [BX, LEFT_INIT.by, 0.0],
             },
             "xupper": {"type": "open"},
         },

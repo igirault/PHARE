@@ -27,20 +27,16 @@ std::vector<Vector> const mhdVectors{Vector::B, Vector::E, Vector::rhoV};
 
 void fillInflowData(PHAREDict& dict)
 {
-    dict["data"]["density"]              = 1.0;
-    dict["data"]["density_is_function"]  = false;
-    dict["data"]["pressure"]             = 2.0;
-    dict["data"]["pressure_is_function"] = false;
+    dict["density"]  = 1.0;
+    dict["pressure"] = 2.0;
 
-    dict["data"]["velocity_is_function"] = false;
-    dict["data"]["velocity"]["x"]        = 3.0;
-    dict["data"]["velocity"]["y"]        = 0.0;
-    dict["data"]["velocity"]["z"]        = 0.0;
+    dict["velocity"]["x"] = 3.0;
+    dict["velocity"]["y"] = 0.0;
+    dict["velocity"]["z"] = 0.0;
 
-    dict["data"]["B_is_function"] = false;
-    dict["data"]["B"]["x"]        = 0.75;
-    dict["data"]["B"]["y"]        = 1.0;
-    dict["data"]["B"]["z"]        = 0.0;
+    dict["B"]["x"] = 0.75;
+    dict["B"]["y"] = 1.0;
+    dict["B"]["z"] = 0.0;
 }
 
 PHAREDict dictFor(std::string const& type)

@@ -31,27 +31,26 @@ template<std::size_t dimension>
 inline void validatePhysicalBoundariesDeclared(initializer::PHAREDict const& grid)
 {
     static constexpr std::array<char const*, 3> dirs{"x", "y", "z"};
-    if (!grid.contains("boundary_type"))
+    if (!grid.contains("periodicities"))
         return; // no directions declared (minimal test dict): nothing to validate
 
     for (std::size_t d = 0; d < dimension; ++d)
     {
-        if (grid["boundary_type"][dirs[d]].template to<std::string>() != "physical")
+        if (grid["periodicities"][dirs[d]].template to<bool>())
             continue;
 
         for (auto const* side : {"lower", "upper"})
         {
             std::string const loc = std::string{dirs[d]} + side;
             bool const declared
-                = grid.contains("boundary_conditions") && grid["boundary_conditions"].contains(loc)
-                  && grid["boundary_conditions"][loc].contains("type")
-                  && grid["boundary_conditions"][loc]["type"].template to<std::string>() != "none";
+                = grid.contains("boundaries") && grid["boundaries"].contains(loc)
+                  && grid["boundaries"][loc].contains("type")
+                  && grid["boundaries"][loc]["type"].template to<std::string>() != "none";
             if (!declared)
-                throw std::runtime_error(
-                    "BoundaryManager: direction '" + std::string{dirs[d]}
-                    + "' is physical but boundary '" + loc
-                    + "' has no condition declared (expected grid/boundary_conditions/" + loc
-                    + "/type to be present and not 'none').");
+                throw std::runtime_error("BoundaryManager: direction '" + std::string{dirs[d]}
+                                         + "' is physical but boundary '" + loc
+                                         + "' has no condition declared (expected grid/boundaries/"
+                                         + loc + "/type to be present and not 'none').");
         }
     }
 }

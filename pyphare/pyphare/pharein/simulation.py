@@ -203,36 +203,6 @@ def check_path(**kwargs):
 # ------------------------------------------------------------------------------
 
 
-def check_boundaries(ndim, **kwargs):
-    valid_boundary_types = ("periodic", "physical")
-    boundary_types = kwargs.get("boundary_types", ["periodic"] * ndim)
-    phare_utilities.check_iterables(boundary_types)
-
-    if phare_utilities.none_iterable(boundary_types):
-        bc_length = 1
-        if boundary_types not in valid_boundary_types:
-            raise ValueError(
-                "Error: '{}' is not a valid boundary type".format(boundary_types)
-            )
-        boundary_types = phare_utilities.listify(boundary_types)
-    else:
-        bc_length = len(boundary_types)
-        for bc in boundary_types:
-            if bc not in valid_boundary_types:
-                raise ValueError("Error: '{}' is not a valid boundary type".format(bc))
-
-    if bc_length != ndim:
-        raise ValueError(
-            "Error- boundary_types should have length {} and is of length {}".format(
-                ndim, bc_length
-            )
-        )
-
-    return boundary_types
-
-
-# ------------------------------------------------------------------------------
-
 
 # See: https://github.com/PHAREHUB/PHARE/wiki/exactSplitting
 # This should match possibleSimulators() in meta_utilities.h
@@ -707,8 +677,7 @@ def checker(func):
             "time_step_nbr",
             "layout",
             "interp_order",
-            "boundary_types",
-            "boundary_conditions",
+            "boundaries",
             "refined_particle_nbr",
             "path",
             "nesting_buffer",
@@ -777,8 +746,7 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
 
-        kwargs["boundary_types"] = check_boundaries(ndim, **kwargs)
-        kwargs["boundary_conditions"] = boundary.resolve_boundary_conditions(
+        kwargs["periodicities"], kwargs["boundaries"] = boundary.resolve_boundaries(
             ndim, **kwargs
         )
 
@@ -1064,7 +1032,7 @@ class Simulation(object):
         * **strict** (``bool``), turns warnings into errors (default False)
         * **resistivity** (``float``), resistivity value (default=0.0)
         * **hyper-resistivity** (``float``), hyper-resistivity value (default=0.0)
-        * **boundary_types** (``str`` or ``tuple``) type of boundary conditions (default is "periodic" for each direction)
+        * **boundaries** (``dict``) physical boundaries per location (e.g. "xlower"); a direction is periodic unless both of its locations are given (MHD only)
 
     """
 

@@ -14,11 +14,6 @@ class TestSimulation(unittest.TestCase):
         self.dl_array = [0.1, (0.1, 0.2), (0.1, 0.2, 0.3)]
         self.domain_size_array = [100.0, (100.0, 80.0), (100.0, 80.0, 20.0)]
         self.ndim = [1, 2]  # TODO https://github.com/PHAREHUB/PHARE/issues/232
-        self.bcs = [
-            "periodic",
-            ("periodic", "periodic"),
-            ("periodic", "periodic", "periodic"),
-        ]
         self.layout = "yee"
         self.time_step = 0.001
         self.time_step_nbr = 1000
@@ -26,12 +21,11 @@ class TestSimulation(unittest.TestCase):
         global_vars.sim = None
 
     def test_dl(self):
-        for cells, domain_size, dim, bc in zip(
-            self.cells_array, self.domain_size_array, self.ndim, self.bcs
+        for cells, domain_size, dim in zip(
+            self.cells_array, self.domain_size_array, self.ndim
         ):
             j = simulation.Simulation(
                 time_step_nbr=self.time_step_nbr,
-                boundary_types=bc,
                 cells=cells,
                 domain_size=domain_size,
                 final_time=self.final_time,
@@ -46,31 +40,30 @@ class TestSimulation(unittest.TestCase):
 
             global_vars.sim = None
 
-    def test_boundary_conditions(self):
+    def test_boundaries_default_periodic(self):
         j = simulation.Simulation(
             time_step_nbr=1000,
-            boundary_types="periodic",
             cells=80,
             domain_size=10,
             final_time=1.0,
         )
 
         for d in np.arange(j.ndim):
-            self.assertEqual("periodic", j.boundary_types[d])
+            self.assertTrue(j.periodicities[d])
 
-    def test_assert_boundary_condition(self):
-        simulation.Simulation(
-            time_step_nbr=1000,
-            boundary_types="periodic",
-            cells=80,
-            domain_size=10,
-            final_time=1000,
-        )
+    def test_boundary_types_kwarg_rejected(self):
+        with self.assertRaises(ValueError):
+            simulation.Simulation(
+                time_step_nbr=1000,
+                boundary_types="periodic",
+                cells=80,
+                domain_size=10,
+                final_time=1000,
+            )
 
     def test_time_step(self):
         s = simulation.Simulation(
             time_step_nbr=1000,
-            boundary_types="periodic",
             cells=80,
             domain_size=10,
             final_time=10,
@@ -94,40 +87,41 @@ class TestSimulation(unittest.TestCase):
         kwargs.update(overrides)
         return kwargs
 
-    def test_boundary_conditions_default_none(self):
-        # a physical boundary with no explicit dict defaults every location to 'none'
+    def test_boundaries_default_none(self):
+        # without a boundaries dict every location is periodic and defaults to 'none'
         global_vars.sim = None
-        s = simulation.Simulation(**self._mhd_kwargs(boundary_types="periodic"))
+        s = simulation.Simulation(**self._mhd_kwargs())
+        self.assertEqual([True], s.periodicities)
         for loc in ("xlower", "xupper"):
-            self.assertEqual("none", s.boundary_conditions[loc].type)
+            self.assertEqual("none", s.boundaries[loc].type)
 
-    def test_physical_boundary_requires_type(self):
-        # a physical boundary left as 'none' must be rejected
+    def test_physical_direction_requires_both_locations(self):
+        # giving only one side of a direction must be rejected
         global_vars.sim = None
-        with self.assertRaises(KeyError):
-            simulation.Simulation(**self._mhd_kwargs(boundary_types="physical"))
+        with self.assertRaises(ValueError):
+            simulation.Simulation(
+                **self._mhd_kwargs(boundaries={"xlower": {"type": "open"}})
+            )
 
     def test_inflow_velocity_scalar_normalized_signed(self):
         # a scalar inflow speed becomes the signed inward-normal component
         global_vars.sim = None
         s = simulation.Simulation(
             **self._mhd_kwargs(
-                boundary_types="physical",
-                boundary_conditions={
+                boundaries={
                     "xlower": {
                         "type": "super-magnetofast-inflow",
-                        "data": {
-                            "velocity": 2.0,
-                            "density": 1.0,
-                            "pressure": 1.0,
-                            "B": [0.5, 1.0, 0.0],
-                        },
+                        "velocity": 2.0,
+                        "density": 1.0,
+                        "pressure": 1.0,
+                        "B": [0.5, 1.0, 0.0],
                     },
                     "xupper": {"type": "open"},
                 },
             )
         )
-        vx, vy, vz = s.boundary_conditions["xlower"].velocity
+        self.assertEqual([False], s.periodicities)
+        vx, vy, vz = s.boundaries["xlower"].velocity
         self.assertEqual((2.0, 0.0, 0.0), (vx, vy, vz))  # +x inward at lower
 
     def test_inflow_scalar_B_rejected(self):
@@ -136,16 +130,13 @@ class TestSimulation(unittest.TestCase):
         with self.assertRaises((TypeError, ValueError)):
             simulation.Simulation(
                 **self._mhd_kwargs(
-                    boundary_types="physical",
-                    boundary_conditions={
+                    boundaries={
                         "xlower": {
                             "type": "super-magnetofast-inflow",
-                            "data": {
-                                "velocity": 2.0,
-                                "density": 1.0,
-                                "pressure": 1.0,
-                                "B": 0.5,
-                            },
+                            "velocity": 2.0,
+                            "density": 1.0,
+                            "pressure": 1.0,
+                            "B": 0.5,
                         },
                         "xupper": {"type": "open"},
                     },

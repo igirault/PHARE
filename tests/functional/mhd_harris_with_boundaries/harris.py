@@ -60,8 +60,7 @@ def config():
         mhd_timestepper="TVDRK3",
         hall=hall,
         model_options=["MHDModel"],
-        boundary_types=("physical", "physical"),
-        boundary_conditions={
+        boundaries={
             "xlower": {"type": "open"},
             "xupper": {"type": "open"},
             "ylower": {"type": "reflective"},

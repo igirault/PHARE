@@ -144,26 +144,26 @@ def populateDict(sim):
     add_string("simulation/grid/layout_type", sim.layout)
     add_int("simulation/grid/nbr_cells/x", sim.cells[0])
     add_double("simulation/grid/meshsize/x", sim.dl[0])
-    add_string("simulation/grid/boundary_type/x", sim.boundary_types[0])
+    add_bool("simulation/grid/periodicities/x", sim.periodicities[0])
 
     if sim.ndim > 1:
         add_int("simulation/grid/nbr_cells/y", sim.cells[1])
         add_double("simulation/grid/meshsize/y", sim.dl[1])
-        add_string("simulation/grid/boundary_type/y", sim.boundary_types[1])
+        add_bool("simulation/grid/periodicities/y", sim.periodicities[1])
 
         if sim.ndim > 2:
             add_int("simulation/grid/nbr_cells/z", sim.cells[2])
             add_double("simulation/grid/meshsize/z", sim.dl[2])
-            add_string("simulation/grid/boundary_type/z", sim.boundary_types[2])
+            add_bool("simulation/grid/periodicities/z", sim.periodicities[2])
 
-    if sim.boundary_conditions is not None:
+    if sim.boundaries is not None:
         directions = "x", "y", "z"
         sides = "lower", "upper"
         for direction in directions[: sim.ndim]:
             for side in sides:
                 location = f"{direction}{side}"
-                bc = sim.boundary_conditions[location]
-                bc_path = f"simulation/grid/boundary_conditions/{location}"
+                bc = sim.boundaries[location]
+                bc_path = f"simulation/grid/boundaries/{location}"
                 bc.populate_dict(bc_path, sim.ndim)
 
     add_int("simulation/interp_order", sim.interp_order)

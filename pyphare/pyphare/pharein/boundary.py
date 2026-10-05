@@ -1,18 +1,24 @@
 """
 Boundary-condition resolution and validation for pharein.Simulation.
 
-'boundary_conditions' (the public Simulation constructor option) is a per-location dict:
-  {"xlower": {"type": "open"}, "xupper": {"type": "super-magnetofast-inflow", "data": {...}}, ...}
+'boundaries' (the public Simulation constructor option) is a per-location dict:
+  {"xlower": {"type": "open"}, "xupper": {"type": "super-magnetofast-inflow", "density": ..., ...}}
 
-resolve_boundary_conditions(ndim, **kwargs) is the single entry point used by Simulation's
-checker() pipeline; it returns a dict[location] -> BoundaryCondition stored as
-Simulation.boundary_conditions.
+Each location dict holds the boundary type and, at the same level, the parameters of that type.
+
+A direction is periodic unless one of its locations appears in 'boundaries', in which case it is
+physical and both of its locations must be given.
+
+resolve_boundaries(ndim, **kwargs) is the single entry point used by Simulation's checker()
+pipeline; it returns the per-direction periodicity flags, stored as Simulation.periodicities, and
+a dict[location] -> BoundaryCondition stored as Simulation.boundaries.
 """
 
 import math
 import numbers
 from abc import ABC
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, fields
+from inspect import signature
 
 from ..core import phare_utilities
 
@@ -132,38 +138,18 @@ _TYPE_CTORS = {
     "reflective": ReflectiveBC,
     "super-magnetofast-inflow": SuperMagnetofastInflowBC,
 }
-_REQUIRED_DATA_KEYS = {
-    "super-magnetofast-inflow": ("density", "pressure", "velocity", "B"),
-}
 
 
-def resolve_boundary_conditions(ndim, **kwargs):
+def resolve_boundaries(ndim, **kwargs):
     all_directions = ["x", "y", "z"][:ndim]
     sides = ("lower", "upper")
-    boundary_types = kwargs["boundary_types"]
-
-    physical_directions = [
-        direction
-        for direction, boundary_type in zip(all_directions, boundary_types)
-        if boundary_type == "physical"
-    ]
-    physical_boundary_locations = [
-        f"{direction}{side}" for direction in physical_directions for side in sides
-    ]
-
-    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
-    if physical_boundary_locations and "MHDModel" not in model_options:
-        raise ValueError(
-            "'physical' boundary_types are only supported by the MHDModel; "
-            f"got model_options={model_options}"
-        )
 
     all_boundary_locations = [
         f"{direction}{side}" for side in sides for direction in all_directions
     ]
-    raw = kwargs.get("boundary_conditions", {})
+    raw = kwargs.get("boundaries", {})
     if not isinstance(raw, dict):
-        raise TypeError("A dict should be passed to argument 'boundary_conditions'")
+        raise TypeError("A dict should be passed to argument 'boundaries'")
 
     for location in raw:
         if location not in all_boundary_locations:
@@ -171,56 +157,67 @@ def resolve_boundary_conditions(ndim, **kwargs):
                 f"Wrong boundary name {location}: should belong to {all_boundary_locations}"
             )
 
+    periodicities = []
+    for direction in all_directions:
+        given = [f"{direction}{side}" in raw for side in sides]
+        if any(given) and not all(given):
+            missing = [f"{direction}{side}" for side, g in zip(sides, given) if not g]
+            raise ValueError(
+                f"Direction '{direction}' is physical since one of its boundaries is given in "
+                f"'boundaries', but {missing[0]} is missing"
+            )
+        periodicities.append(not all(given))
+
+    model_options = phare_utilities.listify(kwargs.get("model_options", "HybridModel"))
+    if raw and "MHDModel" not in model_options:
+        raise ValueError(
+            "physical boundaries are only supported by the MHDModel; "
+            f"got model_options={model_options}"
+        )
+
+    user_types = tuple(t for t in _TYPE_CTORS if t != "none")
     resolved = {}
     for location in all_boundary_locations:
-        bc = raw.get(location, {"type": "none"})
+        if location not in raw:
+            resolved[location] = NoneBC()
+            continue
+
+        bc = raw[location]
         if not isinstance(bc, dict):
             raise TypeError(
                 f"A dict should be passed to the boundary {location} for specifying a "
                 f"boundary condition"
             )
         if "type" not in bc:
-            raise KeyError(
-                f"No key 'type' found in the boundary_condition dict passed to {location}"
-            )
+            raise KeyError(f"No key 'type' found in the boundaries dict passed to {location}")
         boundary_type = bc["type"]
-        if boundary_type not in _TYPE_CTORS:
+        if boundary_type not in user_types:
             raise ValueError(
-                f"Boundary type {boundary_type} is not valid: it should belong to "
-                f"{tuple(_TYPE_CTORS)}"
-            )
-        if location in physical_boundary_locations and boundary_type == "none":
-            raise KeyError(
-                f"{location} is a physical boundary and should be provided with a valid "
-                f"type other than 'none'."
-            )
-        if location not in physical_boundary_locations and boundary_type != "none":
-            raise ValueError(
-                f"{location} is not a physical boundary (its direction is periodic) and must "
-                f"have type 'none', got '{boundary_type}'"
+                f"Boundary type {boundary_type} is not valid: it should belong to {user_types}"
             )
 
-        data = bc.get("data", {})
-        if boundary_type in _REQUIRED_DATA_KEYS.keys():
-            for key in _REQUIRED_DATA_KEYS[boundary_type]:
-                if key not in data:
-                    raise KeyError(
-                        f"Boundary type '{boundary_type}' at '{location}' requires '{key}' "
-                        f"inside 'data'"
-                    )
-            resolved[location] = _TYPE_CTORS[boundary_type](
-                **data, location=location, ndim=ndim
+        ctor = _TYPE_CTORS[boundary_type]
+        params = {key: val for key, val in bc.items() if key != "type"}
+        expected = [field.name for field in fields(ctor)]
+
+        unexpected = [key for key in params if key not in expected]
+        if unexpected:
+            raise ValueError(
+                f"Boundary type '{boundary_type}' at '{location}' does not take "
+                f"{unexpected}; expected keys: {expected}"
             )
-        else:
-            if "data" in bc:
-                raise ValueError(
-                    f"Boundary type '{boundary_type}' at '{location}' takes no 'data' block, "
-                    f"but one was provided. Supported data-carrying types: "
-                    f"{sorted(_REQUIRED_DATA_KEYS.keys())}"
+        for key in expected:
+            if key not in params:
+                raise KeyError(
+                    f"Boundary type '{boundary_type}' at '{location}' requires '{key}'"
                 )
-            resolved[location] = _TYPE_CTORS[boundary_type]()
 
-    return resolved
+        if "location" in signature(ctor).parameters:
+            resolved[location] = ctor(**params, location=location, ndim=ndim)
+        else:
+            resolved[location] = ctor(**params)
+
+    return periodicities, resolved
 
 
 def _add_string(path, val):
@@ -237,10 +234,10 @@ def _add_double(path, val):
 
 def _add_inflow_scalar(bc_path, key, val, ndim):
     """Serialise a prescribed inflow scalar."""
-    _add_double(f"{bc_path}/data/{key}", val)
+    _add_double(f"{bc_path}/{key}", val)
 
 
 def _add_inflow_vector(bc_path, key, vec, ndim):
     """Serialise a prescribed inflow 3-vector, one double per component."""
     for axis, c in zip("xyz", list(vec), strict=True):
-        _add_double(f"{bc_path}/data/{key}/{axis}", c)
+        _add_double(f"{bc_path}/{key}/{axis}", c)
