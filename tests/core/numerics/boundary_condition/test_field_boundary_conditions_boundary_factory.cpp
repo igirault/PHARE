@@ -5,6 +5,7 @@
 
 #include "tests/core/numerics/boundary_condition/mhd_bc_test_fixtures.hpp"
 
+#include <array>
 #include <map>
 #include <string>
 #include <vector>
@@ -100,7 +101,7 @@ TEST(BoundaryFactory, Open)
 {
     checkDispatch("open", {{{Scalar::rho, FBC::Neumann}, {Scalar::Etot, FBC::Neumann}},
                            {{Vector::B, FBC::DivergenceFreeTransverseNeumann},
-                            {Vector::E, FBC::None},
+                            {Vector::E, FBC::Neumann},
                             {Vector::rhoV, FBC::Neumann}}});
 }
 
@@ -109,7 +110,7 @@ TEST(BoundaryFactory, SuperMagnetofastInflow)
     checkDispatch("super-magnetofast-inflow",
                   {{{Scalar::rho, FBC::Dirichlet}, {Scalar::Etot, FBC::Dirichlet}},
                    {{Vector::B, FBC::DivergenceFreeTransverseDirichlet},
-                    {Vector::E, FBC::None},
+                    {Vector::E, FBC::Dirichlet},
                     {Vector::rhoV, FBC::Dirichlet}}});
 }
 
@@ -136,6 +137,34 @@ TEST(BoundaryFactory, SuperMagnetofastInflowImposesTotalEnergyFromInflowState)
 
     for (std::uint32_t i = 0; i < mhdGhostWidth; ++i)
         EXPECT_DOUBLE_EQ(Etot(i), expected);
+}
+
+TEST(BoundaryFactory, SuperMagnetofastInflowImposesMotionalElectricField)
+{
+    auto boundary = Factory::create(BoundaryLocation::XLower, dictFor("super-magnetofast-inflow"),
+                                    mhdScalars, mhdVectors, heatCapacityRatio);
+    auto bc       = boundary->getFieldCondition(Vector::E);
+    ASSERT_NE(bc, nullptr);
+
+    double const vx = 3.0, Bx = 0.75, By = 1.0;
+    std::array<double, 3> const expected{0.0, 0.0, Bx * 0.0 - By * vx};
+
+    GridLayoutMHD1D layout{{0.1}, {nCellsMHD}, {0.0}};
+    UsableVecFieldMHD<1> Evec{"bc_test_E", layout, Vector::E};
+    auto& E = Evec.super();
+
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        auto& Ec = E[c];
+        for (std::uint32_t i = 0; i < Ec.shape()[0]; ++i)
+            Ec(i) = (i < mhdGhostWidth) ? -1.0 : expected[c];
+    }
+
+    bc->apply(E, BoundaryLocation::XLower, mhdLowerGhostCellBox(), layout, 0.0);
+
+    for (std::size_t c = 0; c < 3; ++c)
+        for (std::uint32_t i = 0; i <= mhdGhostWidth; ++i)
+            EXPECT_DOUBLE_EQ(E[c](i), expected[c]) << "component " << c << " index " << i;
 }
 
 int main(int argc, char** argv)

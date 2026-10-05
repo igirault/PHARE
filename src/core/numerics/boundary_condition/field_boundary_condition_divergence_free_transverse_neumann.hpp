@@ -6,6 +6,7 @@
 #include "core/numerics/boundary_condition/divergence_free_transverse_common.hpp"
 #include "core/numerics/boundary_condition/field_boundary_condition.hpp"
 
+#include <algorithm>
 #include <cstddef>
 
 namespace PHARE::core
@@ -75,8 +76,11 @@ public:
             {
                 field_type& Bc = std::get<iTransverse>(fields);
 
+                // iNormal < dimension always holds: the std::min is a no-op that only lets GCC
+                // prove the index is in bounds, otherwise the 1D instantiation (centering array of
+                // size 1) triggers a false-positive -Werror=array-bounds in optimized builds.
                 QtyCentering const centering = GridLayoutT::centering(
-                    Bc.physicalQuantity())[static_cast<std::size_t>(direction)];
+                    Bc.physicalQuantity())[std::min(iNormal, dimension - 1)];
                 auto fieldBox = gridLayout.toFieldBox(localGhostBox, Bc.physicalQuantity());
 
                 for (auto const& index : fieldBox)

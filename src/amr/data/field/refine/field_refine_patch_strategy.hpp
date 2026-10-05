@@ -87,6 +87,8 @@ public:
      */
     void registerIDs(int const field_id) { data_id_ = field_id; }
 
+    void setFillPhysicalBoundaries(bool const fill) { fillPhysicalBoundaries_ = fill; }
+
     /**
      * @brief Apply physical boundary conditions via SAMRAI callback.
      *
@@ -100,6 +102,9 @@ public:
     void setPhysicalBoundaryConditions(SAMRAI::hier::Patch& patch, double const fill_time,
                                        SAMRAI::hier::IntVector const& ghost_width_to_fill) override
     {
+        if (!fillPhysicalBoundaries_)
+            return;
+
         gridlayout_type const& gridLayout = ScalarOrTensorFieldDataT::getLayout(patch, data_id_);
 
         assert(ghost_width_to_fill <= SAMRAI::hier::IntVector(
@@ -195,6 +200,7 @@ public:
 protected:
     BoundaryManagerT& boundaryManager_; //!< a reference to the boundary manager
     int data_id_; //!< the id of the resource to which this refine patch strategy is attached
+    bool fillPhysicalBoundaries_ = true;
 };
 
 } // namespace PHARE::amr

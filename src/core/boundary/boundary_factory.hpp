@@ -10,6 +10,7 @@
 #include "initializer/data_provider.hpp"
 #include "initializer/dict_utils.hpp"
 
+#include <array>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -194,6 +195,10 @@ private:
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseNeumann>(quantity);
                     break;
+                case (physical_quantity_type::Vector::E):
+                    boundary->template registerFieldCondition<FieldBoundaryConditionType::Neumann>(
+                        quantity);
+                    break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(
                         quantity);
@@ -204,8 +209,9 @@ private:
 
     /** @brief Register boundary conditions to make a super-magnetofast inflow boundary.
      *
-     *  Every conservative quantity is imposed: density, momentum, tangential B and total energy,
-     *  the latter being computed from the prescribed inflow state (density, velocity, B, pressure).
+     *  Density, momentum and total energy are imposed, the latter being computed from the
+     *  prescribed inflow state (density, velocity, B, pressure). The magnetic field is imposed
+     *  through the motional electric field E = -v x B.
      */
     static void register_inflow_conditions_(boundary_ptr_type& boundary,
                                             initializer::PHAREDict const& data,
@@ -260,6 +266,13 @@ private:
                 case (physical_quantity_type::Vector::B):
                     boundary->template registerFieldCondition<
                         FieldBoundaryConditionType::DivergenceFreeTransverseDirichlet>(quantity, B);
+                    break;
+                case (physical_quantity_type::Vector::E):
+                    boundary
+                        ->template registerFieldCondition<FieldBoundaryConditionType::Dirichlet>(
+                            quantity, std::array<double, 3>{v[2] * B[1] - v[1] * B[2],
+                                                            v[0] * B[2] - v[2] * B[0],
+                                                            v[1] * B[0] - v[0] * B[1]});
                     break;
                 default:
                     boundary->template registerFieldCondition<FieldBoundaryConditionType::None>(

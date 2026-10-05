@@ -272,6 +272,10 @@ namespace amr
 
             ErefluxAlgo.registerCoarsen(*e_reflux_id, *e_fluxsum_id, electricFieldCoarseningOp_);
 
+            elecRefluxPatchStrat_
+                = std::make_shared<VectorFieldRefinePatchStrategyT>(*boundaryManager_);
+            elecRefluxPatchStrat_->registerIDs(*e_reflux_id);
+
             EpatchGhostRefluxedAlgo.registerRefine(*e_reflux_id, *e_reflux_id, *e_reflux_id,
                                                    EfieldRefineOp_,
                                                    nonOverwriteInteriorTFfillPattern);
@@ -293,7 +297,7 @@ namespace amr
             // elecPatchGhostsRefineSchedules[levelNumber] = EalgoPatchGhost.createSchedule(level);
 
             EpatchGhostRefluxedSchedules[levelNumber]
-                = EpatchGhostRefluxedAlgo.createSchedule(level);
+                = EpatchGhostRefluxedAlgo.createSchedule(level, elecRefluxPatchStrat_.get());
             HydroXpatchGhostRefluxedSchedules[levelNumber]
                 = HydroXpatchGhostRefluxedAlgo.createSchedule(level);
             HydroYpatchGhostRefluxedSchedules[levelNumber]
@@ -496,7 +500,7 @@ namespace amr
         {
             PHARE_LOG_SCOPE(3, "MHDMessenger::fillMagneticGhosts");
 
-            setNaNsOnVecfieldGhosts(B, level);
+            setNaNsOnVecfieldGhosts(B, level, /*keepPhysicalGhosts=*/true);
             magGhostsRefiners_.fill(B, level.getLevelNumber(), fillTime);
             magMaxRefiners_.fill(B, level.getLevelNumber(), fillTime);
         }
@@ -582,6 +586,8 @@ namespace amr
             // we need a separate patch strategy for each refiner so that each one can register
             // their required ids
             registerGhostRefinePatchStrategies_(magPatchStrats, info->ghostMagnetic);
+            for (auto& patchStrat : magPatchStrats)
+                patchStrat->setFillPhysicalBoundaries(false);
 
             for (std::size_t i = 0; i < info->ghostMagnetic.size(); ++i)
             {
@@ -680,7 +686,8 @@ namespace amr
          * This is needed when the schedule copy is done before refinement
          * as a result of FieldVariable::fineBoundaryRepresentsVariable=false
          */
-        void setNaNsOnFieldGhosts(FieldT& field, patch_t const& patch)
+        void setNaNsOnFieldGhosts(FieldT& field, patch_t const& patch,
+                                  bool const keepPhysicalGhosts = false)
         {
             auto const qty         = field.physicalQuantity();
             using qty_t            = std::decay_t<decltype(qty)>;
@@ -702,6 +709,9 @@ namespace amr
             SAMRAI::hier::BoxContainer ghostLayerBoxes{};
             ghostLayerBoxes.removeIntersections(sgbox, fbox);
 
+            if (keepPhysicalGhosts)
+                removePhysicalGhostBoxes_<field_geometry_t>(ghostLayerBoxes, patch, qty, layout);
+
             // and now finally set the NaNs on the ghost boxes
             for (auto const& gb : ghostLayerBoxes)
                 for (auto const& index : layout.AMRToLocal(phare_box_from<dimension>(gb)))
@@ -714,11 +724,32 @@ namespace amr
                 setNaNsOnFieldGhosts(field, *patch);
         }
 
-        void setNaNsOnVecfieldGhosts(VecFieldT& vf, level_t const& level)
+        void setNaNsOnVecfieldGhosts(VecFieldT& vf, level_t const& level,
+                                     bool const keepPhysicalGhosts = false)
         {
             for (auto& patch : resourcesManager_->enumerate(level, vf))
                 for (auto& component : vf)
-                    setNaNsOnFieldGhosts(component, *patch);
+                    setNaNsOnFieldGhosts(component, *patch, keepPhysicalGhosts);
+        }
+
+        template<typename FieldGeometryT>
+        void removePhysicalGhostBoxes_(SAMRAI::hier::BoxContainer& ghostLayerBoxes,
+                                       patch_t const& patch, auto const qty,
+                                       GridLayoutT const& layout)
+        {
+            auto const patchGeom = patch.getPatchGeometry();
+            SAMRAI::hier::IntVector const ghostWidth{
+                SAMRAI::tbox::Dimension{dimension},
+                static_cast<int>(layout.options.field_ghost_width)};
+
+            for (int codim = 1; codim <= static_cast<int>(dimension); ++codim)
+                for (auto const& bBox : patchGeom->getCodimensionBoundaries(codim))
+                {
+                    auto const fillBox
+                        = patchGeom->getBoundaryFillBox(bBox, patch.getBox(), ghostWidth);
+                    ghostLayerBoxes.removeIntersections(
+                        FieldGeometryT::toFieldBox(fillBox, qty, layout));
+                }
         }
 
 
@@ -886,6 +917,7 @@ namespace amr
         FieldRefinePatchStrategyList totalEnergyPatchStrats;
         VectorFieldRefinePatchStrategyList momentumPatchStrats;
         VectorFieldRefinePatchStrategyList elecPatchStrats;
+        std::shared_ptr<VectorFieldRefinePatchStrategyT> elecRefluxPatchStrat_;
         MagneticRefinePatchStrategyList magPatchStrats;
     };
 
