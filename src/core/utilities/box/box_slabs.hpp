@@ -248,9 +248,13 @@ template<typename T, std::size_t dim>
 void for_each_point(Box<T, dim> const& box, auto&& fn, auto&&... args)
 {
     for (auto const& slab : make_box_slabs(box))
-        for (auto&& [point, size] : slab)
-            for (std::uint32_t i = 0; i < size; ++i, ++point[dim - 1])
+        for (auto&& [start, size] : slab)
+        {
+            auto point     = start;
+            auto const end = point[dim - 1] + static_cast<T>(size);
+            for (; point[dim - 1] < end; ++point[dim - 1])
                 fn(point, args...);
+        }
 }
 
 
