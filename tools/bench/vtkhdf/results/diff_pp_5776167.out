@@ -1,0 +1,7 @@
+H5DIFF rc=0 mhd_Etot.vtkhdf
+H5DIFF rc=0 mhd_rho.vtkhdf
+H5DIFF rc=0 mhd_V.vtkhdf
+H5DIFF rc=0 EM_B.vtkhdf
+H5DIFF rc=0 mhd_rhoV.vtkhdf
+16G	$SCRATCHDIR/vtkhdf_bench/5776166/pr_p6/diags
+16G	$SCRATCHDIR/vtkhdf_bench/5776166/pp_p6/diags
