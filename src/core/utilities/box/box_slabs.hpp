@@ -33,7 +33,7 @@ inner loops) rather than a callback per point.
 
 
 template<typename T, std::size_t dim>
-auto make_box_slabs(Box<T, dim> const& box, auto const& make_span)
+auto make_box_slabs(Box<T, dim> const& box, auto const& span_fn)
 {
     auto const indices = [&](std::size_t const d) {
         return std::views::iota(box.lower[d], std::max<T>(box.lower[d], box.upper[d] + 1));
@@ -60,7 +60,7 @@ auto make_box_slabs(Box<T, dim> const& box, auto const& make_span)
                               start[0] = slab;
                           if constexpr (dim > 1)
                               start[dim - 2] = span;
-                          return make_span(start, size);
+                          return span_fn(start, size);
                       });
            });
 }
