@@ -62,7 +62,7 @@ public:
 //  is only valid for trivially copyable value types and is an out-of-line call that costs
 //  more than the copy on the short spans of ghost slabs thin along the fastest dimension
 template<typename Operator, typename T>
-void operate_on_span(auto& dst, T const* src_data)
+void operate_on_span(auto const& dst, T const* src_data)
 {
     for (std::size_t i = 0; i < dst.size(); ++i, ++src_data)
         Operator{dst[i]}(*src_data);
@@ -77,17 +77,16 @@ template<typename Operator>
 void operate_on_fields(auto& dst, auto const& src)
 {
     assert(dst.lcl_box.shape() == src.lcl_box.shape()); // spans are paired slab by slab
-    auto d_span       = make_field_box_slabs(dst.lcl_box, dst.field);
-    auto const s_span = make_field_box_slabs(src.lcl_box, src.field);
+    auto const d_slabs = make_field_box_slabs(dst.lcl_box, dst.field);
+    auto const s_slabs = make_field_box_slabs(src.lcl_box, src.field);
 
-    auto d_slabs = d_span.begin();
-    auto s_slabs = s_span.begin();
-    for (; s_slabs != s_span.end(); ++s_slabs, ++d_slabs)
+    auto s_slab = s_slabs.begin();
+    for (auto const& d_spans : d_slabs)
     {
-        auto d_spans = d_slabs.begin();
-        auto s_spans = s_slabs.begin();
-        for (; s_spans != s_slabs.end(); ++s_spans, ++d_spans)
-            operate_on_span<Operator>(*d_spans, (*s_spans).data());
+        auto const s_spans = *s_slab++;
+        auto s_span        = s_spans.begin();
+        for (auto const& d_span : d_spans)
+            operate_on_span<Operator>(d_span, (*s_span++).data());
     }
 }
 
@@ -98,8 +97,8 @@ template<typename Field_t>
 template<typename Operator>
 void FieldBox<Field_t>::set_from(std::vector<value_type> const& vec, std::size_t seek)
 {
-    for (auto& slab : make_field_box_slabs(lcl_box, field))
-        for (auto& span : slab)
+    for (auto const& slab : make_field_box_slabs(lcl_box, field))
+        for (auto const& span : slab)
         {
             operate_on_span<Operator>(span, vec.data() + seek);
             seek += span.size();

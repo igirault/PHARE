@@ -34,20 +34,19 @@ struct ArrayBox
 template<typename Operator>
 PHARE_BENCH_NO_VECTORIZE void operate_on_fields_scalar(auto& dst, auto const& src)
 {
-    auto d_span       = make_field_box_slabs(dst.lcl_box, dst.field);
-    auto const s_span = make_field_box_slabs(src.lcl_box, src.field);
+    auto const d_slabs = make_field_box_slabs(dst.lcl_box, dst.field);
+    auto const s_slabs = make_field_box_slabs(src.lcl_box, src.field);
 
-    auto d_slabs = d_span.begin();
-    auto s_slabs = s_span.begin();
-    for (; s_slabs != s_span.end(); ++s_slabs, ++d_slabs)
+    auto s_slab = s_slabs.begin();
+    for (auto const& d_spans : d_slabs)
     {
-        auto d_spans = d_slabs.begin();
-        auto s_spans = s_slabs.begin();
-        for (; s_spans != s_slabs.end(); ++s_spans, ++d_spans)
+        auto const s_spans = *s_slab++;
+        auto s_span        = s_spans.begin();
+        for (auto const& d_span : d_spans)
         {
-            auto* d_data       = (*d_spans).data();
-            auto const* s_data = (*s_spans).data();
-            auto const size    = (*d_spans).size();
+            auto* d_data       = d_span.data();
+            auto const* s_data = (*s_span++).data();
+            auto const size    = d_span.size();
 #if defined(__clang__)
 #pragma clang loop vectorize(disable) interleave(disable)
 #endif

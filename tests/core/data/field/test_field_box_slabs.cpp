@@ -60,14 +60,16 @@ TYPED_TEST(FieldBoxSlabsTest, test_field_box_slabs_nd)
     auto const send = s_span.end();
     for (; s_slabs != send; ++s_slabs, ++d_slabs)
     {
-        auto d_rows      = d_slabs.begin();
-        auto s_rows      = s_slabs.begin();
-        auto const srend = s_slabs.end();
+        auto const d_slab = *d_slabs;
+        auto const s_slab = *s_slabs;
+        auto d_rows       = d_slab.begin();
+        auto s_rows       = s_slab.begin();
+        auto const srend  = s_slab.end();
 
         for (; s_rows != srend; ++s_rows, ++d_rows)
         {
-            auto& s_row = *s_rows;
-            auto& d_row = *d_rows;
+            auto const s_row = *s_rows;
+            auto const d_row = *d_rows;
 
             for (std::size_t i = 0; i < s_row.size(); ++i)
                 d_row[i] += s_row[i];
