@@ -7,7 +7,7 @@
 #include "amr/resources_manager/amr_utils.hpp"
 #include "amr/utilities/box/amr_box.hpp"
 
-#include "core/utilities/box/box_slabs.hpp"
+#include "core/utilities/box/box_spans.hpp"
 #include "core/utilities/types.hpp"
 
 #include <array>

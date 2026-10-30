@@ -1,5 +1,5 @@
 #include "core/utilities/box/box.hpp"
-#include "core/utilities/box/box_slabs.hpp"
+#include "core/utilities/box/box_spans.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 
 #include "tools/bench/core/no_vectorize.hpp"
@@ -18,19 +18,18 @@ std::uint32_t constexpr static cells = 64;
 template<typename T, std::size_t dim>
 PHARE_BENCH_NO_VECTORIZE void for_each_point_scalar(Box<T, dim> const& box, auto&& fn)
 {
-    for (auto const& slab : make_box_slabs(box))
-        for (auto const& [start, size] : slab)
-        {
-            auto point = start;
+    for (auto const& [start, size] : make_box_spans(box))
+    {
+        auto point = start;
 #if defined(__clang__)
 #pragma clang loop vectorize(disable) interleave(disable)
 #endif
-            for (T i = start[dim - 1], end = i + size; i < end; ++i)
-            {
-                point[dim - 1] = i;
-                fn(point);
-            }
+        for (T i = start[dim - 1], end = i + size; i < end; ++i)
+        {
+            point[dim - 1] = i;
+            fn(point);
         }
+    }
 }
 
 // for_each_point as it was with `!=` ending the innermost loop: the 32 bit index could
@@ -38,16 +37,15 @@ PHARE_BENCH_NO_VECTORIZE void for_each_point_scalar(Box<T, dim> const& box, auto
 template<typename T, std::size_t dim>
 void for_each_point_not_equal(Box<T, dim> const& box, auto&& fn)
 {
-    for (auto const& slab : make_box_slabs(box))
-        for (auto const& [start, size] : slab)
+    for (auto const& [start, size] : make_box_spans(box))
+    {
+        auto point = start;
+        for (T i = start[dim - 1], end = i + size; i != end; ++i)
         {
-            auto point = start;
-            for (T i = start[dim - 1], end = i + size; i != end; ++i)
-            {
-                point[dim - 1] = i;
-                fn(point);
-            }
+            point[dim - 1] = i;
+            fn(point);
         }
+    }
 }
 
 enum class Loop { scalar, not_equal, less };

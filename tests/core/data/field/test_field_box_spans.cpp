@@ -1,4 +1,3 @@
-
 #include "core/data/field/field_box_spans.hpp"
 
 #include "phare_core.hpp"
@@ -22,7 +21,7 @@ struct TestParam
 
 
 template<typename Param>
-class FieldBoxSlabsTest : public ::testing::Test
+class FieldBoxSpansTest : public ::testing::Test
 {
     static constexpr std::size_t dim    = Param::dim;
     static constexpr std::size_t interp = 1;
@@ -40,9 +39,9 @@ public:
 
 using Permutations_t = testing::Types<TestParam<1>, TestParam<2>, TestParam<3>>;
 
-TYPED_TEST_SUITE(FieldBoxSlabsTest, Permutations_t, );
+TYPED_TEST_SUITE(FieldBoxSpansTest, Permutations_t, );
 
-TYPED_TEST(FieldBoxSlabsTest, test_field_box_slabs_nd)
+TYPED_TEST(FieldBoxSpansTest, test_field_box_spans_nd)
 {
     auto& layout          = this->layout;
     auto& dst             = this->dst;
@@ -52,26 +51,16 @@ TYPED_TEST(FieldBoxSlabsTest, test_field_box_slabs_nd)
     for (auto const& bix : domain_box)
         src(bix) = product(bix);
 
-    auto d_span       = make_field_box_slabs(domain_box, dst);
-    auto const s_span = make_field_box_slabs(domain_box, src);
+    auto const d_spans = make_field_box_spans(domain_box, dst);
+    auto const s_spans = make_field_box_spans(domain_box, src);
 
-    auto d_slabs    = d_span.begin();
-    auto s_slabs    = s_span.begin();
-    auto const send = s_span.end();
-    for (; s_slabs != send; ++s_slabs, ++d_slabs)
+    auto d_it = d_spans.begin();
+    for (auto const& s_span : s_spans)
     {
-        auto d_rows      = d_slabs.begin();
-        auto s_rows      = s_slabs.begin();
-        auto const srend = s_slabs.end();
+        auto const d_span = *d_it++;
 
-        for (; s_rows != srend; ++s_rows, ++d_rows)
-        {
-            auto& s_row = *s_rows;
-            auto& d_row = *d_rows;
-
-            for (std::size_t i = 0; i < s_row.size(); ++i)
-                d_row[i] += s_row[i];
-        }
+        for (std::size_t j = 0; j < s_span.size(); ++j)
+            d_span[j] += s_span[j];
     }
 
 
@@ -85,22 +74,19 @@ TYPED_TEST(FieldBoxSlabsTest, test_field_box_slabs_nd)
 
 
 
-// copies of a point spans iterator must not share state: advancing/dereferencing one copy
-//  leaves the others' span and point untouched (see PR #1153 review)
-TYPED_TEST(FieldBoxSlabsTest, test_field_box_point_slabs_copies_do_not_alias)
+TYPED_TEST(FieldBoxSpansTest, test_field_box_point_spans_copies_do_not_alias)
 {
-    if constexpr (TypeParam::dim > 1) // a 1d box is a single span, there is nothing to advance to
+    if constexpr (TypeParam::dim > 1)
     {
         auto& dst             = this->dst;
         auto const domain_box = this->layout.domainBoxFor(dst);
 
-        auto spans      = make_field_box_point_slabs(domain_box, dst);
-        auto const slab = *spans.begin();
-        auto const base = slab.begin();
+        auto const spans = make_field_box_point_spans(domain_box, dst);
+        auto const base  = spans.begin();
 
-        auto a = base; // copies of a const iterator
+        auto a = base;
         auto b = base;
-        auto c = b; // copy of a non-const iterator
+        auto c = b;
 
         auto const [a_span, a_point] = *a;
         auto const* const a_data     = a_span.data();

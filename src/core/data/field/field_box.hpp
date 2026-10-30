@@ -62,7 +62,7 @@ public:
 //  is only valid for trivially copyable value types and is an out-of-line call that costs
 //  more than the copy on the short spans of ghost slabs thin along the fastest dimension
 template<typename Operator, typename T>
-void operate_on_span(auto& dst, T const* src_data)
+void operate_on_span(auto const& dst, T const* src_data)
 {
     for (std::size_t i = 0; i < dst.size(); ++i, ++src_data)
         Operator{dst[i]}(*src_data);
@@ -71,24 +71,18 @@ void operate_on_span(auto& dst, T const* src_data)
 
 
 // applies Operator span-by-span between two same-shaped FieldBoxes (see
-// core/utilities/box/box_slabs.hpp); used to add/copy/max one field's local
+// core/utilities/box/box_spans.hpp); used to add/copy/max one field's local
 // region into another's, e.g. periodic boundary data exchange
 template<typename Operator>
 void operate_on_fields(auto& dst, auto const& src)
 {
-    assert(dst.lcl_box.shape() == src.lcl_box.shape()); // spans are paired slab by slab
-    auto d_span       = make_field_box_slabs(dst.lcl_box, dst.field);
-    auto const s_span = make_field_box_slabs(src.lcl_box, src.field);
+    assert(dst.lcl_box.shape() == src.lcl_box.shape());
+    auto const d_spans = make_field_box_spans(dst.lcl_box, dst.field);
+    auto const s_spans = make_field_box_spans(src.lcl_box, src.field);
 
-    auto d_slabs = d_span.begin();
-    auto s_slabs = s_span.begin();
-    for (; s_slabs != s_span.end(); ++s_slabs, ++d_slabs)
-    {
-        auto d_spans = d_slabs.begin();
-        auto s_spans = s_slabs.begin();
-        for (; s_spans != s_slabs.end(); ++s_spans, ++d_spans)
-            operate_on_span<Operator>(*d_spans, (*s_spans).data());
-    }
+    auto s_span = s_spans.begin();
+    for (auto const& d_span : d_spans)
+        operate_on_span<Operator>(d_span, (*s_span++).data());
 }
 
 
@@ -98,12 +92,11 @@ template<typename Field_t>
 template<typename Operator>
 void FieldBox<Field_t>::set_from(std::vector<value_type> const& vec, std::size_t seek)
 {
-    for (auto& slab : make_field_box_slabs(lcl_box, field))
-        for (auto& span : slab)
-        {
-            operate_on_span<Operator>(span, vec.data() + seek);
-            seek += span.size();
-        }
+    for (auto const& span : make_field_box_spans(lcl_box, field))
+    {
+        operate_on_span<Operator>(span, vec.data() + seek);
+        seek += span.size();
+    }
 }
 
 
@@ -114,15 +107,14 @@ void FieldBox<Field_t>::append_to(std::vector<value_type>& vec)
     std::size_t seek = vec.size();
     vec.resize(vec.size() + lcl_box.size());
 
-    for (auto const& slab : make_field_box_slabs(lcl_box, field))
-        for (auto const& span : slab)
-        {
-            // element-wise for the same reasons as operate_on_span
-            auto* const dst = vec.data() + seek;
-            for (std::size_t i = 0; i < span.size(); ++i)
-                dst[i] = span[i];
-            seek += span.size();
-        }
+    for (auto const& span : make_field_box_spans(lcl_box, field))
+    {
+        // element-wise for the same reasons as operate_on_span
+        auto* const dst = vec.data() + seek;
+        for (std::size_t i = 0; i < span.size(); ++i)
+            dst[i] = span[i];
+        seek += span.size();
+    }
 }
 
 } // namespace PHARE::core
