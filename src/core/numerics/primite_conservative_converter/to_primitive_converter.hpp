@@ -2,6 +2,8 @@
 #define PHARE_CORE_NUMERICS_TO_PRIMITIVE_CONVERTER_HPP
 
 
+#include "core/models/quantities/mhd_quantities.hpp"
+#include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/primite_conservative_converter/mhd_conversion.hpp"
@@ -48,7 +50,7 @@ public:
                 if (!(rho(index) >= floors.density))
                 {
                     rho(index) = floors.density;
-                    ++counts.density;
+                    counts.density += isInPhysicalBox_(rho, index);
                 }
             });
 
@@ -63,7 +65,7 @@ public:
                     return;
                 P(index) = floors.pressure;
                 rewriteEtot1_(gamma, rho, V, B1, P, Etot1, index);
-                ++counts.pressure;
+                counts.pressure += isInPhysicalBox_(P, index);
             });
 
         return counts;
@@ -87,17 +89,33 @@ public:
     }
 
 private:
+    template<typename Field>
+    bool isInPhysicalBox_(Field const& field, MeshIndex<Field::dimension> const& index) const
+    {
+        for (std::size_t d = 0; d < Field::dimension; ++d)
+        {
+            auto const dir = static_cast<Direction>(d);
+            if (index[d] < layout_.physicalStartIndex(field, dir)
+                or index[d] > layout_.physicalEndIndex(field, dir))
+                return false;
+        }
+        return true;
+    }
+
     template<typename Field, typename VecField>
     static void rewriteEtot1_(double const gamma, Field const& rho, VecField const& V,
                               VecField const& B1, Field const& P, Field& Etot1,
                               MeshIndex<Field::dimension> index)
     {
-        auto const b1x = GridLayout::template project<GridLayout::implT::faceXToCellCenter>(
-            B1(Component::X), index);
-        auto const b1y = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(
-            B1(Component::Y), index);
-        auto const b1z = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(
-            B1(Component::Z), index);
+        auto const b1x
+            = GridLayout::template project<MHDQuantity::Scalar::Bx, MHDQuantity::Scalar::rho>(
+                B1(Component::X), index);
+        auto const b1y
+            = GridLayout::template project<MHDQuantity::Scalar::By, MHDQuantity::Scalar::rho>(
+                B1(Component::Y), index);
+        auto const b1z
+            = GridLayout::template project<MHDQuantity::Scalar::Bz, MHDQuantity::Scalar::rho>(
+                B1(Component::Z), index);
         Etot1(index)
             = eosPToEtot1(gamma, rho(index), V(Component::X)(index), V(Component::Y)(index),
                           V(Component::Z)(index), b1x, b1y, b1z, P(index));
@@ -134,9 +152,9 @@ private:
         auto const& B1y = B1(Component::Y);
         auto const& B1z = B1(Component::Z);
 
-        auto const vx = rhoVx(index) / rho(index);
-        auto const vy = rhoVy(index) / rho(index);
-        auto const vz = rhoVz(index) / rho(index);
+        auto const vx  = rhoVx(index) / rho(index);
+        auto const vy  = rhoVy(index) / rho(index);
+        auto const vz  = rhoVz(index) / rho(index);
         auto const b1x = GridLayout::template project<Scalar::Bx, Scalar::rho>(B1x, index);
         auto const b1y = GridLayout::template project<Scalar::By, Scalar::rho>(B1y, index);
         auto const b1z = GridLayout::template project<Scalar::Bz, Scalar::rho>(B1z, index);
