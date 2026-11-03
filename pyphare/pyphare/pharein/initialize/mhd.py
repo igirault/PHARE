@@ -25,6 +25,8 @@ def _populate_algo(dp, sim):
     )
     dp.add_bool("simulation/algo/fv_method/hall", sim.hall)
     dp.add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
+    dp.add_double("simulation/algo/to_primitive/pressure_floor", sim.pressure_floor)
+    dp.add_double("simulation/algo/to_primitive/density_floor", sim.density_floor)
     dp.add_double("simulation/algo/to_conservative/heat_capacity_ratio", sim.gamma)
     dp.add_double("simulation/algo/constrained_transport/resistivity", sim.eta)
     dp.add_double("simulation/algo/constrained_transport/hyper_resistivity", sim.nu)

@@ -223,5 +223,124 @@ class TestSimulation(unittest.TestCase):
             MHDModel(bx=lambda x, y: 0.7 + 0 * x)
 
 
+class RecordingPopulator:
+    def __init__(self):
+        self.written = {}
+
+    def add_double(self, path, value):
+        self.written[path] = float(value)
+
+    def add_string(self, path, value):
+        self.written[path] = str(value)
+
+    def add_array_as_vector(self, path, value):
+        self.written[path] = [float(v) for v in value]
+
+
+class TestInnerBoundaryAndFloors(unittest.TestCase):
+    def setUp(self):
+        global_vars.sim = None
+
+    def tearDown(self):
+        global_vars.sim = None
+
+    @staticmethod
+    def body(**overrides):
+        ib = {
+            "name": "earth",
+            "shape": "sphere",
+            "center": (1.0, 2.0),
+            "radius": 0.5,
+            "condition_type": "fixed-state",
+            "density": 3.0,
+            "pressure": 0.25,
+        }
+        ib.update(overrides)
+        return ib
+
+    def simulation(self, **kwargs):
+        return simulation.Simulation(
+            time_step=0.001, time_step_nbr=10, cells=(20, 20), dl=(0.1, 0.1), **kwargs
+        )
+
+    def test_inner_boundary_fixed_state_is_accepted(self):
+        sim = self.simulation(inner_boundary=self.body())
+        dp = RecordingPopulator()
+        sim.inner_boundary.populate_dict(dp)
+        base = "simulation/inner_boundary"
+        self.assertEqual(dp.written[f"{base}/condition_type"], "fixed-state")
+        self.assertEqual(dp.written[f"{base}/shape"], "sphere")
+        self.assertEqual(dp.written[f"{base}/name"], "earth")
+        self.assertEqual(dp.written[f"{base}/center"], [1.0, 2.0])
+        self.assertEqual(dp.written[f"{base}/radius"], 0.5)
+        self.assertEqual(dp.written[f"{base}/density"], 3.0)
+        self.assertEqual(dp.written[f"{base}/pressure"], 0.25)
+
+    def test_no_inner_boundary_by_default(self):
+        self.assertIsNone(self.simulation().inner_boundary)
+
+    def test_inner_boundary_rejects_plane(self):
+        with self.assertRaisesRegex(ValueError, "shape"):
+            self.simulation(inner_boundary=self.body(shape="plane"))
+
+    def test_inner_boundary_rejects_unknown_condition(self):
+        with self.assertRaisesRegex(ValueError, "condition_type"):
+            self.simulation(inner_boundary=self.body(condition_type="reflective"))
+
+    def test_inner_boundary_requires_density_and_pressure(self):
+        for key in ("density", "pressure"):
+            ib = self.body()
+            del ib[key]
+            with self.assertRaisesRegex(ValueError, key):
+                self.simulation(inner_boundary=ib)
+            global_vars.sim = None
+
+    def test_inner_boundary_rejects_non_positive_state(self):
+        with self.assertRaisesRegex(ValueError, "density"):
+            self.simulation(inner_boundary=self.body(density=0.0))
+
+    def test_inner_boundary_center_must_match_dimension(self):
+        with self.assertRaisesRegex(ValueError, "center"):
+            self.simulation(inner_boundary=self.body(center=(1.0, 2.0, 3.0)))
+
+    def test_inner_boundary_rejects_unknown_safe_state_key(self):
+        with self.assertRaisesRegex(ValueError, "inactive_safe_state"):
+            self.simulation(inner_boundary=self.body(inactive_safe_state={"B": 1.0}))
+
+    def test_inner_boundary_safe_state_b1_broadcast(self):
+        sim = self.simulation(
+            inner_boundary=self.body(
+                inactive_safe_state={
+                    "B1": 2.0,
+                    "density": 4.0,
+                    "velocity": (1.0, 0.0, 0.5),
+                }
+            )
+        )
+        dp = RecordingPopulator()
+        sim.inner_boundary.populate_dict(dp)
+        base = "simulation/inner_boundary/inactive_safe_state"
+        for c in "xyz":
+            self.assertEqual(dp.written[f"{base}/B1/{c}"], 2.0)
+        self.assertEqual(dp.written[f"{base}/density"], 4.0)
+        self.assertEqual(dp.written[f"{base}/pressure"], 1.0)
+        self.assertEqual(dp.written[f"{base}/velocity/x"], 1.0)
+        self.assertEqual(dp.written[f"{base}/velocity/z"], 0.5)
+
+    def test_floors_default_to_zero(self):
+        sim = self.simulation()
+        self.assertEqual(sim.pressure_floor, 0.0)
+        self.assertEqual(sim.density_floor, 0.0)
+
+    def test_floors_are_stored(self):
+        sim = self.simulation(pressure_floor=1e-6, density_floor=1e-2)
+        self.assertEqual(sim.pressure_floor, 1e-6)
+        self.assertEqual(sim.density_floor, 1e-2)
+
+    def test_negative_floor_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "pressure_floor must be"):
+            self.simulation(pressure_floor=-1.0)
+
+
 if __name__ == "__main__":
     unittest.main()

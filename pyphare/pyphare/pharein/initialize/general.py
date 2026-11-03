@@ -44,6 +44,9 @@ def populate_grid(dp, sim):
     if sim.external_field is not None:
         sim.external_field.populate_dict(dp, sim.ndim)
 
+    if sim.inner_boundary is not None:
+        sim.inner_boundary.populate_dict(dp)
+
 
 def populate_amr(dp, sim):
     if sim.smallest_patch_size is not None:

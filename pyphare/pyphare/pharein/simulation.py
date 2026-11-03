@@ -7,6 +7,7 @@ from ..core import box as boxm
 from ..core import phare_utilities
 from ..core.box import Box
 from . import boundary, global_vars, timestepper
+from .inner_boundary import resolve_inner_boundary
 
 # ------------------------------------------------------------------------------
 
@@ -198,7 +199,6 @@ def check_path(**kwargs):
 
 
 # ------------------------------------------------------------------------------
-
 
 
 # See: https://github.com/PHAREHUB/PHARE/wiki/exactSplitting
@@ -676,6 +676,16 @@ def check_refinement_operator(**kwargs):
 # ------------------------------------------------------------------------------
 
 
+def check_positivity_floor(name, **kwargs):
+    value = float(kwargs.get(name, 0.0))
+    if not np.isfinite(value) or value < 0:
+        raise ValueError(f"Error: {name} must be finite and >= 0, got {value}")
+    return value
+
+
+# ------------------------------------------------------------------------------
+
+
 def checker(func):
     def wrapper(simulation_object, **kwargs_in):
         accepted_keywords = [
@@ -719,6 +729,9 @@ def checker(func):
             "riemann",
             "mhd_timestepper",
             "refinement_order",
+            "inner_boundary",
+            "pressure_floor",
+            "density_floor",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -758,9 +771,13 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
 
-        kwargs["periodicities"], kwargs["domain_boundaries"] = boundary.resolve_boundaries(
-            ndim, **kwargs
+        kwargs["periodicities"], kwargs["domain_boundaries"] = (
+            boundary.resolve_boundaries(ndim, **kwargs)
         )
+
+        kwargs["inner_boundary"] = resolve_inner_boundary(ndim, **kwargs)
+        for floor in ("pressure_floor", "density_floor"):
+            kwargs[floor] = check_positivity_floor(floor, **kwargs)
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
 
