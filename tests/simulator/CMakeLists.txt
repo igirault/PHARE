@@ -46,6 +46,7 @@ if(HighFive)
   phare_python3_exec(9       external_field  test_external_field.py   ${CMAKE_CURRENT_BINARY_DIR}) # serial or n = 2
   phare_python3_exec(9       fromsim         test_fromsim.py          ${CMAKE_CURRENT_BINARY_DIR}) # serial or n = 2
   phare_python3_exec(9       hall_null_mode test_hall_null_mode.py ${CMAKE_CURRENT_BINARY_DIR})
+  phare_mpi_python3_exec(9 2 mhd_sync_average test_mhd_sync_average.py ${CMAKE_CURRENT_BINARY_DIR})
   # phare_python3_exec(9       tagging     test_tagging.py      ${CMAKE_CURRENT_BINARY_DIR}) # serial or n = 2
 
   if(testMPI)

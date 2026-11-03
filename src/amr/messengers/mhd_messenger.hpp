@@ -5,6 +5,7 @@
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 
+#include "amr/data/field/coarsening/cell_coarsener.hpp"
 #include "amr/data/field/coarsening/electric_field_coarsener.hpp"
 #include "amr/data/field/coarsening/field_coarsen_operator.hpp"
 #include "amr/data/field/coarsening/mhd_flux_coarsener.hpp"
@@ -17,6 +18,9 @@
 #include "amr/messengers/composite_refine_patch_strategy.hpp"
 #include "amr/messengers/refiner_pool.hpp"
 #include "amr/messengers/synchronizer_pool.hpp"
+#include "core/inner_boundary/inner_bc_context.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
+#include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/messenger_info.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
@@ -81,6 +85,16 @@ namespace amr
 
             resourcesManager_->registerResources(Bold_);
 
+            resourcesManager_->registerResources(syncRho_);
+            resourcesManager_->registerResources(syncRhoV_);
+            resourcesManager_->registerResources(syncEtot1_);
+            resourcesManager_->registerResources(syncBlocked_);
+
+            conservedSynchronizers_.add(syncRho_.name(), conservativeCellCoarseningOp_, "rho");
+            conservedSynchronizers_.add(syncRhoV_.name(), conservativeVecCellCoarseningOp_, "rhoV");
+            conservedSynchronizers_.add(syncEtot1_.name(), conservativeCellCoarseningOp_, "Etot1");
+            blockedSynchronizers_.add(syncBlocked_.name(), maxCellCoarseningOp_, "blocked");
+
             // also magnetic fluxes ? or should we use static refiners instead ?
         }
 
@@ -94,6 +108,11 @@ namespace amr
             resourcesManager_->allocate(EtotOld_, patch, allocateTime);
 
             resourcesManager_->allocate(Bold_, patch, allocateTime);
+
+            resourcesManager_->allocate(syncRho_, patch, allocateTime);
+            resourcesManager_->allocate(syncRhoV_, patch, allocateTime);
+            resourcesManager_->allocate(syncEtot1_, patch, allocateTime);
+            resourcesManager_->allocate(syncBlocked_, patch, allocateTime);
         }
 
 
@@ -235,6 +254,7 @@ namespace amr
             removeInterLevelSchedules_(levelNumber);
             buildSameLevelSchedules_(hierarchy, levelNumber);
             sameLevelBuiltOn_[levelNumber] = levelsOf_(hierarchy, levelNumber, levelNumber);
+            hierarchy_                     = hierarchy;
 
             // inter-level schedules read the coarser levels, which may still be replaced before
             // the hierarchy settles (e.g. a level-0 rebalance), so onHierarchyChanged builds them
@@ -352,11 +372,96 @@ namespace amr
             patchGhostRefluxedSchedules_.at(coarserLevelNumber)->fillData(syncTime);
         }
 
-        void postSynchronize(IPhysicalModel& model, level_t& level, double const time) override
+        void postSynchronize(IPhysicalModel& model, level_t& coarseLevel,
+                             double const time) override
         {
-            // The ghosts for B are obtained in the solver's reflux_euler. For B, this is because
-            // refluxing is done through faraday which is computed on the ghost box for the other
-            // quantities, the ghosts are filled in the end of the euler step anyways.
+            auto& mhdModel              = dynamic_cast<MHDModel&>(model);
+            auto& state                 = mhdModel.state;
+            auto& rm                    = *resourcesManager_;
+            auto const fineNumber       = coarseLevel.getLevelNumber() + 1;
+            auto& fineLevel             = *hierarchy_->getPatchLevel(fineNumber);
+            bool const hasBody          = mhdModel.hasInnerBoundary();
+            double constexpr notCovered = -1.;
+
+            for (auto& patch :
+                 rm.enumerate(fineLevel, state, syncRho_, syncRhoV_, syncEtot1_, syncBlocked_))
+            {
+                auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+                syncRho_.copyData(state.rho);
+                syncRhoV_.copyData(state.rhoV);
+                syncEtot1_.copyData(state.Etot1);
+                layout.evalOnGhostBox(syncBlocked_,
+                                      [&](auto&... args) { syncBlocked_(args...) = 0.; });
+            }
+
+            if (hasBody)
+            {
+                auto& ibm = *mhdModel.innerBoundaryManager;
+                for (auto& patch : rm.enumerate(fineLevel, syncBlocked_, ibm))
+                {
+                    auto const layout      = layoutFromPatch<GridLayoutT>(*patch);
+                    auto const& cellStatus = ibm.getMeshData().cellStatusField();
+                    layout.evalOnGhostBox(syncBlocked_, [&](auto&... args) {
+                        syncBlocked_(args...) = isEvolved_(cellStatus(args...)) ? 0. : 1.;
+                    });
+                }
+            }
+
+            for (auto& patch : rm.enumerate(coarseLevel, syncBlocked_))
+            {
+                auto const layout = layoutFromPatch<GridLayoutT>(*patch);
+                layout.evalOnGhostBox(syncBlocked_,
+                                      [&](auto&... args) { syncBlocked_(args...) = notCovered; });
+            }
+
+            conservedSynchronizers_.sync(fineNumber);
+            blockedSynchronizers_.sync(fineNumber);
+
+            auto copyCovered = [&](auto const& layout, auto&& coarseEvolved) {
+                layout.evalOnBox(state.rho, [&](auto&... args) {
+                    core::MeshIndex<dimension> const idx{args...};
+                    if (syncBlocked_(idx) != 0. or !coarseEvolved(idx))
+                        return;
+                    state.rho(idx)   = syncRho_(idx);
+                    state.Etot1(idx) = syncEtot1_(idx);
+                    for (auto const c :
+                         {core::Component::X, core::Component::Y, core::Component::Z})
+                        state.rhoV(c)(idx) = syncRhoV_(c)(idx);
+                });
+            };
+
+            if (hasBody)
+            {
+                auto& ibm = *mhdModel.innerBoundaryManager;
+                for (auto& patch : rm.enumerate(coarseLevel, state, syncRho_, syncRhoV_, syncEtot1_,
+                                                syncBlocked_, ibm))
+                {
+                    auto const& cellStatus = ibm.getMeshData().cellStatusField();
+                    copyCovered(layoutFromPatch<GridLayoutT>(*patch),
+                                [&](auto const& idx) { return isEvolved_(cellStatus(idx)); });
+                }
+            }
+            else
+                for (auto& patch : rm.enumerate(coarseLevel, state, syncRho_, syncRhoV_, syncEtot1_,
+                                                syncBlocked_))
+                    copyCovered(layoutFromPatch<GridLayoutT>(*patch),
+                                [](auto const&) { return true; });
+
+            if (mhdModel.positivityFloors.any())
+                for (auto& patch : rm.enumerate(coarseLevel, state))
+                    core::ToPrimitiveConverter<GridLayoutT>{layoutFromPatch<GridLayoutT>(*patch)}(
+                        mhdModel.gamma_, state.rho, state.rhoV, state.B1, state.Etot1, state.V,
+                        state.P, mhdModel.positivityFloors);
+
+            fillStateGhosts(state, coarseLevel, time);
+
+            if (hasBody)
+            {
+                auto& ibm = *mhdModel.innerBoundaryManager;
+                for (auto& patch : rm.enumerate(coarseLevel, state, ibm))
+                    ibm.applyToMoments(layoutFromPatch<GridLayoutT>(*patch),
+                                       core::InnerBCContext<MHDStateT>{state, state, time, 0.});
+            }
         }
 
         // Fills the ghosts of the conserved state (B, rho, rhoV, Etot), then equalizes the B
@@ -408,6 +513,8 @@ namespace amr
             auto const level = hierarchy->getPatchLevel(levelNumber);
 
             forEachGhostFieldPool_([&](auto& pool) { pool.registerLevel(hierarchy, level); });
+            conservedSynchronizers_.registerLevel(hierarchy, level);
+            blockedSynchronizers_.registerLevel(hierarchy, level);
 
             // refluxing
             auto const& coarseLevel       = hierarchy->getPatchLevel(levelNumber - 1);
@@ -448,6 +555,8 @@ namespace amr
         void removeInterLevelSchedules_(int const levelNumber)
         {
             forEachGhostFieldPool_([&](auto& pool) { pool.removeLevel(levelNumber); });
+            conservedSynchronizers_.removeLevel(levelNumber);
+            blockedSynchronizers_.removeLevel(levelNumber);
             refluxSchedules_.erase(levelNumber);
         }
 
@@ -671,6 +780,12 @@ namespace amr
         VecFieldT rhoVold_{stratName + "rhoVold", core::MHDQuantity::Vector::rhoV};
         FieldT EtotOld_{stratName + "EtotOld", core::MHDQuantity::Scalar::Etot1};
 
+        FieldT syncRho_{stratName + "syncRho", core::MHDQuantity::Scalar::rho};
+        VecFieldT syncRhoV_{stratName + "syncRhoV", core::MHDQuantity::Vector::rhoV};
+        FieldT syncEtot1_{stratName + "syncEtot1", core::MHDQuantity::Scalar::Etot1};
+        FieldT syncBlocked_{stratName + "syncBlocked", core::MHDQuantity::Scalar::rho};
+        hierarchy_ptr hierarchy_;
+
         VecFieldT Bold_{stratName + "Bold", core::MHDQuantity::Vector::B1};
 
 
@@ -734,6 +849,8 @@ namespace amr
         using ElectricFieldCoarsenOp = VecFieldCoarsenOp<ElectricFieldCoarsener<dimension>>;
 
         SynchronizerPool<rm_t> electroSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> conservedSynchronizers_{resourcesManager_};
+        SynchronizerPool<rm_t> blockedSynchronizers_{resourcesManager_};
 
         // built in the ctor body (makeRefineOperators_) from the composite runtime kernels.
         RefOp_ptr mhdFluxRefineOp_;
@@ -765,6 +882,18 @@ namespace amr
         CoarsenOp_ptr mhdFluxCoarseningOp_{std::make_shared<MHDFluxCoarsenOp>()};
         CoarsenOp_ptr mhdVecFluxCoarseningOp_{std::make_shared<MHDVecFluxCoarsenOp>()};
         CoarsenOp_ptr electricFieldCoarseningOp_{std::make_shared<ElectricFieldCoarsenOp>()};
+        CoarsenOp_ptr conservativeCellCoarseningOp_{
+            std::make_shared<FieldCoarseningOp<ConservativeCellCoarsener<dimension>>>()};
+        CoarsenOp_ptr conservativeVecCellCoarseningOp_{
+            std::make_shared<VecFieldCoarsenOp<ConservativeCellCoarsener<dimension>>>()};
+        CoarsenOp_ptr maxCellCoarseningOp_{
+            std::make_shared<FieldCoarseningOp<MaxCellCoarsener<dimension>>>()};
+
+        static bool isEvolved_(double const status)
+        {
+            return status == core::toDouble(core::ElemStatus::Fluid)
+                   or status == core::toDouble(core::ElemStatus::Cut);
+        }
 
         using FieldRefinePatchStrategyT = FieldRefinePatchStrategy<FieldDataT, BoundaryManagerT>;
         using VectorFieldRefinePatchStrategyT
