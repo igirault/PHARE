@@ -114,6 +114,22 @@ public:
     void operator()(auto& ct_state, auto& non_ideal_electric_state, auto& state, auto& fluxes)
     {
         auto& rm = *model.resourcesManager;
+        if (model.hasInnerBoundary())
+        {
+            auto& ibm = *model.innerBoundaryManager;
+            for (auto& patch : rm.enumerate(level, ct_state, non_ideal_electric_state, state,
+                                            fluxes, model.externalFieldManager.state(), ibm))
+            {
+                auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+                core_type finite_volume_method{info, layout};
+                model.externalFieldManager.state().visitB0([&](auto const& B0) {
+                    finite_volume_method(ct_state, non_ideal_electric_state, state, B0, fluxes);
+                    finite_volume_method.degrade_fluxes_near_inner_boundary(
+                        ct_state, ibm.getMeshData(), state, B0, fluxes);
+                });
+            }
+            return;
+        }
         for (auto& patch : rm.enumerate(level, ct_state, non_ideal_electric_state, state, fluxes,
                                         model.externalFieldManager.state()))
         {
@@ -240,6 +256,22 @@ public:
     void operator()(auto& ct_state, auto& non_ideal_electric_state, auto& mhd_state)
     {
         auto& rm = *model.resourcesManager;
+        if (model.hasInnerBoundary())
+        {
+            auto& ibm = *model.innerBoundaryManager;
+            for (auto& patch : rm.enumerate(level, ct_state, non_ideal_electric_state, mhd_state,
+                                            model.externalFieldManager.state(), ibm))
+            {
+                auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+                core_type constrained_transport_{info, layout};
+                model.externalFieldManager.state().visitB0([&](auto const& B0) {
+                    constrained_transport_(ct_state, non_ideal_electric_state, mhd_state, B0);
+                    constrained_transport_.degrade_E_near_inner_boundary(ct_state, mhd_state, B0,
+                                                                         ibm.getMeshData());
+                });
+            }
+            return;
+        }
         for (auto& patch : rm.enumerate(level, ct_state, non_ideal_electric_state, mhd_state,
                                         model.externalFieldManager.state()))
         {

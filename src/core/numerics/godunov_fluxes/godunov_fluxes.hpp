@@ -8,6 +8,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/reconstructions/constant.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -69,6 +70,7 @@ class Godunov : public GodunovInfo
     using Super                     = GodunovInfo;
     using Reconstruction_t          = Reconstruction<GridLayout>;
     using Reconstructor_t           = Reconstructor<Reconstruction_t>;
+    using ConstantReconstructor_t   = Reconstructor<ConstantReconstruction<GridLayout>>;
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
     using Scalar                    = GridLayout::Scalar;
@@ -131,6 +133,39 @@ public:
                                       equations_.template non_ideal_contributions<direction>(
                                           Et, Bt, F.B1, F.Etot());
                                   });
+        });
+    }
+
+    template<typename CTState, typename MeshData, typename State, typename VecFieldT,
+             typename Fluxes>
+    void degrade_fluxes_near_inner_boundary(CTState& ct_state, MeshData const& meshData,
+                                            State& state, VecFieldT const& b0, Fluxes& fluxes)
+    {
+        constexpr auto directions     = getDirections<dimension>();
+        constexpr auto num_directions = std::tuple_size_v<std::decay_t<decltype(directions)>>;
+
+        for_N<num_directions>([&](auto i) {
+            constexpr Direction direction = std::get<i>(directions);
+
+            auto const centering = layout_.centering(
+                fluxes.template expose_centering<direction>().physicalQuantity());
+
+            for (auto const& elem : meshData.getDegradedElemsFromCentering(centering))
+            {
+                auto const idx = elem.index.template as<std::size_t>();
+
+                auto&& [uL, uR]
+                    = ConstantReconstructor_t::template reconstruct<direction>(state, b0, idx);
+                auto&& u = std::forward_as_tuple(uL, uR);
+
+                auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>(
+                    [&](auto k) { return equations_.template compute<direction>(std::get<k>(u)); });
+
+                fluxes.template get_dir<direction>(idx)
+                    = riemann_.template solve<direction>(uL, uR, fL, fR);
+
+                ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs, idx);
+            }
         });
     }
 
