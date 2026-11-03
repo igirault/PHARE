@@ -32,7 +32,16 @@ set( SOURCES_INC
      boundary/boundary_defs.hpp
      boundary/boundary_factory.hpp
      boundary/boundary_manager.hpp
+     inner_boundary/field_dirichlet_inner_boundary_condition.hpp
+     inner_boundary/field_inner_boundary_condition.hpp
+     inner_boundary/field_neumann_inner_boundary_condition.hpp
+     inner_boundary/field_none_inner_boundary_condition.hpp
+     inner_boundary/field_total_energy_from_pressure_inner_boundary_condition.hpp
      inner_boundary/ghost_elem_pack.hpp
+     inner_boundary/inner_bc_context.hpp
+     inner_boundary/inner_boundary_condition.hpp
+     inner_boundary/inner_boundary_condition_factory.hpp
+     inner_boundary/inner_boundary_manager.hpp
      inner_boundary/inner_boundary_defs.hpp
      inner_boundary/inner_boundary_factory.hpp
      inner_boundary/inner_boundary_geometry.hpp

@@ -11,3 +11,7 @@ endfunction()
 
 _add_inner_boundary_test(test-inner_boundary)
 _add_inner_boundary_test(test-inner_boundary_mesh_classifier)
+_add_inner_boundary_test(test-field_dirichlet_inner_boundary_condition)
+_add_inner_boundary_test(test-field_neumann_inner_boundary_condition)
+_add_inner_boundary_test(test-field_total_energy_from_pressure_inner_boundary_condition)
+_add_inner_boundary_test(test-inner_boundary_manager)
