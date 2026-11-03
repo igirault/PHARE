@@ -16,6 +16,7 @@ def parse_args(argv):
     parser.add_argument("--tagging-threshold", type=float, default=0.1)
     parser.add_argument("--flow-throughs", type=float, default=2.0)
     parser.add_argument("--dumps", type=int, default=40)
+    parser.add_argument("--timestepper", default="TVDRK3")
     parser.add_argument("--diag-dir", default=None)
     parser.add_argument("--dump-window", type=float, nargs=3, default=None)
     args, _ = parser.parse_known_args(argv)
@@ -113,14 +114,6 @@ def p(x, y):
     )
 
 
-def _b0x(xr, yr):
-    return -dipole_2d_x(m, 1.0, xr, yr)
-
-
-def _b0y(xr, yr):
-    return -dipole_2d_y(m, 1.0, xr, yr)
-
-
 def _psi0(xr, yr):
     return (m / (2.0 * np.pi)) * xr / (np.hypot(xr, yr) ** 2 + small)
 
@@ -129,29 +122,18 @@ def _w(x):
     return step(cut_x - x, cut_w)
 
 
-def _dwdx(x):
-    u = (cut_x - x) / cut_w
-    return -0.5 * (1.0 - np.tanh(u) ** 2) / cut_w
-
-
-def _wx(xr, yr):
-    return -2.0 * (-b_wind) * ib_radius**2 * xr * yr / (np.hypot(xr, yr) ** 4 + small)
-
-
-def _wy(xr, yr):
-    return -b_wind * (
-        1.0 + ib_radius**2 * (xr**2 - yr**2) / (np.hypot(xr, yr) ** 4 + small)
-    )
+def a1z(x, y):
+    xr, yr = x - center[0], y - center[1]
+    draped = b_wind * xr * (1.0 - ib_radius**2 / (np.hypot(xr, yr) ** 2 + small))
+    return draped - _w(x) * _psi0(xr, yr)
 
 
 def b1x(x, y):
-    xr, yr = x - center[0], y - center[1]
-    return _wx(xr, yr) - _w(x) * _b0x(xr, yr)
+    return (a1z(x, y + 0.5 * dl[1]) - a1z(x, y - 0.5 * dl[1])) / dl[1]
 
 
 def b1y(x, y):
-    xr, yr = x - center[0], y - center[1]
-    return _wy(xr, yr) - _w(x) * _b0y(xr, yr) + _dwdx(x) * _psi0(xr, yr)
+    return -(a1z(x + 0.5 * dl[0], y) - a1z(x - 0.5 * dl[0], y)) / dl[0]
 
 
 def config():
@@ -177,7 +159,7 @@ def config():
         reconstruction="WENOZ",
         limiter="None",
         riemann="Rusanov",
-        mhd_timestepper="TVDRK3",
+        mhd_timestepper=ARGS.timestepper,
         model_options=["MHDModel"],
         strict=True,
         diag_options={
