@@ -353,6 +353,18 @@ TEST(InnerBoundaryMeshClassifier, degradedListsFilledWhenUnderResolved)
     }
 }
 
+TEST(InnerBoundaryMeshClassifier, underResolvedSphereCenteredOnANodeClassifies)
+{
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.0, 0.0}, 1.5};
+    GridLayout layout{
+        {1.0, 1.0}, {12u, 12u}, {-6., -6.}, PHARE::core::Box<int, 2>{{-6, -6}, {5, 5}}};
+    auto classifier = Mapper::withDefaults(sphere, layout);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    EXPECT_NO_THROW(classifier(layout, buffers.tags));
+    EXPECT_FALSE(buffers.tags.getGhostDataFromCentering(kCellC).empty());
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);

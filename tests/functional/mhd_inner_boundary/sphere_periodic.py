@@ -19,6 +19,7 @@ def parse_args(argv):
     parser.add_argument("--levels", type=int, default=1)
     parser.add_argument("--restart", action="store_true")
     parser.add_argument("--under-resolved", action="store_true")
+    parser.add_argument("--compare-decomposition", action="store_true")
     args, _ = parser.parse_known_args(argv)
     args.external_field = args.external_field or args.levels > 1
     return args
@@ -49,6 +50,7 @@ variant = "_".join(
         (f"L{ARGS.levels}", ARGS.levels > 1),
         ("restart", ARGS.restart),
         ("under_resolved", ARGS.under_resolved),
+        ("decomposition", ARGS.compare_decomposition),
     )
     if on
 )
@@ -56,10 +58,13 @@ diag_dir = "phare_outputs/mhd_inner_boundary_sphere_periodic" + (
     f"_{variant}" if variant else ""
 )
 restart_dir = diag_dir + "_checkpoints"
+continuous_dir = diag_dir + "_continuous"
 
 
-def config(restart=None):
+def config(restart=None, out_dir=None, largest_patch_size=None):
     kwargs = {}
+    if largest_patch_size is not None:
+        kwargs["largest_patch_size"] = largest_patch_size
     if ARGS.external_field:
         kwargs["external_field"] = {
             "type": "dipole",
@@ -89,7 +94,7 @@ def config(restart=None):
         resistivity=0.0,
         diag_options={
             "format": "phareh5",
-            "options": {"dir": diag_dir, "mode": "overwrite"},
+            "options": {"dir": out_dir or diag_dir, "mode": "overwrite"},
         },
         strict=True,
         eta=0.0,
@@ -157,6 +162,8 @@ class MHDInnerBoundarySphereTest(SimulatorTest):
 
     def test_run(self):
         self.register_diag_dir_for_cleanup(diag_dir)
+        if ARGS.compare_decomposition:
+            return self._compare_decompositions()
         if ARGS.restart:
             self.register_diag_dir_for_cleanup(restart_dir)
             Simulator(
@@ -178,6 +185,9 @@ class MHDInnerBoundarySphereTest(SimulatorTest):
                     }
                 )
             ).run().reset()
+            ph.global_vars.sim = None
+            self.register_diag_dir_for_cleanup(continuous_dir)
+            Simulator(config(out_dir=continuous_dir)).run().reset()
         else:
             Simulator(config()).run().reset()
 
@@ -185,6 +195,8 @@ class MHDInnerBoundarySphereTest(SimulatorTest):
         if cpp.mpi_rank() == 0:
             try:
                 self._check_hierarchy()
+                if ARGS.restart:
+                    self._assert_same_level0(continuous_dir, diag_dir)
             except (AssertionError, KeyError, OSError, ValueError) as e:
                 error = e
         from mpi4py import MPI
@@ -192,6 +204,44 @@ class MHDInnerBoundarySphereTest(SimulatorTest):
         if MPI.COMM_WORLD.bcast(error is not None, root=0):
             raise error if error is not None else RuntimeError("check failed on rank 0")
         return self
+
+    def _compare_decompositions(self):
+        runs = {}
+        for largest in (cells[0], cells[0] // 4):
+            out_dir = f"{diag_dir}_largest{largest}"
+            self.register_diag_dir_for_cleanup(out_dir)
+            ph.global_vars.sim = None
+            Simulator(config(out_dir=out_dir, largest_patch_size=largest)).run().reset()
+            runs[largest] = out_dir
+        ph.global_vars.sim = None
+
+        one, many = runs.values()
+        self._assert_same_level0(one, many)
+        return self
+
+    def _assert_same_level0(self, reference_dir, other_dir):
+        for h5, keys in (
+            ("mhd_rho.h5", ["mhdRho"]),
+            ("mhd_P.h5", ["mhdP"]),
+            ("mhd_rhoV.h5", ["mhdRhoVx", "mhdRhoVy"]),
+        ):
+            for key in keys:
+                a = self._level0(os.path.join(reference_dir, h5), key)
+                b = self._level0(os.path.join(other_dir, h5), key)
+                scale = np.abs(a).max()
+                np.testing.assert_allclose(
+                    b, a, rtol=1e-6, atol=1e-6 * scale, err_msg=key
+                )
+
+    def _level0(self, h5, key):
+        hier = hierarchy_from(h5_filename=h5, times=final_time)
+        out = np.full(cells, np.nan)
+        for patch in hier.levels(final_time)[0].patches:
+            data, _, _ = self._interior(patch.patch_datas[key])
+            lo = patch.box.lower
+            out[lo[0] : lo[0] + data.shape[0], lo[1] : lo[1] + data.shape[1]] = data
+        self.assertTrue(np.all(np.isfinite(out)), f"{key} not finite or not covered")
+        return out
 
     def _interior(self, pd):
         ghosts = pd.ghosts_nbr

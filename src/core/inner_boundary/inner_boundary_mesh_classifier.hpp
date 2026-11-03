@@ -466,7 +466,11 @@ private:
             auto const& status_field = meshData.elemStatus[idx];
             auto& degraded_list      = meshData.degradedElemsData[idx];
 
-            layout.evalOnBox(status_field, [&](auto... local_idx_args) {
+            auto const nPrimal
+                = std::count(centering.begin(), centering.end(), QtyCentering::primal);
+            auto const shape = status_field.shape();
+
+            auto mark = [&](auto... local_idx_args) {
                 auto const local_elem
                     = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
 
@@ -482,6 +486,22 @@ private:
 
                 if (degraded)
                     degraded_list.push_back({local_elem, {}, {}, false});
+            };
+
+            if (nPrimal != 1)
+            {
+                layout.evalOnBox(status_field, mark);
+                continue;
+            }
+
+            layout.evalOnGhostBox(status_field, [&](auto... local_idx_args) {
+                auto const local_elem
+                    = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
+                for (std::size_t d = 0; d < dim; ++d)
+                    if (centering[d] == QtyCentering::primal
+                        and (local_elem[d] == 0 or local_elem[d] + 1 >= shape[d]))
+                        return;
+                mark(local_idx_args...);
             });
         }
     }

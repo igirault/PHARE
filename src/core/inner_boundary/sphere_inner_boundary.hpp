@@ -35,7 +35,11 @@ public:
         auto direction = point - center_;
         auto length    = distance_(point, center_);
         if (length == 0.)
-            throw std::runtime_error("SphereInnerBoundary normal undefined at center");
+        {
+            point_type axis{};
+            axis[0] = 1.;
+            return axis;
+        }
         return direction * (1. / length);
     }
 
