@@ -2,6 +2,7 @@
 #define PHARE_AMR_SOLVERS_SOLVER_MHD_FIELD_EVOLVERS_HPP
 
 
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/numerics/time_integrator_utils.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
 #include "core/numerics/constrained_transport/non_ideal_electric_field.hpp"
@@ -149,6 +150,21 @@ public:
                     double const dt)
     {
         auto& rm = *model.resourcesManager;
+        if (model.hasInnerBoundary())
+        {
+            auto& ibm = *model.innerBoundaryManager;
+            for (auto& patch : rm.enumerate(level, state, statenew, fluxes, ibm))
+            {
+                auto const layout      = amr::layoutFromPatch<GridLayout>(*patch);
+                auto const& cellStatus = ibm.getMeshData().cellStatusField();
+                core_type{layout}(state, statenew, fluxes, dt, [&](auto const& index) {
+                    auto const status = cellStatus(index);
+                    return status != core::toDouble(core::ElemStatus::Ghost)
+                           && status != core::toDouble(core::ElemStatus::Inactive);
+                });
+            }
+            return;
+        }
         for (auto& patch : rm.enumerate(level, state, statenew, fluxes))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);

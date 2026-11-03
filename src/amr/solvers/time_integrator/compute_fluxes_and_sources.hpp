@@ -3,6 +3,9 @@
 
 #include "amr/solvers/solver_mhd_field_evolvers.hpp"
 
+#include "core/inner_boundary/inner_bc_context.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
+
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport_utils.hpp"
 
@@ -87,6 +90,9 @@ public:
         ConstrainedTransport_t{level, model,
                                constrainedTransportInfo_}(ct_, non_ideal_electric_state_, state);
 
+        if (model.hasInnerBoundary())
+            applyInnerBoundaryToElectricField_(model, state, level, newTime);
+
         bc.fillElectricGhosts(state.E, level, newTime);
         ExternalFieldSource_t{level, model}(state, sources);
     }
@@ -104,6 +110,32 @@ public:
     }
 
 private:
+    void applyInnerBoundaryToElectricField_(MHDModel& model, auto& state, level_t& level,
+                                            double const newTime)
+    {
+        using state_type = std::decay_t<decltype(state)>;
+        using GridLayout = MHDModel::gridlayout_type;
+        auto& ibm        = *model.innerBoundaryManager;
+        amr::visitLevel<GridLayout>(
+            level, *model.resourcesManager,
+            [&](auto const& layout, auto&&, auto&&) {
+                ibm.applyBC(state.E, layout,
+                            core::InnerBCContext<state_type>{state, state, newTime, 0.});
+                auto const& meshData = ibm.getMeshData();
+                for (auto const c : {core::Component::X, core::Component::Y, core::Component::Z})
+                {
+                    auto& Ec           = state.E(c);
+                    auto const& status = meshData.getStatusFieldFromCentering(layout.centering(Ec));
+                    layout.evalOnBox(Ec, [&](auto&... args) {
+                        core::MeshIndex<GridLayout::dimension> const idx{args...};
+                        if (status(idx) == core::toDouble(core::ElemStatus::Inactive))
+                            Ec(idx) = 0.;
+                    });
+                }
+            },
+            ibm, state);
+    }
+
     FVMethodInfo_t fVMethodInfo_;
     ConstrainedTransportInfo_t constrainedTransportInfo_;
     bool const isNonIdeal_{Hall || fVMethodInfo_.isResistive() || fVMethodInfo_.isHyperResistive()};

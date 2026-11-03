@@ -4,6 +4,8 @@
 
 #include "amr/solvers/solver_mhd_field_evolvers.hpp"
 
+#include "core/inner_boundary/inner_bc_context.hpp"
+
 namespace PHARE::solver
 {
 template<typename MHDModel>
@@ -34,10 +36,44 @@ public:
 
         TimeSetter{level, model, newTime}(statenew.B1);
 
+        if (model.hasInnerBoundary())
+            setSafeState_(model, statenew, level);
+
         bc.fillStateGhosts(statenew, level, newTime);
+
+        if (model.hasInnerBoundary())
+            applyInnerBoundaryToMoments_(model, state, statenew, level, newTime, dt);
     }
 
 private:
+    void setSafeState_(MHDModel& model, auto& statenew, level_t& level)
+    {
+        auto& ibm = *model.innerBoundaryManager;
+        amr::visitLevel<GridLayout>(
+            level, *model.resourcesManager,
+            [&](auto const& layout, auto&&, auto&&) {
+                ibm.setSafeState(statenew.B1, layout);
+                ibm.setSafeState(statenew.rho, layout);
+                ibm.setSafeState(statenew.rhoV, layout);
+                ibm.setSafeState(statenew.Etot1, layout);
+            },
+            ibm, statenew);
+    }
+
+    void applyInnerBoundaryToMoments_(MHDModel& model, auto& state, auto& statenew, level_t& level,
+                                      double const newTime, double const dt)
+    {
+        using state_type = std::decay_t<decltype(statenew)>;
+        auto& ibm        = *model.innerBoundaryManager;
+        amr::visitLevel<GridLayout>(
+            level, *model.resourcesManager,
+            [&](auto const& layout, auto&&, auto&&) {
+                ibm.applyToMoments(layout,
+                                   core::InnerBCContext<state_type>{statenew, state, newTime, dt});
+            },
+            ibm, state, statenew);
+    }
+
     void applySources_(MHDModel& model, auto& statenew, auto& sources, level_t& level,
                        double const dt)
     {

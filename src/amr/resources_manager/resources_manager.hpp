@@ -129,6 +129,9 @@ namespace amr
         template<std::size_t rank>
         using UserTensorField_t = UserTensorFieldType<rank, Grid_t, GridLayoutT, QuantityType>;
 
+        template<typename ResourcesView>
+        using UserGhostElem_t = UserGhostElemType<ResourcesView>;
+
 
         ResourcesManager()
             : variableDatabase_{SamraiLifeCycle::getDatabase()}

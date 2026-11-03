@@ -5,9 +5,11 @@
 #include "core/utilities/meta/meta_utilities.hpp"
 
 #include "core/data/ions/ion_population/particle_pack.hpp"
+#include "core/inner_boundary/ghost_elem_pack.hpp"
 
 #include "field_resource.hpp"
 #include "particle_resource.hpp"
+#include "ghost_elem_resource.hpp"
 
 
 #include <string>
@@ -75,13 +77,29 @@ namespace amr
     bool constexpr static is_particles_v = is_particles<ResourceView>::value;
 
 
+    template<typename ResourceView, typename Attempt = void>
+    struct is_ghost_elem_pack : std::false_type
+    {
+    };
+
+    template<typename ResourceView>
+    struct is_ghost_elem_pack<
+        ResourceView, core::tryToInstanciate<decltype(std::declval<ResourceView>().setBuffer(
+                          static_cast<core::GhostElemPack<ResourceView::dimension>*>(nullptr)))>>
+        : std::true_type
+    {
+    };
+    template<typename ResourceView>
+    bool constexpr static is_ghost_elem_pack_v = is_ghost_elem_pack<ResourceView>::value;
+
+
 
     template<typename ResourceView>
     struct is_resource
     {
         bool constexpr static value
             = core::any(is_field_v<ResourceView>, is_tensor_field_v<ResourceView>,
-                        is_particles_v<ResourceView>);
+                        is_particles_v<ResourceView>, is_ghost_elem_pack_v<ResourceView>);
     };
     template<typename ResourceView>
     bool constexpr static is_resource_v = is_resource<ResourceView>::value;
@@ -95,6 +113,8 @@ namespace amr
                 return typename ResourceManager::template UserTensorField_t<ResourceView::rank>{};
             else if constexpr (is_particles_v<ResourceView>)
                 return typename ResourceManager::template UserParticle_t<ResourceView>{};
+            else if constexpr (is_ghost_elem_pack_v<ResourceView>)
+                return typename ResourceManager::template UserGhostElem_t<ResourceView>{};
             else if constexpr (is_field_v<ResourceView>)
                 return typename ResourceManager::UserField_t{};
             else
@@ -110,6 +130,8 @@ namespace amr
                 return std::make_shared<typename type::variable_type>(view.name(),
                                                                       view.physicalQuantity());
             else if constexpr (is_particles_v<ResourceView>)
+                return std::make_shared<typename type::variable_type>(view.name());
+            else if constexpr (is_ghost_elem_pack_v<ResourceView>)
                 return std::make_shared<typename type::variable_type>(view.name());
             else if constexpr (is_field_v<ResourceView>)
                 return std::make_shared<typename type::variable_type>(view.name(),

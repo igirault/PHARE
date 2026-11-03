@@ -58,6 +58,8 @@ public:
                 PHARE_LOG_STOP(3, "mhdLevelInitializer::initialize : initlevel");
             }
         }
+
+        mhdModel.setupInnerBoundaryState(level, initDataTime);
     }
 };
 

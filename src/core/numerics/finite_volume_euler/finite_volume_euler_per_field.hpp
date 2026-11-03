@@ -11,6 +11,10 @@
 
 namespace PHARE::core
 {
+struct UpdateAllCells
+{
+    bool operator()(auto const&) const { return true; }
+};
 
 
 template<typename GridLayout>
@@ -25,11 +29,16 @@ public:
     {
     }
 
-    template<typename Field, typename... Fluxes>
-    void operator()(Field const& U, Field& Unew, Fluxes const&... fluxes) const
+    template<typename Field, typename Pred, typename... Fluxes>
+    void operator()(Field const& U, Field& Unew, Pred const& shouldUpdate,
+                    Fluxes const&... fluxes) const
     {
         layout_.evalOnBox(Unew, [&](auto&... args) mutable {
-            finite_volume_euler_(U, Unew, {args...}, fluxes...);
+            MeshIndex<Field::dimension> const index{args...};
+            if (shouldUpdate(index))
+                finite_volume_euler_(U, Unew, index, fluxes...);
+            else
+                Unew(index) = U(index);
         });
     }
 

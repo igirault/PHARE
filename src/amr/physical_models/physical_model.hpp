@@ -90,6 +90,8 @@ namespace solver
          */
         virtual void updateExternalField(level_t& level, double time) = 0;
 
+        virtual void reinitializeAfterRestart(level_t&, double) {}
+
 
         virtual ~IPhysicalModel() = default;
     };

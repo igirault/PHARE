@@ -3,6 +3,8 @@
 
 #include "core/boundary/boundary_manager.hpp"
 #include "core/def.hpp"
+#include "core/inner_boundary/inner_bc_context.hpp"
+#include "core/inner_boundary/inner_boundary_manager.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "phare_mpi.hpp" // IWYU pragma: keep
 #include "core/models/mhd_state.hpp"
@@ -10,6 +12,7 @@
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/external_field_manager.hpp"
 #include "amr/physical_models/physical_model.hpp"
+#include "amr/resources_manager/amr_utils.hpp"
 #include "amr/resources_manager/resources_manager.hpp"
 
 #include <SAMRAI/hier/PatchLevel.h>
@@ -42,6 +45,8 @@ public:
     using resources_manager_type      = amr::ResourcesManager<gridlayout_type, Grid_t>;
     using boundary_manager_type       = core::BoundaryManager<gridlayout_type, field_type>;
     using external_field_manager_type = ExternalFieldManager<vecfield_type, gridlayout_type>;
+    using inner_boundary_manager_type
+        = core::InnerBoundaryManager<core::MHDQuantity, field_type, gridlayout_type, state_type>;
 
     static constexpr std::string_view model_type_name = "MHDModel";
     static inline std::string const model_name{model_type_name};
@@ -51,6 +56,7 @@ public:
     std::shared_ptr<resources_manager_type> resourcesManager;
     std::shared_ptr<boundary_manager_type> boundaryManager;
     double gamma_; //!< heat capacity ratio
+    std::unique_ptr<inner_boundary_manager_type> innerBoundaryManager;
 
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
@@ -78,6 +84,8 @@ public:
         resourcesManager->allocate(tmpField_, patch, allocateTime);
         resourcesManager->allocate(tmpVec_, patch, allocateTime);
         resourcesManager->allocate(externalFieldManager.state(), patch, allocateTime);
+        if (innerBoundaryManager)
+            resourcesManager->allocate(*innerBoundaryManager, patch, allocateTime);
     }
 
 
@@ -118,6 +126,40 @@ public:
         boundaryManager    = std::make_shared<boundary_manager_type>(
             has_bcs ? dict["grid"]["domain_boundaries"] : PHARE::initializer::PHAREDict{},
             scalarQuantities, vectorQuantities, gamma_, externalFieldManager.updater());
+
+        innerBoundaryManager
+            = inner_boundary_manager_type::create(dict, scalarQuantities, vectorQuantities, gamma_);
+        if (innerBoundaryManager)
+            resourcesManager->registerResources(*innerBoundaryManager);
+    }
+
+    NO_DISCARD bool hasInnerBoundary() const { return innerBoundaryManager != nullptr; }
+
+    void setupInnerBoundaryState(level_t& level, double const time)
+    {
+        if (!hasInnerBoundary())
+            return;
+
+        auto& rm  = *resourcesManager;
+        auto& ibm = *innerBoundaryManager;
+
+        amr::visitLevel<gridlayout_type>(
+            level, rm,
+            [&](auto const& layout, auto&&, auto&&) {
+                ibm.classify(layout);
+                ibm.setSafeState(state.B1, layout);
+                ibm.setSafeState(state.rho, layout);
+                ibm.setSafeState(state.rhoV, layout);
+                ibm.setSafeState(state.Etot1, layout);
+                ibm.applyToMoments(layout,
+                                   core::InnerBCContext<state_type>{state, state, time, 0.});
+            },
+            ibm, state);
+    }
+
+    void reinitializeAfterRestart(level_t& level, double const time) override
+    {
+        setupInnerBoundaryState(level, time);
     }
 
     void initializeExternalField(level_t& level, double time) override
