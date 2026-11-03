@@ -4,6 +4,8 @@
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/numerics/reconstructions/constant.hpp"
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -25,6 +27,12 @@ public:
         auto [VyL, VyR] = Reconstruction::template reconstruct<direction>(S.V(Component::Y), index);
         auto [VzL, VzR] = Reconstruction::template reconstruct<direction>(S.V(Component::Z), index);
         auto [PL, PR]   = Reconstruction::template reconstruct<direction>(S.P, index);
+
+        using FirstOrder = ConstantReconstruction<GridLayout>;
+        if (!(rhoL > 0.) || !(rhoR > 0.))
+            std::tie(rhoL, rhoR) = FirstOrder::template reconstruct<direction>(S.rho, index);
+        if (!(PL > 0.) || !(PR > 0.))
+            std::tie(PL, PR) = FirstOrder::template reconstruct<direction>(S.P, index);
 
         auto [B1L, B1R] = transverse_reconstruct<direction>(S.B1, index);
         auto const B0f  = B0_at_face<direction>(b0, index);

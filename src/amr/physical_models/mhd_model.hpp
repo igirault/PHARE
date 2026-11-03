@@ -8,6 +8,7 @@
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "phare_mpi.hpp" // IWYU pragma: keep
 #include "core/models/mhd_state.hpp"
+#include "core/numerics/primite_conservative_converter/positivity_floors.hpp"
 
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/external_field_manager.hpp"
@@ -57,6 +58,7 @@ public:
     std::shared_ptr<boundary_manager_type> boundaryManager;
     double gamma_; //!< heat capacity ratio
     std::unique_ptr<inner_boundary_manager_type> innerBoundaryManager;
+    core::PositivityFloors positivityFloors;
 
     // diagnostics buffers
     vecfield_type V_diag_{"diagnostics_V_", core::MHDQuantity::Vector::V};
@@ -103,6 +105,9 @@ public:
         , externalFieldManager{model_name, dict}
         , resourcesManager{_resourcesManager}
         , gamma_{dict["mhd_state"]["to_conservative_init"]["heat_capacity_ratio"]}
+        , positivityFloors{dict.contains("algo") and dict["algo"].contains("to_primitive")
+                               ? core::PositivityFloors::FROM(dict["algo"]["to_primitive"])
+                               : core::PositivityFloors{}}
     {
         resourcesManager->registerResources(V_diag_);
         resourcesManager->registerResources(P_diag_);

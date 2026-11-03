@@ -12,6 +12,8 @@
 
 #include "amr/resources_manager/amr_utils.hpp"
 
+#include <iostream>
+
 #include "solver_field_evolvers.hpp"
 
 namespace PHARE::solver
@@ -66,15 +68,19 @@ public:
     {
     }
 
-    void operator()(auto& state, double const gamma)
+    void operator()(auto& state, double const gamma, core::PositivityFloors const& floors = {})
     {
         auto& rm = *model.resourcesManager;
+        core::ClipCounts counts;
         for (auto& patch : rm.enumerate(level, state))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
-            core_type{layout}(gamma, state.rho, state.rhoV, state.B1, state.Etot1, state.V,
-                              state.P);
+            counts += core_type{layout}(gamma, state.rho, state.rhoV, state.B1, state.Etot1,
+                                        state.V, state.P, floors);
         }
+        if (counts.density + counts.pressure > 0)
+            std::cout << "PHARE_CLIPS level=" << level.getLevelNumber()
+                      << " density=" << counts.density << " pressure=" << counts.pressure << "\n";
     }
 
     level_t& level;

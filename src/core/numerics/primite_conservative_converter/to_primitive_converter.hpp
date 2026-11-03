@@ -5,6 +5,9 @@
 #include "core/utilities/index/index.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/primite_conservative_converter/mhd_conversion.hpp"
+#include "core/numerics/primite_conservative_converter/positivity_floors.hpp"
+
+#include <cmath>
 
 namespace PHARE::core
 {
@@ -33,12 +36,37 @@ public:
     }
 
     template<typename Field, typename VecField>
-    void operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B1,
-                    Field& Etot1, VecField& V, Field& P) const
+    ClipCounts operator()(double const gamma, Field& rho, VecField const& rhoV, VecField const& B1,
+                          Field& Etot1, VecField& V, Field& P,
+                          PositivityFloors const& floors = {}) const
     {
+        ClipCounts counts;
+
+        if (floors.density > 0.)
+            layout_.evalOnGhostBox(rho, [&](auto&... args) {
+                MeshIndex<Field::dimension> const index{args...};
+                if (!(rho(index) >= floors.density))
+                {
+                    rho(index) = floors.density;
+                    ++counts.density;
+                }
+            });
+
         rhoVToVOnGhostBox(rho, rhoV, V);
 
         eosEtot1ToPOnGhostBox(gamma, rho, rhoV, B1, Etot1, P);
+
+        if (floors.pressure > 0.)
+            layout_.evalOnGhostBox(P, [&](auto&... args) {
+                MeshIndex<Field::dimension> const index{args...};
+                if (std::isfinite(P(index)) && P(index) >= floors.pressure)
+                    return;
+                P(index) = floors.pressure;
+                rewriteEtot1_(gamma, rho, V, B1, P, Etot1, index);
+                ++counts.pressure;
+            });
+
+        return counts;
     }
 
     // used for diagnostics
@@ -59,6 +87,22 @@ public:
     }
 
 private:
+    template<typename Field, typename VecField>
+    static void rewriteEtot1_(double const gamma, Field const& rho, VecField const& V,
+                              VecField const& B1, Field const& P, Field& Etot1,
+                              MeshIndex<Field::dimension> index)
+    {
+        auto const b1x = GridLayout::template project<GridLayout::implT::faceXToCellCenter>(
+            B1(Component::X), index);
+        auto const b1y = GridLayout::template project<GridLayout::implT::faceYToCellCenter>(
+            B1(Component::Y), index);
+        auto const b1z = GridLayout::template project<GridLayout::implT::faceZToCellCenter>(
+            B1(Component::Z), index);
+        Etot1(index)
+            = eosPToEtot1(gamma, rho(index), V(Component::X)(index), V(Component::Y)(index),
+                          V(Component::Z)(index), b1x, b1y, b1z, P(index));
+    }
+
     template<typename Field, typename VecField>
     static void rhoVToV_(Field& rho, VecField const& rhoV, VecField& V,
                          MeshIndex<Field::dimension> index)

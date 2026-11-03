@@ -68,7 +68,7 @@ public:
     void operator()(MHDModel& model, auto& state, auto& fluxes, auto& sources, auto& bc,
                     level_t& level, double const newTime)
     {
-        ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_);
+        ToPrimitiveConverter_t{level, model}(state, to_primitive_gamma_, model.positivityFloors);
         TimeSetter{level, model, newTime}(state.rho, state.rhoV, state.Etot1, state.V, state.P);
 
         if (needsCurrent_)
