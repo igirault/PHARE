@@ -131,6 +131,23 @@ public:
         std::array<QtyCentering, NBR_COMPO> const VecAllPrimalZ
             = {{data.primal, data.primal, data.primal}};
 
+        std::array<QtyCentering, NBR_COMPO> const FaceCenteredX
+            = {{data.primal, data.dual, data.dual}};
+        std::array<QtyCentering, NBR_COMPO> const FaceCenteredY
+            = {{data.dual, data.primal, data.dual}};
+        std::array<QtyCentering, NBR_COMPO> const FaceCenteredZ
+            = {{data.dual, data.dual, data.primal}};
+        std::array<QtyCentering, NBR_COMPO> const NodeCentered
+            = {{data.primal, data.primal, data.primal}};
+        std::array<QtyCentering, NBR_COMPO> const CellCentered
+            = {{data.dual, data.dual, data.dual}};
+        std::array<QtyCentering, NBR_COMPO> const EdgeCenteredX
+            = {{data.dual, data.primal, data.primal}};
+        std::array<QtyCentering, NBR_COMPO> const EdgeCenteredY
+            = {{data.primal, data.dual, data.primal}};
+        std::array<QtyCentering, NBR_COMPO> const EdgeCenteredZ
+            = {{data.primal, data.primal, data.dual}};
+
         using Qty                = MHDQuantity::Scalar;
         auto const _QtyCentering = make_enum_table<Qty, std::array<QtyCentering, NBR_COMPO>>({
             {Qty::rho, Rho},
@@ -172,6 +189,14 @@ public:
             {Qty::VecAllPrimalX, VecAllPrimalX},
             {Qty::VecAllPrimalY, VecAllPrimalY},
             {Qty::VecAllPrimalZ, VecAllPrimalZ},
+            {Qty::FaceCenteredX, FaceCenteredX},
+            {Qty::FaceCenteredY, FaceCenteredY},
+            {Qty::FaceCenteredZ, FaceCenteredZ},
+            {Qty::NodeCentered, NodeCentered},
+            {Qty::CellCentered, CellCentered},
+            {Qty::EdgeCenteredX, EdgeCenteredX},
+            {Qty::EdgeCenteredY, EdgeCenteredY},
+            {Qty::EdgeCenteredZ, EdgeCenteredZ},
         });
 
         return _QtyCentering;

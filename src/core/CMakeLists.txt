@@ -32,6 +32,13 @@ set( SOURCES_INC
      boundary/boundary_defs.hpp
      boundary/boundary_factory.hpp
      boundary/boundary_manager.hpp
+     inner_boundary/ghost_elem_pack.hpp
+     inner_boundary/inner_boundary_defs.hpp
+     inner_boundary/inner_boundary_factory.hpp
+     inner_boundary/inner_boundary_geometry.hpp
+     inner_boundary/inner_boundary_mesh_classifier.hpp
+     inner_boundary/inner_boundary_mesh_data.hpp
+     inner_boundary/sphere_inner_boundary.hpp
      numerics/boundary_condition/boundary_condition.hpp
      numerics/boundary_condition/field_boundary_condition.hpp
      numerics/boundary_condition/field_boundary_condition_resolver.hpp
@@ -42,6 +49,7 @@ set( SOURCES_INC
      numerics/boundary_condition/field_boundary_condition_antisymmetric.hpp
      numerics/boundary_condition/field_boundary_condition_divergence_free_transverse_neumann.hpp
      numerics/interpolator/interpolator.hpp
+     numerics/interpolator/field_at_point.hpp
      numerics/pusher/boris.hpp
      numerics/pusher/pusher.hpp
      numerics/pusher/pusher_factory.hpp

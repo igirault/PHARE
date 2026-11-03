@@ -61,6 +61,15 @@ public:
         VecAllPrimalY,
         VecAllPrimalZ,
 
+        FaceCenteredX,
+        FaceCenteredY,
+        FaceCenteredZ,
+        NodeCentered,
+        CellCentered,
+        EdgeCenteredX,
+        EdgeCenteredY,
+        EdgeCenteredZ,
+
         count
     };
     enum class Vector : std::uint16_t {
@@ -74,6 +83,8 @@ public:
         VecFlux_y,
         VecFlux_z,
         VecAllPrimal,
+        FaceCentered,
+        EdgeCentered,
         count
     };
     enum class Tensor : std::uint16_t { count = 0 };
@@ -90,6 +101,10 @@ public:
         {Vector::VecFlux_z, {Scalar::VecFluxX_z, Scalar::VecFluxY_z, Scalar::VecFluxZ_z}},
         {Vector::VecAllPrimal,
          {Scalar::VecAllPrimalX, Scalar::VecAllPrimalY, Scalar::VecAllPrimalZ}},
+        {Vector::FaceCentered,
+         {Scalar::FaceCenteredX, Scalar::FaceCenteredY, Scalar::FaceCenteredZ}},
+        {Vector::EdgeCentered,
+         {Scalar::EdgeCenteredX, Scalar::EdgeCenteredY, Scalar::EdgeCenteredZ}},
     });
 
     static constexpr auto all_primal_field = Scalar::ScalarAllPrimal;
@@ -112,6 +127,16 @@ public:
     NO_DISCARD static constexpr auto VecAllPrimal()
     {
         return componentsQuantities(Vector::VecAllPrimal);
+    }
+
+    NO_DISCARD static constexpr auto FaceCentered()
+    {
+        return componentsQuantities(Vector::FaceCentered);
+    }
+
+    NO_DISCARD static constexpr auto EdgeCentered()
+    {
+        return componentsQuantities(Vector::EdgeCentered);
     }
 
     NO_DISCARD static constexpr std::array<Scalar, 3> componentsQuantities(Vector const qty)
