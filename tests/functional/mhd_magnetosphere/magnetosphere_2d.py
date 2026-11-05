@@ -65,10 +65,10 @@ m = MAG_DIPOLE / (B_MAX * D0**2 / mu_0)
 rho_in = 100.0 * rho_wind
 p_in = p_wind / 20.0
 
-cells = np.array((120, 60))
-domain_size = np.array([200.0 * re, 100.0 * re])
+cells = np.array((120, 120))
+domain_size = np.array([200.0 * re, 200.0 * re])
 dl = domain_size / cells
-center = (50.0 * re, 50.0 * re)
+center = (50.0 * re, 100.0 * re)
 dipole_radius = ib_radius - 2 * dl.min()
 
 flow_through = domain_size[0] / u_wind
