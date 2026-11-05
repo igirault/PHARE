@@ -9,6 +9,7 @@
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
 
 #include "core/errors.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/logger.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
@@ -410,11 +411,12 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
     double dt                = std::numeric_limits<double>::max();
     bool nonFiniteCellLogged = false;
 
-    for (auto& patch : level)
-    {
-        auto const& layout = amr::layoutFromPatch<GridLayout>(*patch);
-        auto _ = mhdModel.resourcesManager->setOnPatch(*patch, rho, rhoV, B1, Etot1, external);
+    auto const& floors = mhdModel.positivityFloors;
+    auto floored       = [](double const value, double const floor) {
+        return floor > 0. && value < floor ? floor : value;
+    };
 
+    auto scanPatch = [&](GridLayout const& layout, auto&& isEvolved) {
         auto const meshSize = layout.meshSize();
 
         // diffusive cfl constraint
@@ -437,8 +439,10 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
         mhdModel.externalFieldManager.state().visitB0([&](auto const& B0) {
             layout.evalOnBox(rho, [&](auto&... args) mutable {
                 core::MeshIndex<dimension> const index{args...};
+                if (!isEvolved(index))
+                    return;
 
-                auto const r  = rho(index);
+                auto const r  = floored(rho(index), floors.density);
                 auto const vx = rhoVx(index) / r;
                 auto const vy = rhoVy(index) / r;
                 auto const vz = rhoVz(index) / r;
@@ -458,7 +462,8 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
                                     B0(core::Component::Z), index);
 
                 auto const P
-                    = core::eosEtot1ToP(gamma_, r, vx, vy, vz, b1x, b1y, b1z, Etot1(index));
+                    = floored(core::eosEtot1ToP(gamma_, r, vx, vy, vz, b1x, b1y, b1z, Etot1(index)),
+                              floors.pressure);
                 auto const BdotB = bx * bx + by * by + bz * bz;
 
                 std::array<double, 3> const v{vx, vy, vz};
@@ -496,6 +501,24 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
                 dt = std::min(dt, wave / invDtWave);
             });
         });
+    };
+
+    auto& rm = *mhdModel.resourcesManager;
+    if (mhdModel.hasInnerBoundary())
+    {
+        auto& ibm = *mhdModel.innerBoundaryManager;
+        for (auto& patch : rm.enumerate(level, rho, rhoV, B1, Etot1, external, ibm))
+        {
+            auto const& cellStatus = ibm.getMeshData().cellStatusField();
+            scanPatch(amr::layoutFromPatch<GridLayout>(*patch), [&](auto const& index) {
+                return cellStatus(index) != core::toDouble(core::ElemStatus::Inactive);
+            });
+        }
+    }
+    else
+    {
+        for (auto& patch : rm.enumerate(level, rho, rhoV, B1, Etot1, external))
+            scanPatch(amr::layoutFromPatch<GridLayout>(*patch), [](auto const&) { return true; });
     }
 
     return nonFiniteCellLogged ? -1.0 : dt;
