@@ -210,16 +210,16 @@ class RestartTimeTest(SimulatorTest):
         )
         self.assertEqual(tC, tB[4:7])
 
-    def test_restart_without_time_record_loads(self):
+    def to_old_format(self, restart_time, clock_offset=0.0):
         from pyphare import cpp
         from pyphare.cpp import cpp_etc_lib
-
-        tA = self.run_recording(dict(timestamps=[0.5]), time_step=0.1, time_step_nbr=11)
 
         if cpp.mpi_rank() == 0:
             import h5py
 
-            folder = cpp_etc_lib().restart_path_for_time(f"{self.out()}/restarts", 0.5)
+            folder = cpp_etc_lib().restart_path_for_time(
+                f"{self.out()}/restarts", restart_time
+            )
             record = (
                 "time_step_mode",
                 "time_step",
@@ -233,14 +233,33 @@ class RestartTimeTest(SimulatorTest):
                             for name in record:
                                 if name in f["phare"].attrs:
                                     del f["phare"].attrs[name]
+                        clock = "TimeRefinementIntegrator/d_integrator_time"
+                        if clock in f:
+                            f[clock][...] = f[clock][()] + clock_offset
 
         from mpi4py import MPI
 
         MPI.COMM_WORLD.Barrier()
 
+    def test_old_format_restart_on_the_grid_keeps_original_anchor(self):
+        tA = self.run_recording(dict(timestamps=[0.5]), time_step=0.1, time_step_nbr=11)
+        self.to_old_format(0.5, clock_offset=1e-12)
         tB = self.run_recording(dict(restart_time=0.5), time_step=0.1, time_step_nbr=6)
-        self.assertNotEqual(tA[5:], [tA[5] + float(k) * 0.1 for k in range(7)])
-        self.assertEqual(tB, [tA[5] + float(k) * 0.1 for k in range(7)])
+        self.assertEqual(tB[0], tA[5] + 1e-12)
+        self.assertEqual(tB[1:], tA[6:])
+
+    def test_old_format_chain_with_changed_dt_reanchors(self):
+        tA = self.run_recording(dict(timestamps=[0.3]), time_step=0.1, time_step_nbr=3)
+        tB = self.run_recording(
+            dict(restart_time=0.3, timestamps=[tA[3] + 4.0 * 0.05]),
+            time_step=0.05,
+            time_step_nbr=6,
+        )
+        self.to_old_format(0.5)
+        tC = self.run_recording(
+            dict(restart_time="auto"), time_step=0.05, time_step_nbr=2
+        )
+        self.assertEqual(tC, [tB[4] + float(k) * 0.05 for k in range(3)])
 
 
 if __name__ == "__main__":

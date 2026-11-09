@@ -141,6 +141,25 @@ TEST(ResolveAnchor, sameDtWithoutStoredAnchorReanchorsAtRestoredTime)
     EXPECT_EQ(a.step, 7);
 }
 
+TEST(ResolveAnchor, sameDtWithoutStoredAnchorOnTheGridAnchorsAtStart)
+{
+    double const drifted = std::nextafter(std::nextafter(3.0 * 0.1, 0.0), 0.0);
+    auto const a
+        = resolve_anchor(TimeStepType::constant, 0.1,
+                         TimeRecord{TimeStepType::constant, 0.1, std::nullopt}, 0.0, drifted, 3);
+    EXPECT_EQ(a.time, 0.0);
+    EXPECT_EQ(a.step, 0);
+}
+
+TEST(ResolveAnchor, adaptivePreviousRunWithoutStoredAnchorReanchors)
+{
+    auto const a
+        = resolve_anchor(TimeStepType::constant, 0.1,
+                         TimeRecord{TimeStepType::adaptive, 0.0, std::nullopt}, 0.0, 0.3, 3);
+    EXPECT_EQ(a.time, 0.3);
+    EXPECT_EQ(a.step, 3);
+}
+
 TEST(ResolveAnchor, changedDtReanchorsAtRestoredTime)
 {
     auto const a
@@ -175,6 +194,21 @@ TEST(ResolveAnchor, adaptiveRunUsesRestoredTime)
                          TimeRecord{TimeStepType::constant, 0.1, TimeAnchor{0.0, 0}}, 0.0, 0.3, 3);
     EXPECT_EQ(a.time, 0.3);
     EXPECT_EQ(a.step, 3);
+}
+
+
+TEST(LandedOnTarget, acceptsTargetAndOneUlpAbove)
+{
+    auto constexpr inf = std::numeric_limits<double>::infinity();
+    EXPECT_TRUE(landed_on_target(0.4, 0.4));
+    EXPECT_TRUE(landed_on_target(std::nextafter(0.4, inf), 0.4));
+}
+
+TEST(LandedOnTarget, rejectsBelowOrFurtherAbove)
+{
+    auto constexpr inf = std::numeric_limits<double>::infinity();
+    EXPECT_FALSE(landed_on_target(std::nextafter(0.4, 0.0), 0.4));
+    EXPECT_FALSE(landed_on_target(std::nextafter(std::nextafter(0.4, inf), inf), 0.4));
 }
 
 

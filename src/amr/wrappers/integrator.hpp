@@ -74,11 +74,11 @@ public:
         timeRefIntegrator_->advanceHierarchy(dt, rebalance_coarsest_now);
         firstAdvanceOfRun_ = false;
 
-        if (currentTime() != t + dt)
+        if (!core::landed_on_target(currentTime(), target))
         {
             std::stringstream ss;
             ss << std::setprecision(17) << "Integrator::advanceTo: SAMRAI time " << currentTime()
-               << " differs from the expected " << t + dt << " (target " << target << ")";
+               << " did not land on the target " << target << " from t = " << t;
             throw std::runtime_error(ss.str());
         }
     }

@@ -83,6 +83,13 @@ inline double increment_landing_on(double const t, double const target)
 }
 
 
+inline bool landed_on_target(double const landed, double const target)
+{
+    return landed == target
+           or landed == std::nextafter(target, std::numeric_limits<double>::infinity());
+}
+
+
 inline TimeAnchor resolve_anchor(TimeStepType const mode, double const dt,
                                  std::optional<TimeRecord> const& previous, double const start_time,
                                  double const restored_time, int const restored_step)
@@ -92,8 +99,12 @@ inline TimeAnchor resolve_anchor(TimeStepType const mode, double const dt,
 
     if (mode == TimeStepType::constant and previous->mode == TimeStepType::constant
         and previous->dt == dt)
+    {
         if (previous->anchor)
             return *previous->anchor;
+        if (std::llround((restored_time - start_time) / dt) == restored_step)
+            return {start_time, 0};
+    }
 
     return {restored_time, restored_step};
 }
