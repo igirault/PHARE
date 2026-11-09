@@ -56,6 +56,14 @@ public:
             "/phare", "serialized_simulation",
             properties.fileAttributes["serialized_simulation"].template to<std::string>());
 
+        if (auto const& record = properties.timeRecord; record and record->anchor)
+        {
+            h5File.write_attribute("/phare", "time_step_mode", static_cast<int>(record->mode));
+            h5File.write_attribute("/phare", "time_step", record->dt);
+            h5File.write_attribute("/phare", "time_anchor_time", record->anchor->time);
+            h5File.write_attribute("/phare", "time_anchor_step", record->anchor->step);
+        }
+
         mpi::barrier();
     }
 

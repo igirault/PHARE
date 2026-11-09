@@ -92,7 +92,8 @@ inline TimeAnchor resolve_anchor(TimeStepType const mode, double const dt,
 
     if (mode == TimeStepType::constant and previous->mode == TimeStepType::constant
         and previous->dt == dt)
-        return previous->anchor.value_or(TimeAnchor{start_time, 0});
+        if (previous->anchor)
+            return *previous->anchor;
 
     return {restored_time, restored_step};
 }

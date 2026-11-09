@@ -191,7 +191,17 @@ def populate_restarts(dp, sim, serialized_sim):
         dp.add_string(restarts_path + "loadPath", restart_file_load_path)
         dp.add_double(restarts_path + "restart_time", restart_time)
 
-        mode, time_step = _previous_run_time_step(deserialized_simulation)
+        record = cpp_etc_lib().restart_time_record(restart_file_load_path)
+        if record is None:
+            mode, time_step = _previous_run_time_step(deserialized_simulation)
+        else:
+            mode, time_step = record["time_step_mode"], record["time_step"]
+            dp.add_double(
+                restarts_path + "previous_run/anchor_time", record["anchor_time"]
+            )
+            dp.add_int(
+                restarts_path + "previous_run/anchor_step", record["anchor_step"]
+            )
         dp.add_enum_int(
             restarts_path + "previous_run/time_step_mode", "TimeStepType", mode
         )

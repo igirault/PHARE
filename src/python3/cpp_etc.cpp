@@ -150,6 +150,27 @@ PYBIND11_MODULE(cpp_etc, m)
 
         throw std::runtime_error("PHARE not built with highfive support");
     });
+    m.def("restart_time_record", [&](std::string const& path) -> std::optional<py::dict> {
+        _PHARE_WITH_HIGHFIVE({
+            auto const& restart_file = samrai_restart_file(path);
+            PHARE::hdf5::h5::HighFiveFile h5File{restart_file, HighFive::File::ReadOnly,
+                                                 /*para=*/false};
+            if (!h5File.file().getGroup("/phare").hasAttribute("time_step_mode"))
+                return std::nullopt;
+
+            auto const mode = static_cast<PHARE::core::TimeStepType>(
+                h5File.read_attribute<int>("/phare", "time_step_mode"));
+            py::dict record;
+            record["time_step_mode"]
+                = mode == PHARE::core::TimeStepType::adaptive ? "adaptive" : "constant";
+            record["time_step"]   = h5File.read_attribute<double>("/phare", "time_step");
+            record["anchor_time"] = h5File.read_attribute<double>("/phare", "time_anchor_time");
+            record["anchor_step"] = h5File.read_attribute<int>("/phare", "time_anchor_step");
+            return record;
+        });
+
+        throw std::runtime_error("PHARE not built with highfive support");
+    });
 
 
     py::enum_<MHDOpts::TimeIntegratorType>(m, "TimeIntegratorType")

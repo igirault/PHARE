@@ -21,6 +21,7 @@ class IRestartsManager
 {
 public:
     virtual bool dump(double timeStamp, double timeStep) = 0;
+    virtual void setTimeRecord(core::TimeRecord const& record) = 0;
     inline virtual ~IRestartsManager();
 };
 IRestartsManager::~IRestartsManager() {}
@@ -32,6 +33,12 @@ class RestartsManager : public IRestartsManager
 {
 public:
     bool dump(double timeStamp, double timeStep) override;
+
+    void setTimeRecord(core::TimeRecord const& record) override
+    {
+        if (restarts_properties_)
+            restarts_properties_->timeRecord = record;
+    }
 
 
 

@@ -198,6 +198,50 @@ class RestartTimeTest(SimulatorTest):
         self.assertEqual(tB, tA[tA.index(tB[0]) :])
         self.assertEqual(tB[-1], 1.0)
 
+    def test_same_dt_chain_keeps_stored_anchor(self):
+        tA = self.run_recording(dict(timestamps=[0.3]), time_step=0.1, time_step_nbr=3)
+        tB = self.run_recording(
+            dict(restart_time=0.3, timestamps=[tA[3] + 4.0 * 0.05]),
+            time_step=0.05,
+            time_step_nbr=6,
+        )
+        tC = self.run_recording(
+            dict(restart_time="auto"), time_step=0.05, time_step_nbr=2
+        )
+        self.assertEqual(tC, tB[4:7])
+
+    def test_restart_without_time_record_loads(self):
+        from pyphare import cpp
+        from pyphare.cpp import cpp_etc_lib
+
+        tA = self.run_recording(dict(timestamps=[0.5]), time_step=0.1, time_step_nbr=11)
+
+        if cpp.mpi_rank() == 0:
+            import h5py
+
+            folder = cpp_etc_lib().restart_path_for_time(f"{self.out()}/restarts", 0.5)
+            record = (
+                "time_step_mode",
+                "time_step",
+                "time_anchor_time",
+                "time_anchor_step",
+            )
+            for path in Path(folder).rglob("*"):
+                if path.is_file() and h5py.is_hdf5(path):
+                    with h5py.File(path, "a") as f:
+                        if "phare" in f:
+                            for name in record:
+                                if name in f["phare"].attrs:
+                                    del f["phare"].attrs[name]
+
+        from mpi4py import MPI
+
+        MPI.COMM_WORLD.Barrier()
+
+        tB = self.run_recording(dict(restart_time=0.5), time_step=0.1, time_step_nbr=6)
+        self.assertNotEqual(tA[5:], [tA[5] + float(k) * 0.1 for k in range(7)])
+        self.assertEqual(tB, [tA[5] + float(k) * 0.1 for k in range(7)])
+
 
 if __name__ == "__main__":
     startMPI()

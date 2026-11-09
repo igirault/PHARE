@@ -6,6 +6,10 @@
 
 #include "dict.hpp"
 
+#include "core/utilities/time_targets.hpp"
+
+#include <optional>
+
 namespace PHARE::restarts
 {
 struct RestartsProperties
@@ -15,6 +19,8 @@ struct RestartsProperties
     std::vector<double> writeTimestamps, elapsedTimestamps;
 
     FileAttributes fileAttributes{};
+
+    std::optional<core::TimeRecord> timeRecord;
 };
 
 } // namespace PHARE::restarts

@@ -132,13 +132,13 @@ TEST(ResolveAnchor, sameDtKeepsStoredAnchor)
     EXPECT_EQ(a.step, 3);
 }
 
-TEST(ResolveAnchor, sameDtWithoutStoredAnchorUsesStart)
+TEST(ResolveAnchor, sameDtWithoutStoredAnchorReanchorsAtRestoredTime)
 {
     auto const a
         = resolve_anchor(TimeStepType::constant, 0.1,
-                         TimeRecord{TimeStepType::constant, 0.1, std::nullopt}, 0.0, 0.3, 3);
-    EXPECT_EQ(a.time, 0.0);
-    EXPECT_EQ(a.step, 0);
+                         TimeRecord{TimeStepType::constant, 0.1, std::nullopt}, 0.0, 0.5, 7);
+    EXPECT_EQ(a.time, 0.5);
+    EXPECT_EQ(a.step, 7);
 }
 
 TEST(ResolveAnchor, changedDtReanchorsAtRestoredTime)

@@ -322,6 +322,9 @@ void Simulator<opts>::finalize_init(initializer::PHAREDict const& dict)
         finalTime_ = core::time_at_step(anchor_, runStartStep_ + timeStepNbr_, dt_);
 
     multiphysInteg_->setRestoredTime(runStartTime_);
+
+    if (rMan)
+        rMan->setTimeRecord(core::TimeRecord{timeStepType_, dt_, anchor_});
 }
 
 
