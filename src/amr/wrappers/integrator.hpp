@@ -24,8 +24,15 @@
 #include <SAMRAI/tbox/InputManager.h>
 #include <SAMRAI/tbox/MemoryDatabase.h>
 
+#include <iomanip>
+#include <sstream>
+#include <stdexcept>
+
 
 #include "initializer/data_provider.hpp"
+
+#include "core/utilities/time_targets.hpp"
+#include "amr/samrai.hpp"
 
 #include "amr/load_balancing/load_balancer_details.hpp"
 #include "amr/load_balancing/coarsest_rebalance_check.hpp"
@@ -54,13 +61,26 @@ class Integrator
 public:
     static constexpr std::size_t dimension = _dimension;
 
-    double advance(double dt)
+    double currentTime() const { return timeRefIntegrator_->getIntegratorTime(); }
+    double startTime() const { return timeRefIntegrator_->getStartTime(); }
+    int stepIndex() const { return timeRefIntegrator_->getIntegratorStep(); }
+
+    void advanceTo(double const target)
     {
+        auto const t                = currentTime();
+        auto const dt               = core::increment_landing_on(t, target);
         bool rebalance_coarsest_now = _should_rebalance_now();
 
-        auto new_time = timeRefIntegrator_->advanceHierarchy(dt, rebalance_coarsest_now);
-        ++time_step_idx;
-        return new_time;
+        timeRefIntegrator_->advanceHierarchy(dt, rebalance_coarsest_now);
+        firstAdvanceOfRun_ = false;
+
+        if (currentTime() != t + dt)
+        {
+            std::stringstream ss;
+            ss << std::setprecision(17) << "Integrator::advanceTo: SAMRAI time " << currentTime()
+               << " differs from the expected " << t + dt << " (target " << target << ")";
+            throw std::runtime_error(ss.str());
+        }
     }
 
     void initialize() { timeRefIntegrator_->initializeHierarchy(); }
@@ -70,15 +90,14 @@ public:
                std::shared_ptr<SAMRAI::algs::TimeRefinementLevelStrategy> timeRefLevelStrategy,
                std::shared_ptr<SAMRAI::mesh::StandardTagAndInitStrategy> tagAndInitStrategy,
                std::shared_ptr<SAMRAI::mesh::CascadePartitioner> loadBalancer, //
-               double startTime, double endTime, amr::LoadBalancerDetails const& lb_info,
-               int loadBalancerPatchId);
+               double endTime, amr::LoadBalancerDetails const& lb_info, int loadBalancerPatchId);
 
 private:
     amr::LoadBalancerDetails const lb_info_;
     bool const is_tagging_refinement = false;
     bool const is_hybrid_coarsest    = false;
     int loadBalancerPatchId_         = -1;
-    std::size_t time_step_idx        = 0;
+    bool firstAdvanceOfRun_          = true;
     CoarsestRebalanceCheck auto_rebalance_check_;
 
 
@@ -103,9 +122,8 @@ private:
 
     bool cadence_rebalance_check()
     {
-        return (time_step_idx == 0 and lb_info_.on_init)
-               or (lb_info_.every > 0 and time_step_idx > 0
-                   and time_step_idx % lb_info_.every == 0);
+        return rebalance_on_cadence(lb_info_.on_init, lb_info_.every, firstAdvanceOfRun_,
+                                    stepIndex());
     }
 
     bool tolerance_rebalance_check()
@@ -140,8 +158,8 @@ Integrator<_dimension>::Integrator(
     std::shared_ptr<SAMRAI::hier::PatchHierarchy> hierarchy,
     std::shared_ptr<SAMRAI::algs::TimeRefinementLevelStrategy> timeRefLevelStrategy,
     std::shared_ptr<SAMRAI::mesh::StandardTagAndInitStrategy> tagAndInitStrategy,
-    std::shared_ptr<SAMRAI::mesh::CascadePartitioner> loadBalancer, double startTime,
-    double endTime, amr::LoadBalancerDetails const& lb_info, int loadBalancerPatchId)
+    std::shared_ptr<SAMRAI::mesh::CascadePartitioner> loadBalancer, double endTime,
+    amr::LoadBalancerDetails const& lb_info, int loadBalancerPatchId)
     : lb_info_{lb_info}
     , is_tagging_refinement{_is_tagging_refinement(dict)}
     , is_hybrid_coarsest{_is_hybrid_coarsest(dict)}
@@ -187,7 +205,8 @@ Integrator<_dimension>::Integrator(
         = std::make_shared<SAMRAI::tbox::MemoryDatabase>("TRIdb");
 
 
-    db->putDouble("start_time", startTime);
+    if (!SamraiLifeCycle::getRestartManager()->isFromRestart())
+        db->putDouble("start_time", 0.0);
     db->putDouble("end_time", endTime);
     db->putInteger("max_integrator_steps", 1000000);
     db->putIntegerVector(

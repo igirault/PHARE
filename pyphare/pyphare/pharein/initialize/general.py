@@ -191,6 +191,12 @@ def populate_restarts(dp, sim, serialized_sim):
         dp.add_string(restarts_path + "loadPath", restart_file_load_path)
         dp.add_double(restarts_path + "restart_time", restart_time)
 
+        mode, time_step = _previous_run_time_step(deserialized_simulation)
+        dp.add_enum_int(
+            restarts_path + "previous_run/time_step_mode", "TimeStepType", mode
+        )
+        dp.add_double(restarts_path + "previous_run/time_step", time_step)
+
     if "mode" in restart_options:
         dp.add_string(restarts_path + "mode", restart_options["mode"])
 
@@ -234,6 +240,15 @@ def _patch_data_ids(restart_file_dir):
     from pyphare.cpp import cpp_etc_lib
 
     return cpp_etc_lib().patch_data_ids(restart_file_dir)
+
+
+def _previous_run_time_step(previous_sim):
+    stepper = getattr(previous_sim, "time_stepper", None)
+    if stepper is None:
+        return "constant", previous_sim.time_step
+    if stepper.mode == "constant":
+        return "constant", stepper.time_step
+    return stepper.mode, 0.0
 
 
 def _serialized_simulation_string(restart_file_dir):
