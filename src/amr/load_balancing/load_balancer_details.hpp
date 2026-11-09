@@ -51,6 +51,14 @@ struct LoadBalancerDetails
     }
 };
 
+
+inline bool rebalance_on_cadence(bool const on_init, std::size_t const every,
+                                 bool const first_advance_of_run, int const step)
+{
+    return (first_advance_of_run and on_init)
+           or (every > 0 and step > 0 and static_cast<std::size_t>(step) % every == 0);
+}
+
 } // namespace PHARE::amr
 
 #endif /* PHARE_AMR_LOAD_BALANCER_LOAD_BALANCER_DETAILS_HPP */

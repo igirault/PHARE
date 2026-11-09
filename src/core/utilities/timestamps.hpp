@@ -4,6 +4,7 @@
 #include "core/def.hpp"
 
 #include "initializer/data_provider.hpp"
+#include "core/utilities/time_targets.hpp"
 
 #include <cassert>
 #include <cstdint>
@@ -12,9 +13,6 @@
 
 namespace PHARE::core
 {
-
-enum class TimeStepType : std::uint8_t { constant, adaptive };
-
 
 struct ITimeStamper
 {
