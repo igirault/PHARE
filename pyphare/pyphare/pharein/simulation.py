@@ -891,13 +891,14 @@ class Simulation:
           at its own stable time step.
 
           In MHD the rates of the three limits add up, each divided by its coefficient:
-          1/dt = sum_d (|v_d| + c_f,d) / (cfl_hyperbolic dx_d)
+          1/dt = sum_d (abs(v_d) + c_f,d) / (cfl_hyperbolic dx_d)
           + sum_d (v_w,d - v_A) / (cfl_whistler dx_d) + 2 eta sum_d 1/dx_d^2 / cfl_diffusive,
           where the whistler term is present with Hall only and v_w,d is the grid-scale whistler
-          speed. Each coefficient is normalized so 1 is the stability limit of its term alone.
+          speed. The largest stable value of each coefficient depends on the integrator, the
+          reconstruction and the hyper-resistivity: see :ref:`adaptive_time_step`.
 
           * **cfl_hyperbolic** (``float``), CFL coefficient of the advection and fast
-            magnetosonic speeds |v_d| + c_f,d.
+            magnetosonic speeds abs(v_d) + c_f,d.
           * **cfl_whistler** (``float``), CFL coefficient of the Hall whistler. In hybrid, dt is
             the whistler limit alone. Defaults to ``cfl_hyperbolic``.
           * **cfl_diffusive** (``float``), CFL coefficient of the resistive diffusion. Defaults
