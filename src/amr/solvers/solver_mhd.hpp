@@ -390,9 +390,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::computeStableDt");
 
-    auto const [hyperbolic, whistler, diffusive] = cflNumbers;
-    auto const whistlerWeight                    = hyperbolic / whistler;
-    auto const diffusiveWeight                   = hyperbolic / diffusive;
+    auto const [cflHyperbolic, cflWhistler, cflDiffusive] = cflNumbers;
 
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
     auto& rho      = mhdModel.state.rho;
@@ -400,7 +398,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
     auto& B        = mhdModel.state.B;
     auto& Etot     = mhdModel.state.Etot;
 
-    double dt                = std::numeric_limits<double>::max();
+    double maxInvDt          = 0;
     bool nonFiniteCellLogged = false;
 
     for (auto& patch : level)
@@ -413,7 +411,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
         double invdx2 = 0;
         for (std::size_t d = 0; d < dimension; ++d)
             invdx2 += 1.0 / (meshSize[d] * meshSize[d]);
-        auto const invDtDiffusive = eta_ > 0 ? diffusiveWeight * 2.0 * eta_ * invdx2 : 0.0;
+        auto const invDtDiffusive = 2.0 * eta_ * invdx2 / cflDiffusive;
 
         auto const& rhoVx = rhoV(core::Component::X);
         auto const& rhoVy = rhoV(core::Component::Y);
@@ -440,18 +438,20 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
             std::array<double, 3> const v{vx, vy, vz};
             std::array<double, 3> const b{bx, by, bz};
 
-            // sum_d (|v_d| + c_fast_d + (cfl_hyperbolic / cfl_whistler) (v_w_d - v_A)) / dx_d
-            double invDtWave = 0;
+            double invDtHyperbolic = 0;
+            double invDtWhistler   = 0;
             for (std::size_t d = 0; d < dimension; ++d)
             {
                 auto const cfast = core::compute_fast_magnetosonic_(gamma_, r, b[d], BdotB, P);
-                // Hall whistler
-                auto const cw = isHall_ ? core::compute_whistler_(1.0 / meshSize[d], r, BdotB)
-                                              - std::sqrt(BdotB / r)
-                                        : 0.0;
-                invDtWave += (std::abs(v[d]) + cfast + whistlerWeight * cw) / meshSize[d];
+                invDtHyperbolic += (std::abs(v[d]) + cfast) / meshSize[d];
+                if (isHall_)
+                    invDtWhistler += (core::compute_whistler_(1.0 / meshSize[d], r, BdotB)
+                                      - std::sqrt(BdotB / r))
+                                     / meshSize[d];
             }
-            if (!std::isfinite(invDtWave))
+            auto const invDt
+                = invDtHyperbolic / cflHyperbolic + invDtWhistler / cflWhistler + invDtDiffusive;
+            if (!std::isfinite(invDt))
             {
                 if (!nonFiniteCellLogged)
                 {
@@ -469,11 +469,14 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
                 }
                 return;
             }
-            dt = std::min(dt, hyperbolic / (invDtWave + invDtDiffusive));
+            maxInvDt = std::max(maxInvDt, invDt);
         });
     }
 
-    return nonFiniteCellLogged ? -1.0 : dt;
+    if (nonFiniteCellLogged)
+        return -1.0;
+
+    return maxInvDt > 0 ? 1.0 / maxInvDt : std::numeric_limits<double>::max();
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>
