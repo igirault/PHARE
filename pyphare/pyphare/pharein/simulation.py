@@ -200,7 +200,6 @@ def check_path(**kwargs):
 # ------------------------------------------------------------------------------
 
 
-
 # See: https://github.com/PHAREHUB/PHARE/wiki/exactSplitting
 # This should match possibleSimulators() in meta_utilities.h
 valid_refined_particle_nbr = {
@@ -758,8 +757,8 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
 
-        kwargs["periodicities"], kwargs["domain_boundaries"] = boundary.resolve_boundaries(
-            ndim, **kwargs
+        kwargs["periodicities"], kwargs["domain_boundaries"] = (
+            boundary.resolve_boundaries(ndim, **kwargs)
         )
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
@@ -886,17 +885,23 @@ class Simulation:
 
         * ``{"mode": "constant", "value": <dt>}`` - equivalent to passing ``time_step=<dt>``
           (``"value"`` is optional and may be replaced by ``final_time``/``time_step_nbr``).
-        * ``{"mode": "adaptive", "cfl_wave": <w>, "cfl_diffusive": <d>}`` - the time step is
-          recomputed each step from a CFL constraint. Requires ``final_time`` and
-          is incompatible with ``time_step_nbr``.
+        * ``{"mode": "adaptive", "cfl_hyperbolic": <h>, "cfl_whistler": <w>, "cfl_diffusive": <d>}``
+          - the time step is recomputed each step from a CFL constraint. Requires ``final_time``
+          and is incompatible with ``time_step_nbr``. With mesh refinement, each level advances
+          at its own stable time step.
 
-          * **cfl_wave** (``float``), hyperbolic/wave CFL coefficient. Normalized so 1 is
-            the stability limit; choose in (0, 1]. In hall mhd and hybrid,
-            whistler wave speed limits is used. With mesh refinement, each level advances at
-            its own stable time step.
-          * **cfl_diffusive** (``float``), diffusive CFL coefficient. Normalized so 1 is
-            the diffusion stability limit; choose in (0, 1]. Defaults to ``cfl_wave``. Only
-            relevant when resistivity is non-zero.
+          In MHD the rates of the three limits add up, each divided by its coefficient:
+          1/dt = sum_d (|v_d| + c_f,d) / (cfl_hyperbolic dx_d)
+          + sum_d (v_w,d - v_A) / (cfl_whistler dx_d) + 2 eta sum_d 1/dx_d^2 / cfl_diffusive,
+          where the whistler term is present with Hall only and v_w,d is the grid-scale whistler
+          speed. Each coefficient is normalized so 1 is the stability limit of its term alone.
+
+          * **cfl_hyperbolic** (``float``), CFL coefficient of the advection and fast
+            magnetosonic speeds |v_d| + c_f,d.
+          * **cfl_whistler** (``float``), CFL coefficient of the Hall whistler. In hybrid, dt is
+            the whistler limit alone. Defaults to ``cfl_hyperbolic``.
+          * **cfl_diffusive** (``float``), CFL coefficient of the resistive diffusion. Defaults
+            to ``cfl_hyperbolic``. Only relevant when ``eta`` is non-zero.
           * **fine_level_substeps_max** (``int``), default 1000. The run stops when the stable
             time step of a refined level is more than this many times smaller than the one of
             the next coarser level, i.e. when a fine level would need more substeps than this

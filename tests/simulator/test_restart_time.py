@@ -17,7 +17,7 @@ P = 0.2
 
 OUT = "phare_outputs/restart_time"
 CONSTANT = dict(time_step=0.1, time_step_nbr=6)
-ADAPTIVE = dict(time_step={"mode": "adaptive", "cfl_wave": 0.5}, final_time=1.0)
+ADAPTIVE = dict(time_step={"mode": "adaptive", "cfl_hyperbolic": 0.5}, final_time=1.0)
 
 
 def uniform_model():
@@ -172,7 +172,7 @@ class RestartTimeTest(RecordingTest):
             with self.subTest(cfl=cfl):
                 tB = self.run_recording(
                     dict(restart_time=restart_time),
-                    time_step={"mode": "adaptive", "cfl_wave": cfl},
+                    time_step={"mode": "adaptive", "cfl_hyperbolic": cfl},
                     final_time=2.0,
                 )
                 steps = np.diff(tB)

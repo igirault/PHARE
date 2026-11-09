@@ -13,7 +13,7 @@ V = (0.3, -0.2, 0.1)
 B = (0.5, 0.4, 0.3)
 P = 0.2
 GAMMA = 5.0 / 3.0
-CFL_WAVE = 0.5
+CFL_HYPERBOLIC = 0.5
 
 
 def fast_magnetosonic(gamma, rho, b_dir, b2, p):
@@ -35,14 +35,17 @@ def whistler(inv_dx, rho, b2):
     return v_a * (np.sqrt(1.0 + x * x) + x)
 
 
-def expected_dt(hall, dl, rho0):
+def expected_dt(hall, dl, rho0, eta, cfl_hyperbolic, cfl_whistler, cfl_diffusive):
     b2 = sum(b * b for b in B)
     inv_dt = 0.0
     for d, dx in enumerate(dl):
         cf = fast_magnetosonic(GAMMA, rho0, B[d], b2, P)
-        hall_term = whistler(1.0 / dx, rho0, b2) - np.sqrt(b2 / rho0) if hall else 0.0
-        inv_dt += (abs(V[d]) + cf + hall_term) / dx
-    return CFL_WAVE / inv_dt
+        inv_dt += (abs(V[d]) + cf) / (cfl_hyperbolic * dx)
+        if hall:
+            hall_term = whistler(1.0 / dx, rho0, b2) - np.sqrt(b2 / rho0)
+            inv_dt += hall_term / (cfl_whistler * dx)
+        inv_dt += 2.0 * eta / (cfl_diffusive * dx * dx)
+    return 1.0 / inv_dt
 
 
 class AdaptiveDtCase(SimulatorTest):
@@ -57,7 +60,9 @@ class AdaptiveDtCase(SimulatorTest):
         self.simulator = None
         ph.global_vars.sim = None
 
-    def uniform_simulation(self, hall, dl, max_mhd_level=1, time_step=None, **kwargs):
+    def uniform_simulation(
+        self, hall, dl, max_mhd_level=1, time_step=None, eta=0.0, **kwargs
+    ):
         ph.global_vars.sim = None
         return ph.Simulation(
             interp_order=None,
@@ -67,11 +72,12 @@ class AdaptiveDtCase(SimulatorTest):
             riemann="Rusanov",
             mhd_timestepper="TVDRK3",
             hall=hall,
-            eta=0.0,
+            eta=eta,
             nu=0.0,
             gamma=GAMMA,
             max_mhd_level=max_mhd_level,
-            time_step=time_step or {"mode": "adaptive", "cfl_wave": CFL_WAVE},
+            time_step=time_step
+            or {"mode": "adaptive", "cfl_hyperbolic": CFL_HYPERBOLIC},
             final_time=100.0,
             cells=(20, 10),
             dl=dl,
@@ -97,18 +103,38 @@ class AdaptiveDtCase(SimulatorTest):
 @ddt
 class AdaptiveStableDtTest(AdaptiveDtCase):
     @data(
-        (False, (0.3, 0.2), 1.0),
-        (True, (10.0, 5.0), 1.0),
-        (True, (0.05, 0.1), 1.0),
-        (True, (0.05, 0.1), 0.25),
+        (False, (0.3, 0.2), 1.0, 0.0, None, None),
+        (True, (10.0, 5.0), 1.0, 0.0, None, None),
+        (True, (0.05, 0.1), 1.0, 0.0, None, None),
+        (True, (0.05, 0.1), 0.25, 0.0, None, None),
+        (False, (0.3, 0.2), 1.0, 0.0, 4.0, None),
+        (True, (10.0, 5.0), 1.0, 0.0, 4.0, None),
+        (True, (0.05, 0.1), 1.0, 0.0, 4.0, None),
+        (True, (0.05, 0.1), 0.25, 0.0, 0.2, None),
+        (False, (0.3, 0.2), 1.0, 0.1, None, None),
+        (False, (0.3, 0.2), 1.0, 0.1, None, 0.2),
+        (True, (0.05, 0.1), 1.0, 0.01, 4.0, 0.2),
     )
     @unpack
-    def test_uniform_state_dt(self, hall, dl, rho0):
-        sim = self.uniform_simulation(hall, dl)
+    def test_uniform_state_dt(self, hall, dl, rho0, eta, cfl_whistler, cfl_diffusive):
+        time_step = {"mode": "adaptive", "cfl_hyperbolic": CFL_HYPERBOLIC}
+        if cfl_whistler is not None:
+            time_step["cfl_whistler"] = cfl_whistler
+        if cfl_diffusive is not None:
+            time_step["cfl_diffusive"] = cfl_diffusive
+        sim = self.uniform_simulation(hall, dl, time_step=time_step, eta=eta)
         self.uniform_model(rho0)
         self.simulator = Simulator(sim).initialize()
         dt = self.simulator.timeStep()
-        expected = expected_dt(hall, dl, rho0)
+        expected = expected_dt(
+            hall,
+            dl,
+            rho0,
+            eta,
+            CFL_HYPERBOLIC,
+            cfl_whistler or CFL_HYPERBOLIC,
+            cfl_diffusive or CFL_HYPERBOLIC,
+        )
         self.assertAlmostEqual(dt / expected, 1.0, delta=1e-12)
 
 

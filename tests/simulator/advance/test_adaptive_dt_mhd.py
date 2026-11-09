@@ -97,13 +97,13 @@ def fast_magnetosonic(gamma, rho, b_dir, b2, p):
     )
 
 
-def uniform_stable_dt(cfl_wave, gamma, rho, v, b, p, dl):
+def uniform_stable_dt(cfl_hyperbolic, gamma, rho, v, b, p, dl):
     b2 = sum(bi * bi for bi in b)
     inv_dt = sum(
         (abs(v[d]) + fast_magnetosonic(gamma, rho, b[d], b2, p)) / dl[d]
         for d in range(len(dl))
     )
-    return cfl_wave / inv_dt
+    return cfl_hyperbolic / inv_dt
 
 
 def run_steps(sim, final_time):
@@ -214,7 +214,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
 
         if mode == "adaptive":
             time_args = dict(
-                time_step={"mode": "adaptive", "cfl_wave": 0.5},
+                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.5},
                 final_time=final_time,
             )
         else:
@@ -272,7 +272,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
             self.assertLess(abs(drift), 1e-12 * mass_ref, f"mass drift at t={t}")
 
     def test_dt0_is_level0_stable_dt(self):
-        cfl_wave = 0.5
+        cfl_hyperbolic = 0.5
         gamma = 5.0 / 3.0
 
         def density(x, y):
@@ -289,12 +289,12 @@ class AdaptiveDtMHDTest(SimulatorTest):
             diag_dir,
             density,
             pressure,
-            time_step={"mode": "adaptive", "cfl_wave": cfl_wave},
+            time_step={"mode": "adaptive", "cfl_hyperbolic": cfl_hyperbolic},
             final_time=1.0,
         )
 
         expected = uniform_stable_dt(
-            cfl_wave, gamma, 1.0, (0.0, 0.0, 0.0), (0.1, 0.0, 0.0), 1.0, (DL, DL)
+            cfl_hyperbolic, gamma, 1.0, (0.0, 0.0, 0.0), (0.1, 0.0, 0.0), 1.0, (DL, DL)
         )
 
         simulator = Simulator(sim)
@@ -327,7 +327,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
             diag_dir,
             density,
             pressure,
-            time_step={"mode": "adaptive", "cfl_wave": 0.5},
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.5},
             final_time=final_time,
             extra_diag_options={"fine_dump_lvl_max": 10},
         )
@@ -375,7 +375,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
             diag_dir,
             density,
             blast_pressure,
-            time_step={"mode": "adaptive", "cfl_wave": 0.5},
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.5},
             final_time=final_time,
             extra_diag_options={"fine_dump_lvl_max": 10},
         )

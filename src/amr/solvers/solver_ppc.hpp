@@ -329,7 +329,7 @@ double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& mode
 
     throw std::runtime_error("Adaptive time-stepping not ready in hybrid.");
 
-    double const wave = cflNumbers.wave;
+    double const whistler = cflNumbers.whistler;
 
     auto& hybridModel = dynamic_cast<HybridModel&>(model);
     auto& n           = hybridModel.state.ions.massDensity();
@@ -364,7 +364,7 @@ double SolverPPC<HybridModel, AMR_Types>::computeStableDt(IPhysicalModel_t& mode
                 invDtWhistler
                     += core::compute_whistler_(1.0 / meshSize[d], rho, BdotB) / meshSize[d];
 
-            dt = std::min(dt, wave / invDtWhistler);
+            dt = std::min(dt, whistler / invDtWhistler);
         });
     }
 

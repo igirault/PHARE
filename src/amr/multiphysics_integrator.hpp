@@ -109,7 +109,8 @@ namespace solver
             , constantDt_{cppdict::get_value(dict, "time_step/value", 0.)}
             , levelDts_(nbrOfLevels_, std::numeric_limits<double>::quiet_NaN())
             , cfl_{isAdaptive_
-                       ? CFLNumbers{dict["time_step"]["cfl_wave"].template to<double>(),
+                       ? CFLNumbers{dict["time_step"]["cfl_hyperbolic"].template to<double>(),
+                                    dict["time_step"]["cfl_whistler"].template to<double>(),
                                     dict["time_step"]["cfl_diffusive"].template to<double>()}
                        : CFLNumbers{}}
             , fineLevelSubstepsMax_{

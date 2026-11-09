@@ -390,7 +390,9 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
 {
     PHARE_LOG_SCOPE(1, "SolverMHD::computeStableDt");
 
-    auto const [wave, diffusive] = cflNumbers;
+    auto const [hyperbolic, whistler, diffusive] = cflNumbers;
+    auto const whistlerWeight                    = hyperbolic / whistler;
+    auto const diffusiveWeight                   = hyperbolic / diffusive;
 
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
     auto& rho      = mhdModel.state.rho;
@@ -408,14 +410,10 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
 
         auto const meshSize = layout.meshSize();
 
-        // diffusive cfl constraint
-        if (eta_ > 0)
-        {
-            double invdx2 = 0;
-            for (std::size_t d = 0; d < dimension; ++d)
-                invdx2 += 1.0 / (meshSize[d] * meshSize[d]);
-            dt = std::min(dt, diffusive / (2.0 * eta_ * invdx2));
-        }
+        double invdx2 = 0;
+        for (std::size_t d = 0; d < dimension; ++d)
+            invdx2 += 1.0 / (meshSize[d] * meshSize[d]);
+        auto const invDtDiffusive = eta_ > 0 ? diffusiveWeight * 2.0 * eta_ * invdx2 : 0.0;
 
         auto const& rhoVx = rhoV(core::Component::X);
         auto const& rhoVy = rhoV(core::Component::Y);
@@ -424,7 +422,6 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
         auto const& By    = B(core::Component::Y);
         auto const& Bz    = B(core::Component::Z);
 
-        // wave cfl constraint
         layout.evalOnBox(rho, [&](auto&... args) mutable {
             core::MeshIndex<dimension> const index{args...};
 
@@ -443,7 +440,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
             std::array<double, 3> const v{vx, vy, vz};
             std::array<double, 3> const b{bx, by, bz};
 
-            // sum_d (|v_d| + c_fast_d + v_w_d - v_A) / dx_d over simulated directions
+            // sum_d (|v_d| + c_fast_d + (cfl_hyperbolic / cfl_whistler) (v_w_d - v_A)) / dx_d
             double invDtWave = 0;
             for (std::size_t d = 0; d < dimension; ++d)
             {
@@ -452,7 +449,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
                 auto const cw = isHall_ ? core::compute_whistler_(1.0 / meshSize[d], r, BdotB)
                                               - std::sqrt(BdotB / r)
                                         : 0.0;
-                invDtWave += (std::abs(v[d]) + cfast + cw) / meshSize[d];
+                invDtWave += (std::abs(v[d]) + cfast + whistlerWeight * cw) / meshSize[d];
             }
             if (!std::isfinite(invDtWave))
             {
@@ -472,7 +469,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
                 }
                 return;
             }
-            dt = std::min(dt, wave / invDtWave);
+            dt = std::min(dt, hyperbolic / (invDtWave + invDtDiffusive));
         });
     }
 

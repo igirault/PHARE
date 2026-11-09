@@ -3,7 +3,7 @@
 import unittest
 
 from pyphare.simulator.simulator import Simulator, startMPI
-from tests.simulator.test_adaptive_stable_dt import CFL_WAVE, AdaptiveDtCase
+from tests.simulator.test_adaptive_stable_dt import CFL_HYPERBOLIC, AdaptiveDtCase
 
 
 class StopOnFineLevelSubstepsTest(AdaptiveDtCase):
@@ -16,7 +16,7 @@ class StopOnFineLevelSubstepsTest(AdaptiveDtCase):
             refinement_boxes={"L0": {"B0": [[4, 2], [15, 7]]}},
             time_step={
                 "mode": "adaptive",
-                "cfl_wave": CFL_WAVE,
+                "cfl_hyperbolic": CFL_HYPERBOLIC,
                 "fine_level_substeps_max": 1,
             },
         )

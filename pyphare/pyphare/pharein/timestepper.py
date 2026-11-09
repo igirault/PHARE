@@ -4,9 +4,11 @@ Time-step resolution and validation for pharein.Simulation.
 'time_step' (the public Simulation constructor option) may be:
   - a scalar (or absent)                 -> ConstantTimeStepper
   - {'mode': 'constant', 'value': <dt>}  -> ConstantTimeStepper ('value' optional)
-  - {'mode': 'adaptive', 'cfl_wave': <w>, 'cfl_diffusive': <d>, 'fine_level_substeps_max': <n>}
+  - {'mode': 'adaptive', 'cfl_hyperbolic': <h>, 'cfl_whistler': <w>, 'cfl_diffusive': <d>,
+     'fine_level_substeps_max': <n>}
                                          -> AdaptiveTimeStepper
-                                            ('cfl_diffusive' defaults to 'cfl_wave',
+                                            ('cfl_whistler' and 'cfl_diffusive' default to
+                                             'cfl_hyperbolic',
                                              'fine_level_substeps_max' to 1000)
 
 resolve_time_stepper(**kwargs) is the single entry point used by Simulation's checker();
@@ -70,7 +72,8 @@ class ConstantTimeStepper(TimeStepper):
 class AdaptiveTimeStepper(TimeStepper):
     mode = "adaptive"
 
-    cfl_wave: float = None
+    cfl_hyperbolic: float = None
+    cfl_whistler: float = None
     cfl_diffusive: float = None
     fine_level_substeps_max: int = FINE_LEVEL_SUBSTEPS_MAX_DEFAULT
 
@@ -82,7 +85,8 @@ class AdaptiveTimeStepper(TimeStepper):
     def populate_dict(self, dp):
         super().populate_dict(dp)
         # dt is computed each step on the C++ side; bound the run by final_time
-        dp.add_double("simulation/time_step/cfl_wave", self.cfl_wave)
+        dp.add_double("simulation/time_step/cfl_hyperbolic", self.cfl_hyperbolic)
+        dp.add_double("simulation/time_step/cfl_whistler", self.cfl_whistler)
         dp.add_double("simulation/time_step/cfl_diffusive", self.cfl_diffusive)
         dp.add_int(
             "simulation/time_step/fine_level_substeps_max", self.fine_level_substeps_max
@@ -160,9 +164,17 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
 
     # adaptive: dt is recomputed each step from a CFL constraint. 'time_step_nbr' is not
     # allowed (imposing a step count with a variable dt is out of scope for now).
-    _check_keys({"mode", "cfl_wave", "cfl_diffusive", "fine_level_substeps_max"})
-    if "cfl_wave" not in ts:
-        raise ValueError("Error: adaptive time_step requires 'cfl_wave'")
+    _check_keys(
+        {
+            "mode",
+            "cfl_hyperbolic",
+            "cfl_whistler",
+            "cfl_diffusive",
+            "fine_level_substeps_max",
+        }
+    )
+    if "cfl_hyperbolic" not in ts:
+        raise ValueError("Error: adaptive time_step requires 'cfl_hyperbolic'")
     if time_step_nbr is not None:
         raise ValueError(
             "Error: adaptive time_step is incompatible with a constant 'time_step' / 'time_step_nbr'"
@@ -170,12 +182,16 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
     if final_time is None:
         raise ValueError("Error: adaptive time_step requires 'final_time'")
 
-    cfl_wave = ts["cfl_wave"]
-    cfl_diffusive = ts.get("cfl_diffusive", cfl_wave)
-    if cfl_wave <= 0:
-        raise ValueError("Error: adaptive time_step 'cfl_wave' must be > 0")
-    if cfl_diffusive <= 0:
-        raise ValueError("Error: adaptive time_step 'cfl_diffusive' must be > 0")
+    cfl_hyperbolic = ts["cfl_hyperbolic"]
+    cfl_whistler = ts.get("cfl_whistler", cfl_hyperbolic)
+    cfl_diffusive = ts.get("cfl_diffusive", cfl_hyperbolic)
+    for name, value in (
+        ("cfl_hyperbolic", cfl_hyperbolic),
+        ("cfl_whistler", cfl_whistler),
+        ("cfl_diffusive", cfl_diffusive),
+    ):
+        if value <= 0:
+            raise ValueError(f"Error: adaptive time_step '{name}' must be > 0")
     fine_level_substeps_max = ts.get(
         "fine_level_substeps_max", FINE_LEVEL_SUBSTEPS_MAX_DEFAULT
     )
@@ -192,7 +208,12 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
         raise RuntimeError("Simulation time cannot be negative - review inputs")
 
     return AdaptiveTimeStepper(
-        start_time, final_time, cfl_wave, cfl_diffusive, fine_level_substeps_max
+        start_time,
+        final_time,
+        cfl_hyperbolic,
+        cfl_whistler,
+        cfl_diffusive,
+        fine_level_substeps_max,
     )
 
 

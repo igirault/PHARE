@@ -63,28 +63,67 @@ class TimeStepValidation(unittest.TestCase):
 
     # ---- adaptive (dict time_step) ---------------------------------------------------------
 
-    def test_adaptive_accepts_final_time_and_cfl_wave(self):
+    def test_adaptive_accepts_final_time_and_cfl_hyperbolic(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_wave": 0.4},
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
             final_time=1.0,
             **baseArgs,
         )
         self.assertEqual(sim.time_stepper.mode, "adaptive")
-        self.assertEqual(sim.time_stepper.cfl_wave, 0.4)
+        self.assertEqual(sim.time_stepper.cfl_hyperbolic, 0.4)
         self.assertEqual(sim.time_stepper.final_time, 1.0)
         # with adaptive dt these are unknown ahead of the run
         self.assertFalse(hasattr(sim.time_stepper, "time_step"))
         self.assertFalse(hasattr(sim.time_stepper, "time_step_nbr"))
 
-    def test_adaptive_cfl_diffusive_defaults_to_cfl_wave(self):
+    def test_adaptive_cfl_diffusive_defaults_to_cfl_hyperbolic(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_wave": 0.4}, final_time=1.0, **baseArgs
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            final_time=1.0,
+            **baseArgs,
         )
         self.assertEqual(sim.time_stepper.cfl_diffusive, 0.4)
 
+    def test_adaptive_cfl_whistler_defaults_to_cfl_hyperbolic(self):
+        sim = ph.Simulation(
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            final_time=1.0,
+            **baseArgs,
+        )
+        self.assertEqual(sim.time_stepper.cfl_whistler, 0.4)
+
+    def test_adaptive_cfl_whistler_explicit(self):
+        sim = ph.Simulation(
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4, "cfl_whistler": 3.0},
+            final_time=1.0,
+            **baseArgs,
+        )
+        self.assertEqual(sim.time_stepper.cfl_hyperbolic, 0.4)
+        self.assertEqual(sim.time_stepper.cfl_whistler, 3.0)
+
+    def test_adaptive_cfl_whistler_rejects_non_positive(self):
+        with self.assertRaises(ValueError):
+            ph.Simulation(
+                time_step={
+                    "mode": "adaptive",
+                    "cfl_hyperbolic": 0.4,
+                    "cfl_whistler": 0.0,
+                },
+                final_time=1.0,
+                **baseArgs,
+            )
+
+    def test_adaptive_rejects_cfl_wave(self):
+        with self.assertRaises(ValueError):
+            ph.Simulation(
+                time_step={"mode": "adaptive", "cfl_wave": 0.4},
+                final_time=1.0,
+                **baseArgs,
+            )
+
     def test_adaptive_cfl_diffusive_explicit(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_wave": 0.4, "cfl_diffusive": 0.2},
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4, "cfl_diffusive": 0.2},
             final_time=1.0,
             **baseArgs,
         )
@@ -92,7 +131,9 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_fine_level_substeps_max_defaults_to_1000(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_wave": 0.4}, final_time=1.0, **baseArgs
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            final_time=1.0,
+            **baseArgs,
         )
         self.assertEqual(sim.time_stepper.fine_level_substeps_max, 1000)
 
@@ -100,7 +141,7 @@ class TimeStepValidation(unittest.TestCase):
         sim = ph.Simulation(
             time_step={
                 "mode": "adaptive",
-                "cfl_wave": 0.4,
+                "cfl_hyperbolic": 0.4,
                 "fine_level_substeps_max": 50,
             },
             final_time=1.0,
@@ -112,7 +153,7 @@ class TimeStepValidation(unittest.TestCase):
         sim = ph.Simulation(
             time_step={
                 "mode": "adaptive",
-                "cfl_wave": 0.4,
+                "cfl_hyperbolic": 0.4,
                 "fine_level_substeps_max": np.int64(50),
             },
             final_time=1.0,
@@ -128,34 +169,36 @@ class TimeStepValidation(unittest.TestCase):
                 ph.Simulation(
                     time_step={
                         "mode": "adaptive",
-                        "cfl_wave": 0.4,
+                        "cfl_hyperbolic": 0.4,
                         "fine_level_substeps_max": value,
                     },
                     final_time=1.0,
                     **baseArgs,
                 )
 
-    def test_adaptive_requires_cfl_wave(self):
+    def test_adaptive_requires_cfl_hyperbolic(self):
         with self.assertRaises(ValueError):
             ph.Simulation(time_step={"mode": "adaptive"}, final_time=1.0, **baseArgs)
 
     def test_adaptive_requires_final_time(self):
         with self.assertRaises(ValueError):
-            ph.Simulation(time_step={"mode": "adaptive", "cfl_wave": 0.4}, **baseArgs)
+            ph.Simulation(
+                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4}, **baseArgs
+            )
 
     def test_adaptive_rejects_time_step_nbr(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_wave": 0.4},
+                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
                 final_time=1.0,
                 time_step_nbr=10,
                 **baseArgs,
             )
 
-    def test_adaptive_rejects_non_positive_cfl_wave(self):
+    def test_adaptive_rejects_non_positive_cfl_hyperbolic(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_wave": 0.0},
+                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.0},
                 final_time=1.0,
                 **baseArgs,
             )
@@ -163,7 +206,7 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_rejects_unknown_dict_key(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_wave": 0.4, "courant": 0.2},
+                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4, "courant": 0.2},
                 final_time=1.0,
                 **baseArgs,
             )
@@ -171,7 +214,11 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_cfl_diffusive_rejects_non_positive(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_wave": 0.4, "cfl_diffusive": 0.0},
+                time_step={
+                    "mode": "adaptive",
+                    "cfl_hyperbolic": 0.4,
+                    "cfl_diffusive": 0.0,
+                },
                 final_time=1.0,
                 **baseArgs,
             )
@@ -179,7 +226,7 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_rejects_final_time_before_restart_time(self):
         with self.assertRaises(RuntimeError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_wave": 0.4},
+                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
                 final_time=1.0,
                 restart_options={"mode": "overwrite", "restart_time": 2.0},
                 **baseArgs,
@@ -187,7 +234,7 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_accepts_final_time_after_restart_time(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_wave": 0.4},
+            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
             final_time=5.0,
             restart_options={"mode": "overwrite", "restart_time": 2.0},
             **baseArgs,
@@ -201,7 +248,7 @@ class TimeStepValidation(unittest.TestCase):
             ph.Simulation(
                 time_step={
                     "mode": "variable",
-                    "cfl_wave": 0.4,
+                    "cfl_hyperbolic": 0.4,
                 },  # only "adaptive" is valid
                 final_time=1.0,
                 **baseArgs,

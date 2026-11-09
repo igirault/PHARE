@@ -20,13 +20,16 @@ namespace PHARE
 namespace solver
 {
     /**
-     * @brief Bundles the CFL coefficients scaling for the two stability criteria:
-     *   - wave: hyperbolic (incl. Hall whistler when active)
-     *   - diffusive: due to resistive diffusion
+     * @brief Bundles the CFL coefficients of the stability criteria, whose rates add up,
+     * 1/dt = sum of rate / coefficient:
+     *   - hyperbolic: advection and fast magnetosonic waves
+     *   - whistler: the Hall whistler
+     *   - diffusive: resistive diffusion
      */
     struct CFLNumbers
     {
-        double wave;
+        double hyperbolic;
+        double whistler;
         double diffusive;
     };
 

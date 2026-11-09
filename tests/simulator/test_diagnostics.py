@@ -177,7 +177,7 @@ def cadence_args(diagdir, **extra):
         nu=0.0,
         gamma=5.0 / 3.0,
         max_mhd_level=1,
-        time_step={"mode": "adaptive", "cfl_wave": 0.8},
+        time_step={"mode": "adaptive", "cfl_hyperbolic": 0.8},
         final_time=100.0,  # generous: we control the number of steps manually
         cells=20,
         dl=0.3,
