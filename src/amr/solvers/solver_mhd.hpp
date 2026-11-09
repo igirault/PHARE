@@ -392,6 +392,9 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
 
     auto const [cflHyperbolic, cflWhistler, cflDiffusive] = cflNumbers;
 
+    auto const invCflHyperbolic = 1. / cflHyperbolic;
+    auto const invCflWhistler   = 1. / cflWhistler;
+
     auto& mhdModel = dynamic_cast<MHDModel&>(model);
     auto& rho      = mhdModel.state.rho;
     auto& rhoV     = mhdModel.state.rhoV;
@@ -449,8 +452,9 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
                                       - std::sqrt(BdotB / r))
                                      / meshSize[d];
             }
-            auto const invDt
-                = invDtHyperbolic / cflHyperbolic + invDtWhistler / cflWhistler + invDtDiffusive;
+            invDtHyperbolic *= invCflHyperbolic;
+            invDtWhistler *= invCflWhistler;
+            auto const invDt = invDtHyperbolic + invDtWhistler + invDtDiffusive;
             if (!std::isfinite(invDt))
             {
                 if (!nonFiniteCellLogged)
