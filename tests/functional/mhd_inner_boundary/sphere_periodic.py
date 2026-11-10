@@ -19,6 +19,7 @@ def parse_args(argv):
     parser.add_argument("--levels", type=int, default=1)
     parser.add_argument("--restart", action="store_true")
     parser.add_argument("--under-resolved", action="store_true")
+    parser.add_argument("--wenoz", action="store_true")
     parser.add_argument("--compare-decomposition", action="store_true")
     args, _ = parser.parse_known_args(argv)
     args.external_field = args.external_field or args.levels > 1
@@ -50,6 +51,7 @@ variant = "_".join(
         (f"L{ARGS.levels}", ARGS.levels > 1),
         ("restart", ARGS.restart),
         ("under_resolved", ARGS.under_resolved),
+        ("wenoz", ARGS.wenoz),
         ("decomposition", ARGS.compare_decomposition),
     )
     if on
@@ -71,7 +73,9 @@ def config(restart=None, out_dir=None, largest_patch_size=None):
         kwargs["restart_options"] = restart
 
     reconstruction, limiter, hall = (
-        ("WENOZ", "None", True) if ARGS.under_resolved else ("Linear", "VanLeer", False)
+        ("WENOZ", "None", True)
+        if ARGS.under_resolved or ARGS.wenoz
+        else ("Linear", "VanLeer", False)
     )
 
     sim = ph.Simulation(
