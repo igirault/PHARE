@@ -818,6 +818,11 @@ def checker(func):
 
         kwargs["model_options"] = check_model_options(**kwargs)
 
+        if "MHDModel" in kwargs["model_options"] and isinstance(
+            kwargs["time_stepper"], timestepper.AdaptiveTimeStepper
+        ):
+            kwargs["time_stepper"].set_scheme(reconstruction, mhd_timestepper, hall)
+
         kwargs["refinement_order"] = check_refinement_operator(**kwargs)
 
         return func(simulation_object, **kwargs)
@@ -885,24 +890,31 @@ class Simulation:
 
         * ``{"mode": "constant", "value": <dt>}`` - equivalent to passing ``time_step=<dt>``
           (``"value"`` is optional and may be replaced by ``final_time``/``time_step_nbr``).
-        * ``{"mode": "adaptive", "cfl_hyperbolic": <h>, "cfl_whistler": <w>, "cfl_diffusive": <d>}``
-          - the time step is recomputed each step from a CFL constraint. Requires ``final_time``
-          and is incompatible with ``time_step_nbr``. With mesh refinement, each level advances
-          at its own stable time step.
+        * ``{"mode": "adaptive", "cfl": <c>}`` - the time step is recomputed each step from the
+          linear stability limits of the scheme. Requires ``final_time`` and is incompatible with
+          ``time_step_nbr``. With mesh refinement, each level advances at its own stable time
+          step.
 
-          In MHD the rates of the three limits add up, each divided by its coefficient:
-          1/dt = sum_d (abs(v_d) + c_f,d) / (cfl_hyperbolic dx_d)
-          + sum_d (v_w,d - v_A) / (cfl_whistler dx_d) + 2 eta sum_d 1/dx_d^2 / cfl_diffusive,
-          where the whistler term is present with Hall only and v_w,d is the grid-scale whistler
-          speed. The largest stable value of each coefficient depends on the integrator, the
-          reconstruction and the hyper-resistivity: see :ref:`adaptive_time_step`.
+          In MHD the rates of the limits add up, each divided by the largest stable coefficient
+          of its term (a constant of the time integrator and reconstruction) times a fraction:
+          1/dt = sum_d (abs(v_d) + c_f,d) / (f_h C_h dx_d)
+          + sum_d (v_w,d - v_A) / (f_w C_w dx_d)
+          + 2 eta sum_d 1/dx_d^2 / (f_d C_d) + kappa (sum_d 4/dx_d^2)^2 / (f_d C_nu),
+          where the whistler term is present with Hall only, v_w,d is the grid-scale whistler
+          speed and kappa the hyper-resistive coefficient. A fraction of 1 is the linear
+          stability limit of its term: see :ref:`adaptive_time_step` for the constants.
 
-          * **cfl_hyperbolic** (``float``), CFL coefficient of the advection and fast
-            magnetosonic speeds abs(v_d) + c_f,d.
-          * **cfl_whistler** (``float``), CFL coefficient of the Hall whistler. In hybrid, dt is
-            the whistler limit alone. Defaults to ``cfl_hyperbolic``.
-          * **cfl_diffusive** (``float``), CFL coefficient of the resistive diffusion. Defaults
-            to ``cfl_hyperbolic``. Only relevant when ``eta`` is non-zero.
+          * **cfl** (``float``), default 0.8, fraction of the stability limit used for every term.
+          * **cfl_hyperbolic** (``float``), fraction for the advection and fast magnetosonic
+            speeds abs(v_d) + c_f,d. Defaults to ``cfl``.
+          * **cfl_whistler** (``float``), fraction for the Hall whistler, for example lower than
+            ``cfl`` to resolve whistlers in time. Defaults to ``cfl``.
+          * **cfl_diffusive** (``float``), fraction for resistivity and hyper-resistivity.
+            Defaults to ``cfl``.
+
+          Adaptive MHD runs with ``hall=True`` require ``TVDRK3`` or ``SSPRK4_5``, and
+          ``Euler`` requires the ``Constant`` or ``Linear`` reconstruction: the other
+          combinations have no stable time step.
           * **fine_level_substeps_max** (``int``), default 1000. The run stops when the stable
             time step of a refined level is more than this many times smaller than the one of
             the next coarser level, i.e. when a fine level would need more substeps than this

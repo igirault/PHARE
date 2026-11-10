@@ -17,6 +17,51 @@ baseArgs = dict(
 )
 
 
+def mhd_simulation(time_step, **kwargs):
+    args = dict(
+        model_options=["MHDModel"],
+        reconstruction="Linear",
+        limiter="VanLeer",
+        riemann="Rusanov",
+        mhd_timestepper="TVDRK3",
+        hall=False,
+        eta=0.0,
+        nu=0.0,
+        gamma=5.0 / 3.0,
+        max_mhd_level=1,
+        time_step=time_step,
+        final_time=1.0,
+    )
+    args.update(kwargs)
+    return ph.Simulation(**args, **baseArgs)
+
+
+class _DictPopulator:
+    def __init__(self):
+        self.values = {}
+
+    def _add(self, path, value):
+        self.values[path] = value
+
+    def add_double(self, path, value):
+        self._add(path, value)
+
+    def add_int(self, path, value):
+        self._add(path, value)
+
+    def add_string(self, path, value):
+        self._add(path, value)
+
+    def add_enum_int(self, path, enum_name, value):
+        self._add(path, value)
+
+
+def populated(time_stepper):
+    dp = _DictPopulator()
+    time_stepper.populate_dict(dp)
+    return dp.values
+
+
 # pure pharein config validation: never runs the simulator, so no MPI / cpp module needed
 class TimeStepValidation(unittest.TestCase):
     def setUp(self):
@@ -63,30 +108,31 @@ class TimeStepValidation(unittest.TestCase):
 
     # ---- adaptive (dict time_step) ---------------------------------------------------------
 
-    def test_adaptive_accepts_final_time_and_cfl_hyperbolic(self):
+    def test_adaptive_accepts_final_time_and_cfl(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            time_step={"mode": "adaptive", "cfl": 0.4},
             final_time=1.0,
             **baseArgs,
         )
         self.assertEqual(sim.time_stepper.mode, "adaptive")
+        self.assertEqual(sim.time_stepper.cfl, 0.4)
         self.assertEqual(sim.time_stepper.cfl_hyperbolic, 0.4)
         self.assertEqual(sim.time_stepper.final_time, 1.0)
         # with adaptive dt these are unknown ahead of the run
         self.assertFalse(hasattr(sim.time_stepper, "time_step"))
         self.assertFalse(hasattr(sim.time_stepper, "time_step_nbr"))
 
-    def test_adaptive_cfl_diffusive_defaults_to_cfl_hyperbolic(self):
+    def test_adaptive_cfl_diffusive_defaults_to_cfl(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            time_step={"mode": "adaptive", "cfl": 0.4},
             final_time=1.0,
             **baseArgs,
         )
         self.assertEqual(sim.time_stepper.cfl_diffusive, 0.4)
 
-    def test_adaptive_cfl_whistler_defaults_to_cfl_hyperbolic(self):
+    def test_adaptive_cfl_whistler_defaults_to_cfl(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            time_step={"mode": "adaptive", "cfl": 0.4},
             final_time=1.0,
             **baseArgs,
         )
@@ -94,7 +140,7 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_cfl_whistler_explicit(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4, "cfl_whistler": 3.0},
+            time_step={"mode": "adaptive", "cfl": 0.4, "cfl_whistler": 3.0},
             final_time=1.0,
             **baseArgs,
         )
@@ -106,7 +152,7 @@ class TimeStepValidation(unittest.TestCase):
             ph.Simulation(
                 time_step={
                     "mode": "adaptive",
-                    "cfl_hyperbolic": 0.4,
+                    "cfl": 0.4,
                     "cfl_whistler": 0.0,
                 },
                 final_time=1.0,
@@ -123,7 +169,7 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_cfl_diffusive_explicit(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4, "cfl_diffusive": 0.2},
+            time_step={"mode": "adaptive", "cfl": 0.4, "cfl_diffusive": 0.2},
             final_time=1.0,
             **baseArgs,
         )
@@ -131,7 +177,7 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_fine_level_substeps_max_defaults_to_1000(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            time_step={"mode": "adaptive", "cfl": 0.4},
             final_time=1.0,
             **baseArgs,
         )
@@ -141,7 +187,7 @@ class TimeStepValidation(unittest.TestCase):
         sim = ph.Simulation(
             time_step={
                 "mode": "adaptive",
-                "cfl_hyperbolic": 0.4,
+                "cfl": 0.4,
                 "fine_level_substeps_max": 50,
             },
             final_time=1.0,
@@ -153,7 +199,7 @@ class TimeStepValidation(unittest.TestCase):
         sim = ph.Simulation(
             time_step={
                 "mode": "adaptive",
-                "cfl_hyperbolic": 0.4,
+                "cfl": 0.4,
                 "fine_level_substeps_max": np.int64(50),
             },
             final_time=1.0,
@@ -169,36 +215,37 @@ class TimeStepValidation(unittest.TestCase):
                 ph.Simulation(
                     time_step={
                         "mode": "adaptive",
-                        "cfl_hyperbolic": 0.4,
+                        "cfl": 0.4,
                         "fine_level_substeps_max": value,
                     },
                     final_time=1.0,
                     **baseArgs,
                 )
 
-    def test_adaptive_requires_cfl_hyperbolic(self):
-        with self.assertRaises(ValueError):
-            ph.Simulation(time_step={"mode": "adaptive"}, final_time=1.0, **baseArgs)
+    def test_adaptive_cfl_defaults_to_0_8(self):
+        sim = ph.Simulation(time_step={"mode": "adaptive"}, final_time=1.0, **baseArgs)
+        self.assertEqual(sim.time_stepper.cfl, 0.8)
+        self.assertEqual(sim.time_stepper.cfl_hyperbolic, 0.8)
+        self.assertEqual(sim.time_stepper.cfl_whistler, 0.8)
+        self.assertEqual(sim.time_stepper.cfl_diffusive, 0.8)
 
     def test_adaptive_requires_final_time(self):
         with self.assertRaises(ValueError):
-            ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4}, **baseArgs
-            )
+            ph.Simulation(time_step={"mode": "adaptive", "cfl": 0.4}, **baseArgs)
 
     def test_adaptive_rejects_time_step_nbr(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+                time_step={"mode": "adaptive", "cfl": 0.4},
                 final_time=1.0,
                 time_step_nbr=10,
                 **baseArgs,
             )
 
-    def test_adaptive_rejects_non_positive_cfl_hyperbolic(self):
+    def test_adaptive_rejects_non_positive_cfl(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.0},
+                time_step={"mode": "adaptive", "cfl": 0.0},
                 final_time=1.0,
                 **baseArgs,
             )
@@ -206,7 +253,7 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_rejects_unknown_dict_key(self):
         with self.assertRaises(ValueError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4, "courant": 0.2},
+                time_step={"mode": "adaptive", "cfl": 0.4, "courant": 0.2},
                 final_time=1.0,
                 **baseArgs,
             )
@@ -216,7 +263,7 @@ class TimeStepValidation(unittest.TestCase):
             ph.Simulation(
                 time_step={
                     "mode": "adaptive",
-                    "cfl_hyperbolic": 0.4,
+                    "cfl": 0.4,
                     "cfl_diffusive": 0.0,
                 },
                 final_time=1.0,
@@ -226,7 +273,7 @@ class TimeStepValidation(unittest.TestCase):
     def test_adaptive_rejects_final_time_before_restart_time(self):
         with self.assertRaises(RuntimeError):
             ph.Simulation(
-                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+                time_step={"mode": "adaptive", "cfl": 0.4},
                 final_time=1.0,
                 restart_options={"mode": "overwrite", "restart_time": 2.0},
                 **baseArgs,
@@ -234,12 +281,84 @@ class TimeStepValidation(unittest.TestCase):
 
     def test_adaptive_accepts_final_time_after_restart_time(self):
         sim = ph.Simulation(
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.4},
+            time_step={"mode": "adaptive", "cfl": 0.4},
             final_time=5.0,
             restart_options={"mode": "overwrite", "restart_time": 2.0},
             **baseArgs,
         )
         self.assertEqual(sim.time_stepper.final_time, 5.0)
+
+    def test_adaptive_rejects_non_positive_cfl_hyperbolic(self):
+        with self.assertRaises(ValueError):
+            ph.Simulation(
+                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.0},
+                final_time=1.0,
+                **baseArgs,
+            )
+
+    # ---- adaptive with an MHD scheme ------------------------------------------------------
+
+    def test_adaptive_mhd_coefficients_are_fractions_of_the_limits(self):
+        sim = mhd_simulation(
+            time_step={"mode": "adaptive", "cfl": 0.5, "cfl_whistler": 0.25},
+            hall=True,
+            eta=0.01,
+            nu=0.02,
+        )
+        self.assertEqual(
+            sim.time_stepper.limits,
+            {
+                "hyperbolic": 1.17,
+                "whistler": 1.36,
+                "diffusive": 1.25,
+                "hyper_resistive": 2.51,
+            },
+        )
+        values = populated(sim.time_stepper)
+        self.assertAlmostEqual(
+            values["simulation/time_step/cfl_hyperbolic"], 0.5 * 1.17
+        )
+        self.assertAlmostEqual(values["simulation/time_step/cfl_whistler"], 0.25 * 1.36)
+        self.assertAlmostEqual(values["simulation/time_step/cfl_diffusive"], 0.5 * 1.25)
+        self.assertAlmostEqual(
+            values["simulation/time_step/cfl_hyper_resistive"], 0.5 * 2.51
+        )
+
+    def test_adaptive_without_mhd_passes_the_fractions(self):
+        sim = ph.Simulation(
+            time_step={"mode": "adaptive", "cfl": 0.5}, final_time=1.0, **baseArgs
+        )
+        values = populated(sim.time_stepper)
+        self.assertEqual(values["simulation/time_step/cfl_hyperbolic"], 0.5)
+        self.assertEqual(values["simulation/time_step/cfl_whistler"], 0.5)
+        self.assertEqual(values["simulation/time_step/cfl_diffusive"], 0.5)
+        self.assertEqual(values["simulation/time_step/cfl_hyper_resistive"], 0.5)
+
+    def test_adaptive_hall_rejects_integrators_without_imaginary_reach(self):
+        for integrator in ("Euler", "TVDRK2"):
+            ph.global_vars.sim = None
+            with (
+                self.subTest(integrator=integrator),
+                self.assertRaisesRegex(ValueError, "TVDRK3"),
+            ):
+                mhd_simulation(
+                    time_step={"mode": "adaptive"},
+                    hall=True,
+                    mhd_timestepper=integrator,
+                )
+
+    def test_adaptive_euler_rejects_weno_reconstructions(self):
+        with self.assertRaises(ValueError):
+            mhd_simulation(
+                time_step={"mode": "adaptive"},
+                reconstruction="WENOZ",
+                limiter="None",
+                mhd_timestepper="Euler",
+            )
+
+    def test_constant_hall_tvdrk2_is_accepted(self):
+        sim = mhd_simulation(time_step=0.001, hall=True, mhd_timestepper="TVDRK2")
+        self.assertEqual(sim.time_stepper.mode, "constant")
 
     # ---- unknown mode ----------------------------------------------------------------------
 
@@ -248,7 +367,7 @@ class TimeStepValidation(unittest.TestCase):
             ph.Simulation(
                 time_step={
                     "mode": "variable",
-                    "cfl_hyperbolic": 0.4,
+                    "cfl": 0.4,
                 },  # only "adaptive" is valid
                 final_time=1.0,
                 **baseArgs,

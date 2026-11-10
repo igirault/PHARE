@@ -4,12 +4,11 @@ Time-step resolution and validation for pharein.Simulation.
 'time_step' (the public Simulation constructor option) may be:
   - a scalar (or absent)                 -> ConstantTimeStepper
   - {'mode': 'constant', 'value': <dt>}  -> ConstantTimeStepper ('value' optional)
-  - {'mode': 'adaptive', 'cfl_hyperbolic': <h>, 'cfl_whistler': <w>, 'cfl_diffusive': <d>,
-     'fine_level_substeps_max': <n>}
+  - {'mode': 'adaptive', 'cfl': <c>, 'cfl_hyperbolic': <h>, 'cfl_whistler': <w>,
+     'cfl_diffusive': <d>, 'fine_level_substeps_max': <n>}
                                          -> AdaptiveTimeStepper
-                                            ('cfl_whistler' and 'cfl_diffusive' default to
-                                             'cfl_hyperbolic',
-                                             'fine_level_substeps_max' to 1000)
+                                            ('cfl' defaults to 0.8, the per-term fractions
+                                             to 'cfl', 'fine_level_substeps_max' to 1000)
 
 resolve_time_stepper(**kwargs) is the single entry point used by Simulation's checker();
 it returns the TimeStepper instance stored as Simulation.time_stepper.
@@ -17,11 +16,22 @@ it returns the TimeStepper instance stored as Simulation.time_stepper.
 
 import numbers
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..core import phare_utilities
+from . import stability_limits
 
 FINE_LEVEL_SUBSTEPS_MAX_DEFAULT = 1000
+CFL_DEFAULT = 0.8
+
+
+def _unit_limits():
+    return {
+        "hyperbolic": 1.0,
+        "whistler": 1.0,
+        "diffusive": 1.0,
+        "hyper_resistive": 1.0,
+    }
 
 
 def _restart_start_time(restart_options):
@@ -72,10 +82,32 @@ class ConstantTimeStepper(TimeStepper):
 class AdaptiveTimeStepper(TimeStepper):
     mode = "adaptive"
 
-    cfl_hyperbolic: float = None
-    cfl_whistler: float = None
-    cfl_diffusive: float = None
+    cfl: float = CFL_DEFAULT
+    cfl_hyperbolic: float = CFL_DEFAULT
+    cfl_whistler: float = CFL_DEFAULT
+    cfl_diffusive: float = CFL_DEFAULT
     fine_level_substeps_max: int = FINE_LEVEL_SUBSTEPS_MAX_DEFAULT
+    limits: dict = field(default_factory=_unit_limits)
+
+    def set_scheme(self, reconstruction, integrator, hall):
+        hyperbolic = stability_limits.hyperbolic_limit(reconstruction, integrator)
+        if hyperbolic is None:
+            raise ValueError(
+                f"Error: adaptive time_step has no stable step for the {reconstruction} "
+                f"reconstruction with {integrator}, use TVDRK2, TVDRK3 or SSPRK4_5"
+            )
+        whistler = stability_limits.whistler_limit(integrator)
+        if hall and whistler is None:
+            raise ValueError(
+                f"Error: adaptive time_step with hall=True has no stable whistler step with "
+                f"{integrator}, use TVDRK3 or SSPRK4_5"
+            )
+        self.limits = {
+            "hyperbolic": hyperbolic,
+            "whistler": whistler if whistler is not None else 1.0,
+            "diffusive": stability_limits.diffusive_limit(integrator),
+            "hyper_resistive": stability_limits.hyper_resistive_limit(integrator),
+        }
 
     def within_simulation_duration(self, time_period):
         raise NotImplementedError(
@@ -85,9 +117,22 @@ class AdaptiveTimeStepper(TimeStepper):
     def populate_dict(self, dp):
         super().populate_dict(dp)
         # dt is computed each step on the C++ side; bound the run by final_time
-        dp.add_double("simulation/time_step/cfl_hyperbolic", self.cfl_hyperbolic)
-        dp.add_double("simulation/time_step/cfl_whistler", self.cfl_whistler)
-        dp.add_double("simulation/time_step/cfl_diffusive", self.cfl_diffusive)
+        limits = self.limits
+        dp.add_double(
+            "simulation/time_step/cfl_hyperbolic",
+            self.cfl_hyperbolic * limits["hyperbolic"],
+        )
+        dp.add_double(
+            "simulation/time_step/cfl_whistler", self.cfl_whistler * limits["whistler"]
+        )
+        dp.add_double(
+            "simulation/time_step/cfl_diffusive",
+            self.cfl_diffusive * limits["diffusive"],
+        )
+        dp.add_double(
+            "simulation/time_step/cfl_hyper_resistive",
+            self.cfl_diffusive * limits["hyper_resistive"],
+        )
         dp.add_int(
             "simulation/time_step/fine_level_substeps_max", self.fine_level_substeps_max
         )
@@ -167,14 +212,13 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
     _check_keys(
         {
             "mode",
+            "cfl",
             "cfl_hyperbolic",
             "cfl_whistler",
             "cfl_diffusive",
             "fine_level_substeps_max",
         }
     )
-    if "cfl_hyperbolic" not in ts:
-        raise ValueError("Error: adaptive time_step requires 'cfl_hyperbolic'")
     if time_step_nbr is not None:
         raise ValueError(
             "Error: adaptive time_step is incompatible with a constant 'time_step' / 'time_step_nbr'"
@@ -182,10 +226,12 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
     if final_time is None:
         raise ValueError("Error: adaptive time_step requires 'final_time'")
 
-    cfl_hyperbolic = ts["cfl_hyperbolic"]
-    cfl_whistler = ts.get("cfl_whistler", cfl_hyperbolic)
-    cfl_diffusive = ts.get("cfl_diffusive", cfl_hyperbolic)
+    cfl = ts.get("cfl", CFL_DEFAULT)
+    cfl_hyperbolic = ts.get("cfl_hyperbolic", cfl)
+    cfl_whistler = ts.get("cfl_whistler", cfl)
+    cfl_diffusive = ts.get("cfl_diffusive", cfl)
     for name, value in (
+        ("cfl", cfl),
         ("cfl_hyperbolic", cfl_hyperbolic),
         ("cfl_whistler", cfl_whistler),
         ("cfl_diffusive", cfl_diffusive),
@@ -210,6 +256,7 @@ def _resolve_dict_time_step(ts, *, start_time, final_time, time_step_nbr):
     return AdaptiveTimeStepper(
         start_time,
         final_time,
+        cfl,
         cfl_hyperbolic,
         cfl_whistler,
         cfl_diffusive,
