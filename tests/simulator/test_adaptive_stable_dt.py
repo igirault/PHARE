@@ -36,9 +36,9 @@ def fast_magnetosonic(gamma, rho, b_dir, b2, p):
     )
 
 
-def whistler(inv_dx, rho, b2):
+def whistler(k, rho, b2):
     v_a = np.sqrt(b2) / np.sqrt(rho)
-    x = np.pi * inv_dx / (2.0 * np.sqrt(rho))
+    x = k / (2.0 * np.sqrt(rho))
     return v_a * (np.sqrt(1.0 + x * x) + x)
 
 
@@ -64,9 +64,9 @@ def expected_dt(
         cf = fast_magnetosonic(GAMMA, rho0, B[d], b2, P)
         inv_dt += (abs(V[d]) + cf) / (c_h * dx)
         if hall:
-            hall_term = whistler(1.0 / dx, rho0, b2) - np.sqrt(b2 / rho0)
-            inv_dt += hall_term / (c_w * dx)
-        inv_dt += 2.0 * eta / (c_d * dx * dx)
+            k = 2.0 / dx
+            inv_dt += k * (whistler(k, rho0, b2) - np.sqrt(b2 / rho0)) / c_w
+        inv_dt += 4.0 * eta / (c_d * dx * dx)
     if nu > 0:
         dx_min = min(dl)
         kappa = (

@@ -420,7 +420,7 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
         double invdx2 = 0;
         for (std::size_t d = 0; d < dimension; ++d)
             invdx2 += 1.0 / (meshSize[d] * meshSize[d]);
-        auto const invDtDiffusive = 2.0 * eta_ * invdx2 / cflDiffusive;
+        auto const invDtDiffusive = 4.0 * eta_ * invdx2 / cflDiffusive;
         auto const hyperSymbol    = 4.0 * invdx2 * 4.0 * invdx2 / cflHyperResistive;
         auto const dxMin          = *std::min_element(meshSize.begin(), meshSize.end());
 
@@ -456,9 +456,11 @@ double SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::computeStableDt(
                 auto const cfast = core::compute_fast_magnetosonic_(gamma_, r, b[d], BdotB, P);
                 invDtHyperbolic += (std::abs(v[d]) + cfast) / meshSize[d];
                 if (isHall_)
-                    invDtWhistler += (core::compute_whistler_(1.0 / meshSize[d], r, BdotB)
-                                      - std::sqrt(BdotB / r))
-                                     / meshSize[d];
+                {
+                    auto const k = 2.0 / meshSize[d];
+                    invDtWhistler
+                        += k * (core::compute_whistler_(k, r, BdotB) - std::sqrt(BdotB / r));
+                }
             }
             invDtHyperbolic *= invCflHyperbolic;
             invDtWhistler *= invCflWhistler;

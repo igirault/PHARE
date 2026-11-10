@@ -102,13 +102,15 @@ reconstruction. Their rates are added, each divided by a fraction $f$ of that co
 
 $$
 \frac{1}{\Delta t} = \sum_d \frac{|v_d| + c_{f,d}}{f_h C_h^*\,\Delta x_d}
-+ \sum_d \frac{v_{w,d} - v_A}{f_w C_w^*\,\Delta x_d}
-+ \frac{2\eta}{f_d C_d^*} \sum_d \frac{1}{\Delta x_d^2}
++ \sum_d \frac{k_d\,(v_{w,d} - v_A)}{f_w C_w^*}
++ \frac{4\eta}{f_d C_d^*} \sum_d \frac{1}{\Delta x_d^2}
 + \frac{\kappa}{f_d C_\nu^*} \Big(\sum_d \frac{4}{\Delta x_d^2}\Big)^2
 $$
 
 $c_{f,d}$ is the fast magnetosonic speed in direction $d$ and $v_{w,d}$ the whistler phase
-speed at the grid scale $k = \pi/\Delta x_d$ (present with `hall=True` only). $\kappa$ is the
+speed at the discrete grid-scale wavenumber $k_d = 2/\Delta x_d$, where the compact
+second difference has its largest eigenvalue $k_d^2 = 4/\Delta x_d^2$ (present with
+`hall=True` only). Each rate is the largest eigenvalue of its discrete operator. $\kappa$ is the
 hyper-resistive coefficient: $\nu\,\Delta x_\mathrm{min}^2 (|B|/\rho + 1)$ with
 `hyper_mode="spatial"`, $\nu$ with `"constant"`.
 
@@ -144,7 +146,7 @@ the imaginary axis (dispersion, $\rho_i$):
 | `Euler` | 2 | 0 |
 | `TVDRK2` | 2 | 0 |
 | `TVDRK3` | 2.51 | 1.73 |
-| `SSPRK4_5` | 5.33 | 3.28 |
+| `SSPRK4_5` | 5.33 | 3.27 |
 
 **Hyperbolic** ($C_h^*$), Rusanov flux, each reconstruction at its linear weights, for
 every wave speed between $-S$ and $S$. The same values hold in 1D, 2D and 3D. `Linear`
@@ -163,14 +165,15 @@ smooth data (growth below $10^{-10}$ per step at 0.1); 1.00 is the `Linear` valu
 
 **Whistler** ($C_w^*$), Hall MHD. The Hall electric field $(J\times B)/\rho$ is computed
 on the Yee edges, which gives the compact operator $4\sin^2(\theta/2)/\Delta x^2$ for every
-reconstruction. The estimate $(v_w - v_A)/\Delta x \to \pi |B|/(\rho\,\Delta x^2)$ for
-$\Delta x \ll d_i$, so $C_w^* = \pi\rho_i/4$: 1.36 (`TVDRK3`), 2.57 (`SSPRK4_5`). A
-linear analysis of the coupled Alfvén-whistler system shows that the sum of rates stays
-stable at every $d_i/\Delta x$, and the per-direction sum with $|B|$ in every direction is
-stable for any field direction and cell aspect ratio in 2D and 3D.
+reconstruction. Its largest eigenvalue is $4|B|/(\rho\,\Delta x^2)$, which the estimate
+$k(v_w - v_A)$ reaches for $\Delta x \ll d_i$, so $C_w^* = \rho_i$: 1.73 (`TVDRK3`), 3.27
+(`SSPRK4_5`). A linear analysis of the coupled Alfvén-whistler system shows that the sum
+of rates stays stable at every $d_i/\Delta x$, and the per-direction sum with $|B|$ in every
+direction is stable for any field direction and cell aspect ratio in 2D and 3D.
 
-**Resistive** ($C_d^* = \rho_r/2$): 1.00 (`Euler`), 1.00 (`TVDRK2`), 1.25 (`TVDRK3`),
-2.66 (`SSPRK4_5`). **Hyper-resistive** ($C_\nu^* = \rho_r$): 2.00, 2.00, 2.51, 5.33.
+**Resistive** ($C_d^* = \rho_r$, largest eigenvalue $4\eta\sum_d 1/\Delta x_d^2$): 2.00
+(`Euler`), 2.00 (`TVDRK2`), 2.51 (`TVDRK3`), 5.33 (`SSPRK4_5`). **Hyper-resistive**
+($C_\nu^* = \rho_r$): the same values.
 Hyper-resistivity also damps the whistler, which the additive rule does not use: with
 `TVDRK3` it is conservative.
 

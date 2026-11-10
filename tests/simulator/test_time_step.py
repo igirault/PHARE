@@ -309,8 +309,8 @@ class TimeStepValidation(unittest.TestCase):
             sim.time_stepper.limits,
             {
                 "hyperbolic": 1.17,
-                "whistler": 1.36,
-                "diffusive": 1.25,
+                "whistler": 1.73,
+                "diffusive": 2.51,
                 "hyper_resistive": 2.51,
             },
         )
@@ -318,8 +318,8 @@ class TimeStepValidation(unittest.TestCase):
         self.assertAlmostEqual(
             values["simulation/time_step/cfl_hyperbolic"], 0.5 * 1.17
         )
-        self.assertAlmostEqual(values["simulation/time_step/cfl_whistler"], 0.25 * 1.36)
-        self.assertAlmostEqual(values["simulation/time_step/cfl_diffusive"], 0.5 * 1.25)
+        self.assertAlmostEqual(values["simulation/time_step/cfl_whistler"], 0.25 * 1.73)
+        self.assertAlmostEqual(values["simulation/time_step/cfl_diffusive"], 0.5 * 2.51)
         self.assertAlmostEqual(
             values["simulation/time_step/cfl_hyper_resistive"], 0.5 * 2.51
         )

@@ -28,12 +28,12 @@ class StabilityLimits(unittest.TestCase):
                     )
 
     def test_whistler(self):
-        for integrator, expected in zip(INTEGRATORS, (None, None, 1.36, 2.57)):
+        for integrator, expected in zip(INTEGRATORS, (None, None, 1.73, 3.27)):
             with self.subTest(integrator=integrator):
                 self.assertEqual(whistler_limit(integrator), expected)
 
     def test_diffusive(self):
-        for integrator, expected in zip(INTEGRATORS, (1.00, 1.00, 1.25, 2.66)):
+        for integrator, expected in zip(INTEGRATORS, (2.00, 2.00, 2.51, 5.33)):
             with self.subTest(integrator=integrator):
                 self.assertEqual(diffusive_limit(integrator), expected)
 

@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 
 namespace PHARE::core
 {
@@ -23,11 +22,11 @@ auto compute_fast_magnetosonic_(auto gamma, auto const& rho, auto const& B, auto
                            * 0.5);
 }
 
-auto compute_whistler_(auto const& invMeshSize, auto const& rho, auto const& BdotB)
+auto compute_whistler_(auto const& k, auto const& rho, auto const& BdotB)
 {
     auto const sqrtRho = std::sqrt(rho);
     auto const vA      = std::sqrt(BdotB) / sqrtRho;
-    auto const x       = std::numbers::pi * invMeshSize / (2.0 * sqrtRho);
+    auto const x       = k / (2.0 * sqrtRho);
     return vA * (std::sqrt(1.0 + x * x) + x);
 }
 } // namespace PHARE::core

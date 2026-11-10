@@ -898,11 +898,12 @@ class Simulation:
           In MHD the rates of the limits add up, each divided by the largest stable coefficient
           of its term (a constant of the time integrator and reconstruction) times a fraction:
           1/dt = sum_d (abs(v_d) + c_f,d) / (f_h C_h dx_d)
-          + sum_d (v_w,d - v_A) / (f_w C_w dx_d)
-          + 2 eta sum_d 1/dx_d^2 / (f_d C_d) + kappa (sum_d 4/dx_d^2)^2 / (f_d C_nu),
-          where the whistler term is present with Hall only, v_w,d is the grid-scale whistler
-          speed and kappa the hyper-resistive coefficient. A fraction of 1 is the linear
-          stability limit of its term: see :ref:`adaptive_time_step` for the constants.
+          + sum_d k_d (v_w,d - v_A) / (f_w C_w)
+          + 4 eta sum_d 1/dx_d^2 / (f_d C_d) + kappa (sum_d 4/dx_d^2)^2 / (f_d C_nu),
+          where the whistler term is present with Hall only, v_w,d is the whistler speed at the
+          discrete grid-scale wavenumber k_d = 2/dx_d and kappa the hyper-resistive coefficient.
+          A fraction of 1 is the linear stability limit of its term: see
+          :ref:`adaptive_time_step` for the constants.
 
           * **cfl** (``float``), default 0.8, fraction of the stability limit used for every term.
           * **cfl_hyperbolic** (``float``), fraction for the advection and fast magnetosonic

@@ -8,8 +8,8 @@ _HYPERBOLIC = {
     "MP5": (None, 1.00, 1.43, 1.98),
 }
 
-_WHISTLER = (None, None, 1.36, 2.57)
-_DIFFUSIVE = (1.00, 1.00, 1.25, 2.66)
+_WHISTLER = (None, None, 1.73, 3.27)
+_DIFFUSIVE = (2.00, 2.00, 2.51, 5.33)
 _HYPER_RESISTIVE = (2.00, 2.00, 2.51, 5.33)
 
 
