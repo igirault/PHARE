@@ -22,6 +22,8 @@ public:
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
+        uL.Etot() -= 0.5 * (uL.B.x * uL.B.x + uL.B.y * uL.B.y + uL.B.z * uL.B.z);
+        uR.Etot() -= 0.5 * (uR.B.x * uR.B.x + uR.B.y * uR.B.y + uR.B.z * uR.B.z);
 
         auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot] = hll_(
             uL.as_tuple(), uR.as_tuple(), fL.as_tuple(), fR.as_tuple(), hydro_speedL, hydro_speedR);
