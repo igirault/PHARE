@@ -73,36 +73,66 @@ template<typename Layout>
 struct InnerBoundaryMeshClassifierBuffers
 {
     static constexpr char const* BOUNDARY_NAME = "test";
+    static constexpr auto dim                  = Layout::dimension;
+    using MeshDataT    = PHARE::core::InnerBoundaryMeshData<dim, PHARE::core::MHDQuantity>;
+    using ScalarFieldT = PHARE::core::Field<dim, PHARE::core::MHDQuantity::Scalar, double>;
 
     explicit InnerBoundaryMeshClassifierBuffers(Layout const& layout)
         : phi_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::NodeCentered)}
         , tags{BOUNDARY_NAME}
     {
-        ScalarField phi_field{std::string(BOUNDARY_NAME) + "_signed_distance",
-                              PHARE::core::MHDQuantity::Scalar::NodeCentered, phi_storage.data(),
-                              phi_storage.shape()};
+        ScalarFieldT phi_field{std::string(BOUNDARY_NAME) + "_signed_distance",
+                               PHARE::core::MHDQuantity::Scalar::NodeCentered, phi_storage.data(),
+                               phi_storage.shape()};
         tags.signedDistanceAtNodes.setBuffer(&phi_field);
 
-        elem_storages.reserve(MeshData::num_elem_types);
-        for (std::size_t i = 0; i < MeshData::num_elem_types; ++i)
+        elem_storages.reserve(MeshDataT::num_elem_types);
+        for (std::size_t i = 0; i < MeshDataT::num_elem_types; ++i)
         {
-            auto const c   = MeshData::idxToCentering(i);
-            auto const qty = MeshData::scalarFromCentering(c);
+            auto const c   = MeshDataT::idxToCentering(i);
+            auto const qty = MeshDataT::scalarFromCentering(c);
             elem_storages.emplace_back(layout.allocSize(qty));
-            ScalarField tmp{tags.elemStatus[i].name(), qty, elem_storages[i].data(),
-                            elem_storages[i].shape()};
+            ScalarFieldT tmp{tags.elemStatus[i].name(), qty, elem_storages[i].data(),
+                             elem_storages[i].shape()};
             tags.elemStatus[i].setBuffer(&tmp);
         }
         tags.ghostElemsData._data    = &ghost_array;
         tags.degradedElemsData._data = &degraded_array;
     }
 
-    PHARE::core::NdArrayVector<2, double> phi_storage;
-    std::vector<PHARE::core::NdArrayVector<2, double>> elem_storages;
-    PHARE::core::GhostElemPack<2>::ghost_elem_array_type ghost_array{};
-    PHARE::core::GhostElemPack<2>::ghost_elem_array_type degraded_array{};
-    MeshData tags;
+    PHARE::core::NdArrayVector<dim, double> phi_storage;
+    std::vector<PHARE::core::NdArrayVector<dim, double>> elem_storages;
+    typename PHARE::core::GhostElemPack<dim>::ghost_elem_array_type ghost_array{};
+    typename PHARE::core::GhostElemPack<dim>::ghost_elem_array_type degraded_array{};
+    MeshDataT tags;
 };
+
+inline constexpr PHARE::SimOpts wenoz3DOptions{
+    .dimension           = 3,
+    .interp_order        = 1,
+    .reconstruction_type = PHARE::MHDOpts::ReconstructionType::WENOZ,
+    .slope_limiter_type  = PHARE::MHDOpts::SlopeLimiterType::None,
+    .riemann_solver_type = PHARE::MHDOpts::RiemannSolverType::Rusanov};
+
+inline constexpr PHARE::MHDFieldOptions<wenoz3DOptions> wenoz3DFieldOptions{};
+
+using GridLayout3D = PHARE::core::GridLayout<PHARE::MHDOptions<wenoz3DFieldOptions>{}>;
+using Mapper3D
+    = PHARE::core::InnerBoundaryMeshClassifier<3, GridLayout3D, PHARE::core::MHDQuantity>;
+
+constexpr std::array<PHARE::core::QtyCentering, 3> kCell3C
+    = {PHARE::core::QtyCentering::dual, PHARE::core::QtyCentering::dual,
+       PHARE::core::QtyCentering::dual};
+
+GridLayout3D cubeLayout(int lower, std::uint32_t ncell)
+{
+    auto const upper = lower + static_cast<int>(ncell) - 1;
+    auto const o     = static_cast<double>(lower);
+    return GridLayout3D{{1.0, 1.0, 1.0},
+                        {ncell, ncell, ncell},
+                        {o, o, o},
+                        PHARE::core::Box<int, 3>{{lower, lower, lower}, {upper, upper, upper}}};
+}
 } // namespace
 
 TEST(InnerBoundaryMeshClassifier, computesReasonableDefaultCutEpsFromLayout)
@@ -587,6 +617,131 @@ TEST(InnerBoundaryMeshClassifier, secondOrderBandFacesRespectStencilMargin)
             inGhostRegion = inGhostRegion or elem.index[axis] < 4u;
         }
         EXPECT_TRUE(inGhostRegion) << "band must reach the ghost region for this test to bite";
+    }
+}
+
+TEST(InnerBoundaryMeshClassifier, planarBoxStencilsOfEvolvedCellsNeverReachInactive3D)
+{
+    using PHARE::core::Direction;
+    using PHARE::core::ElemStatus;
+    using PHARE::core::toDouble;
+    constexpr int reach = 2;
+
+    for (auto const& center : {PHARE::core::Point<double, 3>{0.05, 0.05, 0.05},
+                               PHARE::core::Point<double, 3>{0.3, 0.7, 0.2}})
+        for (double radius : {7.3, 9.7})
+        {
+            PHARE::core::SphereInnerBoundary<3> sphere{"sphere", center, radius};
+            auto const layout = cubeLayout(-20, 40u);
+            auto classifier   = Mapper3D::withDefaults(sphere, layout);
+            ASSERT_EQ(classifier.params().nghosts, 4u);
+
+            InnerBoundaryMeshClassifierBuffers buffers{layout};
+            classifier(layout, buffers.tags);
+
+            auto const& cells = buffers.tags.getStatusFieldFromCentering(kCell3C);
+            auto const lo     = layout.physicalStartIndex(cells, Direction::X);
+            auto const hi     = layout.physicalEndIndex(cells, Direction::X);
+
+            std::size_t reached = 0;
+            for (auto i = lo; i <= hi; ++i)
+                for (auto j = lo; j <= hi; ++j)
+                    for (auto k = lo; k <= hi; ++k)
+                    {
+                        auto const s = cells(i, j, k);
+                        if (s != toDouble(ElemStatus::Fluid) and s != toDouble(ElemStatus::Cut))
+                            continue;
+                        for (int a = -reach; a <= reach; ++a)
+                            for (int b = -reach; b <= reach; ++b)
+                                for (auto const& [di, dj, dk] :
+                                     {std::array{a, b, 0}, std::array{a, 0, b},
+                                      std::array{0, a, b}})
+                                    if (cells(i + di, j + dj, k + dk)
+                                        == toDouble(ElemStatus::Inactive))
+                                        ++reached;
+                    }
+            EXPECT_EQ(reached, 0u) << "radius " << radius << " center " << center[0];
+        }
+}
+
+TEST(InnerBoundaryMeshClassifier, secondOrderCellBandIsChebyshevDilation3D)
+{
+    using PHARE::core::Direction;
+    using PHARE::core::ElemStatus;
+    using PHARE::core::toDouble;
+
+    PHARE::core::SphereInnerBoundary<3> sphere{"sphere", {0.3, 0.7, 0.2}, 9.7};
+    auto const layout = cubeLayout(-15, 30u);
+    auto classifier   = Mapper3D::withDefaults(sphere, layout);
+    ASSERT_EQ(classifier.params().scheme, PHARE::core::NearBodyScheme::SecondOrder);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    classifier(layout, buffers.tags);
+
+    auto const& cells = buffers.tags.getStatusFieldFromCentering(kCell3C);
+    auto const shape  = cells.shape();
+    std::set<std::array<std::uint32_t, 3>> listed;
+    for (auto const& elem : buffers.tags.getDegradedElemsFromCentering(kCell3C))
+        listed.insert({elem.index[0], elem.index[1], elem.index[2]});
+
+    auto const lo = static_cast<int>(layout.physicalStartIndex(cells, Direction::X));
+    auto const hi = static_cast<int>(layout.physicalEndIndex(cells, Direction::X));
+    auto seed     = [&](int i, int j, int k) {
+        auto const s = cells(static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j),
+                                 static_cast<std::uint32_t>(k));
+        return s == toDouble(ElemStatus::Cut) or s == toDouble(ElemStatus::Ghost);
+    };
+    auto inBounds = [&](int v, std::size_t d) { return v >= 0 and v < static_cast<int>(shape[d]); };
+
+    std::size_t mismatches = 0, expectedCount = 0;
+    for (int i = lo; i <= hi; ++i)
+        for (int j = lo; j <= hi; ++j)
+            for (int k = lo; k <= hi; ++k)
+            {
+                bool near = false;
+                for (int a = -3; a <= 3 and !near; ++a)
+                    for (int b = -3; b <= 3 and !near; ++b)
+                        for (int c = -3; c <= 3 and !near; ++c)
+                            if (inBounds(i + a, 0) and inBounds(j + b, 1) and inBounds(k + c, 2))
+                                near = seed(i + a, j + b, k + c);
+                expectedCount += near ? 1 : 0;
+                bool const isListed
+                    = listed.contains({static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j),
+                                       static_cast<std::uint32_t>(k)});
+                mismatches += (near != isListed) ? 1 : 0;
+            }
+    EXPECT_GT(expectedCount, 0u);
+    EXPECT_EQ(mismatches, 0u);
+}
+
+TEST(InnerBoundaryMeshClassifier, secondOrderBandFacesRespectStencilMargin3D)
+{
+    using PHARE::core::QtyCentering;
+
+    PHARE::core::SphereInnerBoundary<3> sphere{"sphere", {2.05, 2.05, 2.05}, 6.0};
+    auto const layout = cubeLayout(0, 12u);
+    auto classifier   = Mapper3D::withDefaults(sphere, layout);
+    ASSERT_EQ(classifier.params().scheme, PHARE::core::NearBodyScheme::SecondOrder);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    classifier(layout, buffers.tags);
+
+    for (std::size_t axis = 0; axis < 3; ++axis)
+    {
+        std::array<QtyCentering, 3> centering{QtyCentering::dual, QtyCentering::dual,
+                                              QtyCentering::dual};
+        centering[axis]      = QtyCentering::primal;
+        auto const& degraded = buffers.tags.getDegradedElemsFromCentering(centering);
+        EXPECT_FALSE(degraded.empty());
+        auto const shape   = buffers.tags.getStatusFieldFromCentering(centering).shape();
+        bool inGhostRegion = false;
+        for (auto const& elem : degraded)
+        {
+            EXPECT_GE(elem.index[axis], 2u);
+            EXPECT_LE(elem.index[axis] + 3u, shape[axis]);
+            inGhostRegion = inGhostRegion or elem.index[axis] < 4u;
+        }
+        EXPECT_TRUE(inGhostRegion) << "axis " << axis;
     }
 }
 
