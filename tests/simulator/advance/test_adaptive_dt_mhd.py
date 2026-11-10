@@ -6,6 +6,7 @@ from ddt import data, ddt, unpack
 import pyphare.core.box as boxm
 import pyphare.pharein as ph
 from pyphare.core.box import Box
+from pyphare.pharein.stability_limits import hyperbolic_limit
 from pyphare.pharesee.hierarchy import hierarchy_from
 from pyphare.simulator.simulator import Simulator
 from tests.simulator import SimulatorTest
@@ -16,6 +17,7 @@ ph.NO_GUI()
 CELLS = 40
 DL = 0.1
 SENTINEL = -144123
+HYPERBOLIC_LIMIT = hyperbolic_limit("WENOZ", "TVDRK3")
 
 
 def blast_pressure(x, y):
@@ -214,7 +216,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
 
         if mode == "adaptive":
             time_args = dict(
-                time_step={"mode": "adaptive", "cfl_hyperbolic": 0.5},
+                time_step={"mode": "adaptive", "cfl": 0.5 / HYPERBOLIC_LIMIT},
                 final_time=final_time,
             )
         else:
@@ -289,7 +291,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
             diag_dir,
             density,
             pressure,
-            time_step={"mode": "adaptive", "cfl_hyperbolic": cfl_hyperbolic},
+            time_step={"mode": "adaptive", "cfl": cfl_hyperbolic / HYPERBOLIC_LIMIT},
             final_time=1.0,
         )
 
@@ -327,7 +329,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
             diag_dir,
             density,
             pressure,
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.5},
+            time_step={"mode": "adaptive", "cfl": 0.5 / HYPERBOLIC_LIMIT},
             final_time=final_time,
             extra_diag_options={"fine_dump_lvl_max": 10},
         )
@@ -375,7 +377,7 @@ class AdaptiveDtMHDTest(SimulatorTest):
             diag_dir,
             density,
             blast_pressure,
-            time_step={"mode": "adaptive", "cfl_hyperbolic": 0.5},
+            time_step={"mode": "adaptive", "cfl": 0.5 / HYPERBOLIC_LIMIT},
             final_time=final_time,
             extra_diag_options={"fine_dump_lvl_max": 10},
         )

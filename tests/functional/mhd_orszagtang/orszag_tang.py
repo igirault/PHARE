@@ -23,7 +23,7 @@ hall = False
 
 def config(time_step=None, with_diags=True):
     if time_step is None:
-        time_step = {"mode": "adaptive", "cfl_hyperbolic": 0.8}
+        time_step = {"mode": "adaptive", "cfl": 0.8}
 
     cells = (256, 256)
     dl = (1.0 / cells[0], 1.0 / cells[1])

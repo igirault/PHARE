@@ -95,117 +95,97 @@ See {doc}`restarts` for `restart_options` and {doc}`diagnostics` for
 
 ## Adaptive time step
 
-With `time_step={"mode": "adaptive", ...}` the MHD solver recomputes the time
-step of each level from the current state. Three stability rates are added, each
-divided by its own coefficient:
+With `time_step={"mode": "adaptive", "cfl": 0.8}` the MHD solver recomputes the time
+step of each level from the current state. Each term of the scheme has a largest stable
+coefficient $C^*$, a constant of the time integrator and, for the hyperbolic term, of the
+reconstruction. Their rates are added, each divided by a fraction $f$ of that constant:
 
 $$
-\frac{1}{\Delta t} = \sum_d \frac{|v_d| + c_{f,d}}{C_\mathrm{hyp}\,\Delta x_d}
-+ \sum_d \frac{v_{w,d} - v_A}{C_\mathrm{w}\,\Delta x_d}
-+ \frac{2\eta}{C_\mathrm{diff}} \sum_d \frac{1}{\Delta x_d^2}
+\frac{1}{\Delta t} = \sum_d \frac{|v_d| + c_{f,d}}{f_h C_h^*\,\Delta x_d}
++ \sum_d \frac{v_{w,d} - v_A}{f_w C_w^*\,\Delta x_d}
++ \frac{2\eta}{f_d C_d^*} \sum_d \frac{1}{\Delta x_d^2}
++ \frac{\kappa}{f_d C_\nu^*} \Big(\sum_d \frac{4}{\Delta x_d^2}\Big)^2
 $$
 
-where $C_\mathrm{hyp}$, $C_\mathrm{w}$ and $C_\mathrm{diff}$ are `cfl_hyperbolic`,
-`cfl_whistler` and `cfl_diffusive`. $c_{f,d}$ is the fast magnetosonic speed in
-direction $d$, and $v_{w,d}$ is the whistler phase speed at the grid scale
-$k = \pi/\Delta x_d$. The whistler term is present only with `hall=True`. The
-diffusive term is present only when `eta` is non-zero.
+$c_{f,d}$ is the fast magnetosonic speed in direction $d$ and $v_{w,d}$ the whistler phase
+speed at the grid scale $k = \pi/\Delta x_d$ (present with `hall=True` only). $\kappa$ is the
+hyper-resistive coefficient: $\nu\,\Delta x_\mathrm{min}^2 (|B|/\rho + 1)$ with
+`hyper_mode="spatial"`, $\nu$ with `"constant"`.
 
-The rates add, rather than taking the smallest of three time steps, because the three
-terms are evaluated in the same Runge-Kutta stages. If each coefficient stays below the
-limit of its own term, the sum stays stable for any mix of the three.
+- `cfl` (default 0.8) is the fraction used for every term. `cfl = 1` is the linear
+  stability limit. Keep a margin: the Runge-Kutta stability regions of `TVDRK3` and
+  `SSPRK4_5` are not convex, and limiters and WENO weights are nonlinear.
+- `cfl_hyperbolic`, `cfl_whistler`, `cfl_diffusive` override the fraction of one term
+  ($f_h$, $f_w$, $f_d$; the hyper-resistive term uses $f_d$). They default to `cfl`. A
+  smaller `cfl_whistler` resolves whistlers in time: their phase error grows with the
+  whistler Courant number.
+
+The rates add, rather than taking the smallest of the time steps, because the terms are
+evaluated in the same Runge-Kutta stages. If each term stays below its own limit, the
+sum stays stable for any mix of them.
+
+Adaptive runs reject the combinations that have no stable time step: `hall=True` with
+`Euler` or `TVDRK2` (the grid-scale whistler is purely dispersive and these integrators do
+not reach the imaginary axis), and `Euler` with `WENO3`, `WENOZ` or `MP5`. With a
+constant time step these combinations are allowed; Hall runs then need hyper-resistivity
+for `Euler` and `TVDRK2`.
 
 ### Stability limits
 
-The tables give the largest stable value of each coefficient on its own. They come from
-a linear (von Neumann) analysis of PHARE's discrete operators around a uniform state,
-combined with the stability polynomial of each integrator:
+The constants come from a linear (von Neumann) analysis of PHARE's discrete operators
+around a uniform state, combined with the stability polynomial of each integrator. They
+are rounded down to 3 digits.
 
-- hyperbolic: the Rusanov flux, with each reconstruction at its linear weights, for
-  every wave speed between $-S$ and $S$;
-- whistler: the Hall electric field, with $J$ computed on the edges, averaged to the
-  cell centres, reconstructed to the faces and averaged there;
-- diffusive: $E = \eta J$ on the edges, which gives the compact Laplacian.
+Stability region of each integrator along the negative real axis (damping, $\rho_r$) and
+the imaginary axis (dispersion, $\rho_i$):
 
-Use about 80% of the tabulated value: the analysis is linear, and limiters and WENO
-weights are not.
-
-Stability region of each integrator along the negative real axis (damping) and the
-imaginary axis (dispersion):
-
-| Integrator | real axis | imaginary axis |
+| Integrator | $\rho_r$ | $\rho_i$ |
 |---|---|---|
 | `Euler` | 2 | 0 |
 | `TVDRK2` | 2 | 0 |
 | `TVDRK3` | 2.51 | 1.73 |
 | `SSPRK4_5` | 5.33 | 3.28 |
 
-**cfl_hyperbolic**, Rusanov flux. The same values hold in 1D, 2D and 3D. `Linear` is
-the smooth-region behaviour of the `VanLeer` and `MinMod` limiters, which fall back to
-`Constant` at extrema. "unstable" means unstable for smooth solutions at any time step:
+**Hyperbolic** ($C_h^*$), Rusanov flux, each reconstruction at its linear weights, for
+every wave speed between $-S$ and $S$. The same values hold in 1D, 2D and 3D. `Linear`
+is the smooth-region behaviour of the `VanLeer` and `MinMod` limiters:
 
 | Reconstruction | `Euler` | `TVDRK2` | `TVDRK3` | `SSPRK4_5` |
 |---|---|---|---|---|
-| `Constant` | 1.00 | 1.00 | 1.26 | 2.19 |
-| `Linear` | unstable | 1.00 | 1.18 | 1.73 |
-| `WENO3` | unstable | 0.87 | 1.63 | 2.10 |
-| `WENOZ`, `MP5` | unstable | 0.10 | 1.43 | 1.99 |
+| `Constant` | 1.00 | 1.00 | 1.25 | 2.19 |
+| `Linear` | 0.5 | 1.00 | 1.17 | 1.73 |
+| `WENO3` | rejected | 0.873 | 1.62 | 2.10 |
+| `WENOZ`, `MP5` | rejected | 1.00 | 1.43 | 1.98 |
 
-**cfl_whistler**, Hall MHD without hyper-resistivity. The grid-scale whistler is
-dispersive, and the integrator must reach along the imaginary axis. `Euler` and `TVDRK2`
-do not reach it at all, and are unstable at any time step when $\Delta x \ll d_i$. The
-values below are the limits for $\Delta x \ll d_i$. A linear analysis of the coupled
-Alfvén-whistler system shows that the limit only grows at coarser resolution, so they
-are safe at every $d_i/\Delta x$:
+`Linear` with `Euler` is linearly unstable: 0.5 is the TVD bound of the limited
+reconstruction. `WENOZ`/`MP5` with `TVDRK2` is weakly unstable at every time step for
+smooth data (growth below $10^{-10}$ per step at 0.1); 1.00 is the `Linear` value.
 
-| Reconstruction | `Euler` | `TVDRK2` | `TVDRK3` | `SSPRK4_5` |
-|---|---|---|---|---|
-| `Constant` | unstable | unstable | 5.44 | 10.3 |
-| `Linear` | unstable | unstable | 3.53 | 6.69 |
-| `WENO3` | unstable | unstable | 4.02 | 7.61 |
-| `WENOZ`, `MP5` | unstable | unstable | 3.56 | 6.74 |
+**Whistler** ($C_w^*$), Hall MHD. The Hall electric field $(J\times B)/\rho$ is computed
+on the Yee edges, which gives the compact operator $4\sin^2(\theta/2)/\Delta x^2$ for every
+reconstruction. The estimate $(v_w - v_A)/\Delta x \to \pi |B|/(\rho\,\Delta x^2)$ for
+$\Delta x \ll d_i$, so $C_w^* = \pi\rho_i/4$: 1.36 (`TVDRK3`), 2.57 (`SSPRK4_5`). A
+linear analysis of the coupled Alfvén-whistler system shows that the sum of rates stays
+stable at every $d_i/\Delta x$, and the per-direction sum with $|B|$ in every direction is
+stable for any field direction and cell aspect ratio in 2D and 3D.
 
-These values are larger than 1. PHARE's Hall operator is weaker than the estimate
-$(v_w - v_A)/\Delta x$ suggests, because $J$ is averaged and reconstructed before it
-enters the flux.
-
-Hyper-resistivity with `hyper_mode="spatial"` damps the grid-scale whistler. That makes
-`Euler` and `TVDRK2` usable. The damping is measured by
-$\tilde\nu = \nu\,(1 + \rho/|B|)$. `Euler` is stable up to about $2\pi\tilde\nu$ for every
-reconstruction. `TVDRK2`:
-
-| Reconstruction | $\tilde\nu = 0.01$ | 0.02 | 0.04 | 0.1 |
-|---|---|---|---|---|
-| `Constant` | 2.01 | 2.59 | 3.37 | 3.93 |
-| `Linear` | 1.30 | 1.68 | 2.19 | 3.10 |
-| `WENO3` | 1.50 | 1.93 | 2.52 | 3.57 |
-| `WENOZ`, `MP5` | 1.35 | 1.75 | 2.28 | 3.22 |
-
-Hyper-resistivity has no term of its own in the time step. With a large $\tilde\nu$ it
-becomes the limit, and the `TVDRK3` and `SSPRK4_5` values decrease. At
-$\tilde\nu = 0.1$ with `Linear` they are 4.83 and 6.00. With `hyper_mode="constant"` the
-damping grows as $1/\Delta x^4$ and no coefficient bounds it.
-
-**cfl_diffusive**, for any reconstruction and dimension: 1.00 (`Euler`),
-1.00 (`TVDRK2`), 1.26 (`TVDRK3`), 2.67 (`SSPRK4_5`).
+**Resistive** ($C_d^* = \rho_r/2$): 1.00 (`Euler`), 1.00 (`TVDRK2`), 1.25 (`TVDRK3`),
+2.66 (`SSPRK4_5`). **Hyper-resistive** ($C_\nu^* = \rho_r$): 2.00, 2.00, 2.51, 5.33.
+Hyper-resistivity also damps the whistler, which the additive rule does not use: with
+`TVDRK3` it is conservative.
 
 ### Measured limits
 
 1D whistler runs with `Linear`/`VanLeer`, $B = \rho = 1$, $\nu = 0.02$
-(`hyper_mode="spatial"`). The table gives the largest stable coefficient and, in
-brackets, the first unstable one. The model rows come from the coupled
-Alfvén-whistler analysis, with one coefficient as in these runs.
+(`hyper_mode="spatial"`), run with a single absolute coefficient for the hyperbolic and
+whistler terms. The table gives the ratio of the measured largest stable coefficient to
+the one predicted by the linear analysis of the coupled Alfvén-whistler system (first
+unstable value in brackets): the analysis predicts the measured limits within about 10%.
 
-| Case | `Euler` | `TVDRK2` | `TVDRK3` | `SSPRK4_5` |
-|---|---|---|---|---|
-| $\Delta x = 0.05\,d_i$, measured | 0.3 (0.4) | 2 (3) | 4 (5) | 6 (8) |
-| $\Delta x = 0.05\,d_i$, model | | 2.30 | 4.57 | 6.73 |
-| $\Delta x = 0.8\,d_i$, measured | | 2 | 3 | 4 |
-| $\Delta x = 0.8\,d_i$, model | | 2.18 | 3.54 | 4.41 |
+| Case | `TVDRK3` | `SSPRK4_5` |
+|---|---|---|
+| $\Delta x = 0.05\,d_i$ | 0.97 (1.10) | 0.97 (1.16) |
+| $\Delta x = 0.8\,d_i$ | 0.95 (1.09) | 0.87 (1.09) |
 
-The model has no stable `Euler` step with `Linear`, because that pair is unstable for the
-advective part (see `cfl_hyperbolic`). The measured runs held at 0.3, helped by the
-limiter.
-
-On a 2D Harris sheet with `SSPRK4_5` and `TVDRK3`, runs stayed stable up to
-coefficients of 12 and 6, because the Hall term dominates only in part of the domain.
+On a 2D Harris sheet the runs stay stable further, because the Hall term dominates only in
+part of the domain.
