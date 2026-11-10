@@ -49,6 +49,11 @@ public:
 
     int priority() const override { return late_priority; }
 
+    bool fillsNonInterpolableGhosts() const override
+    {
+        return pressureBC_->fillsNonInterpolableGhosts();
+    }
+
     void apply(ScalarOrTensorFieldT& scalarOrTensorField, GridLayoutT const& layout,
                inner_boundary_mesh_data_type const& boundaryMeshData,
                context_type const& ctx) override

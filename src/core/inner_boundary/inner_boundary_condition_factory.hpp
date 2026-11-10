@@ -17,12 +17,13 @@
 
 namespace PHARE::core
 {
-enum class InnerBoundaryConditionType { FixedState };
+enum class InnerBoundaryConditionType { FixedState, FixedDensity };
 
 inline InnerBoundaryConditionType getInnerBoundaryConditionTypeFromString(std::string const& name)
 {
     static std::unordered_map<std::string, InnerBoundaryConditionType> const typeMap{
         {"fixed-state", InnerBoundaryConditionType::FixedState},
+        {"fixed-density", InnerBoundaryConditionType::FixedDensity},
     };
     auto it = typeMap.find(name);
     if (it == typeMap.end())
@@ -62,6 +63,10 @@ public:
                 registerFixedState_(scalarQuantities, vectorQuantities, scalarBCs, vectorBCs, gamma,
                                     fixedState);
                 break;
+            case InnerBoundaryConditionType::FixedDensity:
+                registerFixedDensity_(scalarQuantities, vectorQuantities, scalarBCs, vectorBCs,
+                                      gamma, fixedState);
+                break;
             default: throw std::runtime_error("InnerBoundaryConditionFactory: unknown type");
         }
     }
@@ -84,6 +89,18 @@ private:
                                                              PhysicalStateT>;
 
     static constexpr auto constant = Dirichlet<FieldT>::ExtrapolationType::Constant;
+
+    static void registerFixedDensity_(std::vector<scalar_qty> const& scalars,
+                                      std::vector<vector_qty> const& vectors,
+                                      scalar_bc_map_type& scalarBCs, vector_bc_map_type& vectorBCs,
+                                      double gamma, FixedStateValues const& fixedState)
+    {
+        registerFixedState_(scalars, vectors, scalarBCs, vectorBCs, gamma, fixedState);
+        for (auto const qty : scalars)
+            if (qty == PhysicalQuantityT::Scalar::Etot1)
+                scalarBCs[qty] = std::make_unique<TotalEnergyFromPressure<FieldT>>(
+                    std::make_unique<Neumann<FieldT>>(), gamma);
+    }
 
     static void registerFixedState_(std::vector<scalar_qty> const& scalars,
                                     std::vector<vector_qty> const& vectors,

@@ -276,6 +276,28 @@ class TestInnerBoundaryAndFloors(unittest.TestCase):
         self.assertEqual(dp.written[f"{base}/density"], 3.0)
         self.assertEqual(dp.written[f"{base}/pressure"], 0.25)
 
+    def test_inner_boundary_fixed_density_is_accepted(self):
+        ib = self.body(condition_type="fixed-density")
+        del ib["pressure"]
+        sim = self.simulation(inner_boundary=ib)
+        dp = RecordingPopulator()
+        sim.inner_boundary.populate_dict(dp)
+        base = "simulation/inner_boundary"
+        self.assertEqual(dp.written[f"{base}/condition_type"], "fixed-density")
+        self.assertEqual(dp.written[f"{base}/density"], 3.0)
+        self.assertNotIn(f"{base}/pressure", dp.written)
+
+    def test_inner_boundary_fixed_density_rejects_pressure(self):
+        with self.assertRaisesRegex(ValueError, "pressure"):
+            self.simulation(inner_boundary=self.body(condition_type="fixed-density"))
+
+    def test_inner_boundary_fixed_density_requires_density(self):
+        ib = self.body(condition_type="fixed-density")
+        del ib["pressure"]
+        del ib["density"]
+        with self.assertRaisesRegex(ValueError, "density"):
+            self.simulation(inner_boundary=ib)
+
     def test_no_inner_boundary_by_default(self):
         self.assertIsNone(self.simulation().inner_boundary)
 

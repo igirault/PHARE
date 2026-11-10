@@ -69,7 +69,10 @@ public:
         factory_type::create(conditionType, scalarQuantities, vectorQuantities, scalarBCs_,
                              vectorBCs_, gamma_, fixedState);
         buildSafeState_(safe);
+        needsMomentExchange_ = computeNeedsMomentExchange_();
     }
+
+    NO_DISCARD bool needsMomentExchange() const { return needsMomentExchange_; }
 
     static std::unique_ptr<InnerBoundaryManager>
     create(initializer::PHAREDict const& dict, std::vector<scalar_qty> const& scalarQuantities,
@@ -86,10 +89,18 @@ public:
         auto const typeName = ibDict["condition_type"].template to<std::string>();
         auto const condType = getInnerBoundaryConditionTypeFromString(typeName);
 
-        if (!ibDict.contains("density") || !ibDict.contains("pressure"))
+        if (condType == InnerBoundaryConditionType::FixedDensity)
+        {
+            if (!ibDict.contains("density"))
+                throw std::runtime_error("inner_boundary: fixed-density requires density");
+            if (ibDict.contains("pressure"))
+                throw std::runtime_error("inner_boundary: fixed-density does not take pressure");
+        }
+        else if (!ibDict.contains("density") || !ibDict.contains("pressure"))
             throw std::runtime_error("inner_boundary: fixed-state requires density and pressure");
-        FixedStateValues const fixedState{ibDict["density"].template to<double>(),
-                                          ibDict["pressure"].template to<double>()};
+        FixedStateValues const fixedState{
+            ibDict["density"].template to<double>(),
+            ibDict.contains("pressure") ? ibDict["pressure"].template to<double>() : 0.0};
 
         SafeStateValues safe{};
         if (ibDict.contains("inactive_safe_state"))
@@ -212,6 +223,16 @@ public:
     NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(meshData_); }
 
 private:
+    bool computeNeedsMomentExchange_() const
+    {
+        auto partial = [](auto const& map, auto const qty) {
+            auto it = map.find(qty);
+            return it != map.end() and !it->second->fillsNonInterpolableGhosts();
+        };
+        return partial(scalarBCs_, scalar_qty::rho) or partial(scalarBCs_, scalar_qty::Etot1)
+               or partial(vectorBCs_, vector_qty::rhoV);
+    }
+
     std::pair<int, std::function<void()>> scalarTask_(FieldT& field, GridLayoutT const& layout,
                                                       context_type const& ctx)
     {
@@ -258,6 +279,7 @@ private:
     double gamma_;
     scalar_bc_map_type scalarBCs_;
     vector_bc_map_type vectorBCs_;
+    bool needsMomentExchange_ = false;
     std::unordered_map<scalar_qty, double> safeScalars_;
     std::unordered_map<vector_qty, std::array<double, 3>> safeVectors_;
 };

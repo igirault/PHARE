@@ -131,10 +131,12 @@ struct ManagerFixture
 
     Manager manager;
 
-    explicit ManagerFixture(Manager::SafeStateValues safe = {})
+    explicit ManagerFixture(Manager::SafeStateValues safe = {},
+                            InnerBoundaryConditionType type
+                            = InnerBoundaryConditionType::FixedState)
         : manager{std::make_unique<SphereInnerBoundary<2>>(BOUNDARY_NAME,
                                                            Point<double, 2>{0.05, 0.05}, 4.0),
-                  InnerBoundaryConditionType::FixedState,
+                  type,
                   scalarQtys,
                   vectorQtys,
                   adiabaticIndex,
@@ -194,6 +196,45 @@ TEST(InnerBoundaryManager, fixedStateRequiresDensityAndPressure)
     auto dict                         = sphereDict();
     dict["inner_boundary"]["density"] = 1.0;
     EXPECT_THROW(Manager::create(dict, {}, {}, adiabaticIndex), std::runtime_error);
+}
+
+TEST(InnerBoundaryManager, fixedDensityDoesNotNeedPressure)
+{
+    auto dict                                = sphereDict();
+    dict["inner_boundary"]["condition_type"] = std::string{"fixed-density"};
+    dict["inner_boundary"]["density"]        = 1.0;
+    EXPECT_NE(Manager::create(dict, {}, {}, adiabaticIndex), nullptr);
+}
+
+TEST(InnerBoundaryManager, fixedDensityRejectsPressure)
+{
+    auto dict                                = sphereDict();
+    dict["inner_boundary"]["condition_type"] = std::string{"fixed-density"};
+    dict["inner_boundary"]["density"]        = 1.0;
+    dict["inner_boundary"]["pressure"]       = 1.0;
+    EXPECT_THROW(Manager::create(dict, {}, {}, adiabaticIndex), std::runtime_error);
+}
+
+TEST(InnerBoundaryManager, fixedDensityNeedsMomentExchange)
+{
+    auto dict                                = sphereDict();
+    dict["inner_boundary"]["condition_type"] = std::string{"fixed-density"};
+    dict["inner_boundary"]["density"]        = 1.0;
+    auto mgr = Manager::create(dict, {MHDQuantity::Scalar::rho, MHDQuantity::Scalar::Etot1},
+                               {MHDQuantity::Vector::rhoV}, adiabaticIndex);
+    ASSERT_NE(mgr, nullptr);
+    EXPECT_TRUE(mgr->needsMomentExchange());
+}
+
+TEST(InnerBoundaryManager, fixedStateDoesNotNeedMomentExchange)
+{
+    auto dict                          = sphereDict();
+    dict["inner_boundary"]["density"]  = 1.0;
+    dict["inner_boundary"]["pressure"] = 1.0;
+    auto mgr = Manager::create(dict, {MHDQuantity::Scalar::rho, MHDQuantity::Scalar::Etot1},
+                               {MHDQuantity::Vector::rhoV}, adiabaticIndex);
+    ASSERT_NE(mgr, nullptr);
+    EXPECT_FALSE(mgr->needsMomentExchange());
 }
 
 TEST(InnerBoundaryManager, rejectsUnknownConditionType)
@@ -277,6 +318,41 @@ TEST(InnerBoundaryManager, fixedStateGhostsHoldPrescribedState)
                                        st.Etot1(idx));
         EXPECT_NEAR(P_g, ManagerFixture::pressure, eps);
     }
+}
+
+TEST(InnerBoundaryManager, fixedDensityGhostPressureMirrorsInterior)
+{
+    ManagerFixture fix{{}, InnerBoundaryConditionType::FixedDensity};
+    auto const& layout = fix.layout;
+    TestStateStorage st{layout};
+
+    constexpr double rho = 1.0, vx = 0.3, P = 0.5, b1y = 1.0;
+    st.rho_s.fill(rho);
+    st.P_s.fill(P);
+    st.Etot1_s.fill(eosPToEtot1(adiabaticIndex, rho, vx, 0., 0., 0., b1y, 0., P));
+    fillVec(st.rhoV, {rho * vx, 0., 0.});
+    fillVec(st.B1, {0., b1y, 0.});
+
+    fix.manager.applyToMoments(layout, InnerBCContext<TestStateStorage>{st, st, 0.0, 0.0});
+
+    auto const& ghosts = fix.manager.getMeshData().getGhostDataFromCentering(
+        layout.centering(MHDQuantity::Scalar::rho));
+    std::size_t checked = 0;
+    for (auto const& g : ghosts)
+    {
+        MeshIndex<2> const idx{g.index[0], g.index[1]};
+        EXPECT_NEAR(st.rho(idx), ManagerFixture::density, eps);
+        if (!g.mirrorIsInterpolable)
+            continue;
+        ++checked;
+        auto const b1x_c = cellCenter(layout, st.B1, Component::X, idx);
+        auto const b1y_c = cellCenter(layout, st.B1, Component::Y, idx);
+        auto const b1z_c = cellCenter(layout, st.B1, Component::Z, idx);
+        auto const P_g   = eosEtot1ToP(adiabaticIndex, st.rho(idx), 0., 0., 0., b1x_c, b1y_c, b1z_c,
+                                       st.Etot1(idx));
+        EXPECT_NEAR(P_g, P, 1e-10);
+    }
+    EXPECT_GT(checked, 0u);
 }
 
 TEST(InnerBoundaryManager, electricFieldGhostEdgesAreZeroed)

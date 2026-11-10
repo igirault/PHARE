@@ -270,6 +270,13 @@ TEST(FieldTotalEnergyFromPressureInner, nonInterpolableGhostsUntouched)
     }
 }
 
+TEST(FieldTotalEnergyFromPressureInner, fillsNonInterpolableFollowsPressureCondition)
+{
+    Fixture fix;
+    EXPECT_FALSE(fix.makeBC().fillsNonInterpolableGhosts());
+    EXPECT_TRUE(fix.makeConstantDirichletBC(1.0).fillsNonInterpolableGhosts());
+}
+
 TEST(FieldTotalEnergyFromPressureInner, constantPressureSubBCFillsNonInterpolableGhosts)
 {
     Fixture fix;

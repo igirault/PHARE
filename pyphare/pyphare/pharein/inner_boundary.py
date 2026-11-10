@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from pyphare.core import phare_utilities
 
-_condition_types = ("fixed-state",)
+_condition_types = ("fixed-state", "fixed-density")
 _shapes = ("sphere",)
 _keys = {"name", "shape", "center", "radius", "condition_type", "density", "pressure"}
 _safe_state_keys = {"density", "pressure", "velocity", "B1"}
@@ -43,7 +43,7 @@ class InnerBoundary:
     center: tuple
     radius: float
     density: float
-    pressure: float
+    pressure: float | None
     safe_state: InactiveSafeState
     shape: str = "sphere"
     condition_type: str = "fixed-state"
@@ -56,7 +56,8 @@ class InnerBoundary:
         dp.add_array_as_vector(f"{base}/center", list(self.center))
         dp.add_double(f"{base}/radius", self.radius)
         dp.add_double(f"{base}/density", self.density)
-        dp.add_double(f"{base}/pressure", self.pressure)
+        if self.pressure is not None:
+            dp.add_double(f"{base}/pressure", self.pressure)
 
         safe = f"{base}/inactive_safe_state"
         dp.add_double(f"{safe}/density", self.safe_state.density)
@@ -95,16 +96,23 @@ def resolve_inner_boundary(ndim, **kwargs):
     if unknown:
         raise ValueError(f"Error: invalid inner_boundary keys {sorted(unknown)}")
 
-    for key in ("name", "shape", "center", "radius", "density", "pressure"):
+    condition_type = ib.get("condition_type", "fixed-state")
+    required = ["name", "shape", "center", "radius", "density"]
+    if condition_type != "fixed-density":
+        required.append("pressure")
+    for key in required:
         if key not in ib:
             raise ValueError(f"Error: inner_boundary requires '{key}'")
+    if condition_type == "fixed-density" and "pressure" in ib:
+        raise ValueError(
+            "Error: inner_boundary condition_type 'fixed-density' does not take 'pressure'"
+        )
 
     if ib["shape"] not in _shapes:
         raise ValueError(
             f"Error: inner_boundary shape '{ib['shape']}' is invalid, valid shapes are {_shapes}"
         )
 
-    condition_type = ib.get("condition_type", "fixed-state")
     if condition_type not in _condition_types:
         raise ValueError(
             f"Error: inner_boundary condition_type '{condition_type}' is invalid, "
@@ -122,7 +130,7 @@ def resolve_inner_boundary(ndim, **kwargs):
         center=center,
         radius=_positive("radius", ib["radius"]),
         density=_positive("density", ib["density"]),
-        pressure=_positive("pressure", ib["pressure"]),
+        pressure=_positive("pressure", ib["pressure"]) if "pressure" in ib else None,
         safe_state=_resolve_safe_state(ib.get("inactive_safe_state", {})),
         condition_type=condition_type,
     )
