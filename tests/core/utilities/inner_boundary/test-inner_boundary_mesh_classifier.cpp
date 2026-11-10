@@ -11,6 +11,8 @@
 #include "tests/core/utilities/inner_boundary/plane_inner_boundary.hpp"
 
 #include <algorithm>
+#include <set>
+#include <utility>
 #include <cmath>
 #include <vector>
 
@@ -64,6 +66,8 @@ constexpr std::array<PHARE::core::QtyCentering, 2> kFaceXC
     = {PHARE::core::QtyCentering::primal, PHARE::core::QtyCentering::dual};
 constexpr std::array<PHARE::core::QtyCentering, 2> kFaceYC
     = {PHARE::core::QtyCentering::dual, PHARE::core::QtyCentering::primal};
+constexpr std::array<PHARE::core::QtyCentering, 2> kNodeC
+    = {PHARE::core::QtyCentering::primal, PHARE::core::QtyCentering::primal};
 
 template<typename Layout>
 struct InnerBoundaryMeshClassifierBuffers
@@ -147,7 +151,7 @@ TEST(InnerBoundaryMeshClassifier, tagsCutInactiveAndGhostGeometry)
     EXPECT_EQ(PHARE::core::toDouble(PHARE::core::ElemStatus::Ghost),
               faceYField(physicalLocalIndex(layout, faceYField, 0u, 0u)));
 
-    EXPECT_TRUE(buffers.tags.getDegradedElemsFromCentering(kCellC).empty());
+    EXPECT_FALSE(buffers.tags.getDegradedElemsFromCentering(kCellC).empty());
 }
 
 TEST(InnerBoundaryMeshClassifier, ghostCellListIsNonEmpty)
@@ -270,7 +274,7 @@ TEST(InnerBoundaryMeshClassifier, underResolvedSphereProducesDegradedElements)
         << "an under-resolved sphere must emit degraded cell elements";
 }
 
-TEST(InnerBoundaryMeshClassifier, resolvedSphereProducesNoDegradedElements)
+TEST(InnerBoundaryMeshClassifier, resolvedSphereProducesSecondOrderBand)
 {
     auto const ng = GridLayout::options.field_ghost_width;
 
@@ -291,8 +295,8 @@ TEST(InnerBoundaryMeshClassifier, resolvedSphereProducesNoDegradedElements)
     InnerBoundaryMeshClassifierBuffers buffers{layout};
     classifier(layout, buffers.tags);
 
-    EXPECT_TRUE(buffers.tags.getDegradedElemsFromCentering(kCellC).empty())
-        << "a resolved sphere must not emit any degraded elements";
+    EXPECT_FALSE(buffers.tags.getDegradedElemsFromCentering(kCellC).empty())
+        << "a resolved sphere must emit a second-order band";
     EXPECT_FALSE(buffers.tags.getGhostDataFromCentering(kCellC).empty());
 }
 
@@ -314,7 +318,7 @@ PHARE::core::Point<double, 2> elementCoordinates(GridLayout const& layout, Field
     return coords;
 }
 
-TEST(InnerBoundaryMeshClassifier, degradedListsEmptyWhenResolved)
+TEST(InnerBoundaryMeshClassifier, degradedListsFilledWhenResolved)
 {
     double const dx           = 1.0;
     double const radius       = 20. * dx;
@@ -329,9 +333,19 @@ TEST(InnerBoundaryMeshClassifier, degradedListsEmptyWhenResolved)
     InnerBoundaryMeshClassifierBuffers buffers{layout};
     classifier(layout, buffers.tags);
 
+    double const reach
+        = (4. + static_cast<double>(reconstructionNghosts) + 1.) * dx * std::sqrt(2.);
     for (std::size_t i = 0; i < MeshData::num_elem_types; ++i)
-        EXPECT_TRUE(buffers.tags.getDegradedElemsFromCentering(MeshData::idxToCentering(i)).empty())
-            << "element type " << i;
+    {
+        auto const centering = MeshData::idxToCentering(i);
+        auto const& degraded = buffers.tags.getDegradedElemsFromCentering(centering);
+        EXPECT_FALSE(degraded.empty()) << "element type " << i;
+        auto const& status = buffers.tags.getStatusFieldFromCentering(centering);
+        for (auto const& elem : degraded)
+            EXPECT_LE(
+                std::abs(sphere.signedDistance(elementCoordinates(layout, status, elem.index))),
+                reach);
+    }
     EXPECT_FALSE(buffers.tags.getGhostDataFromCentering(kCellC).empty());
 }
 
@@ -474,6 +488,105 @@ TEST(InnerBoundaryMeshClassifier, boxStencilOfEvolvedCellsNeverReachesInactive)
         expectBoxStencilOfEvolvedCellsNeverReachesInactive<Mapper, GridLayout>(radius, 2);
         expectBoxStencilOfEvolvedCellsNeverReachesInactive<LinearMapper, LinearGridLayout>(radius,
                                                                                            2);
+    }
+}
+
+std::set<std::pair<std::uint32_t, std::uint32_t>> listedSet(auto const& degraded)
+{
+    std::set<std::pair<std::uint32_t, std::uint32_t>> listed;
+    for (auto const& elem : degraded)
+        listed.insert({elem.index[0], elem.index[1]});
+    return listed;
+}
+
+TEST(InnerBoundaryMeshClassifier, secondOrderBandCoversWenozStencils)
+{
+    using PHARE::core::Direction;
+    using PHARE::core::ElemStatus;
+    using PHARE::core::toDouble;
+
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.05, 0.05}, 20.0};
+    auto const layout = squareLayout<GridLayout>(-30, 60u);
+    auto classifier   = Mapper::withDefaults(sphere, layout);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    classifier(layout, buffers.tags);
+
+    auto const& cells = buffers.tags.getStatusFieldFromCentering(kCellC);
+    auto nearBody     = [&](int i, int j) {
+        auto const s = cells(static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j));
+        return s == toDouble(ElemStatus::Cut) or s == toDouble(ElemStatus::Ghost);
+    };
+
+    auto checkFaces = [&](auto const& centering, int axis) {
+        auto const& status = buffers.tags.getStatusFieldFromCentering(centering);
+        auto const listed  = listedSet(buffers.tags.getDegradedElemsFromCentering(centering));
+        auto const x0      = static_cast<int>(layout.physicalStartIndex(status, Direction::X));
+        auto const x1      = static_cast<int>(layout.physicalEndIndex(status, Direction::X));
+        auto const y0      = static_cast<int>(layout.physicalStartIndex(status, Direction::Y));
+        auto const y1      = static_cast<int>(layout.physicalEndIndex(status, Direction::Y));
+        std::size_t missed = 0;
+        for (int i = x0; i <= x1; ++i)
+            for (int j = y0; j <= y1; ++j)
+            {
+                bool touches = false;
+                for (int k = -3; k <= 2; ++k)
+                    touches = touches or (axis == 0 ? nearBody(i + k, j) : nearBody(i, j + k));
+                if (touches
+                    and !listed.contains(
+                        {static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j)}))
+                    ++missed;
+            }
+        EXPECT_EQ(missed, 0u) << "axis " << axis;
+    };
+    checkFaces(kFaceXC, 0);
+    checkFaces(kFaceYC, 1);
+
+    auto const& nodes  = buffers.tags.getStatusFieldFromCentering(kNodeC);
+    auto const listed  = listedSet(buffers.tags.getDegradedElemsFromCentering(kNodeC));
+    auto const x0      = static_cast<int>(layout.physicalStartIndex(nodes, Direction::X));
+    auto const x1      = static_cast<int>(layout.physicalEndIndex(nodes, Direction::X));
+    auto const y0      = static_cast<int>(layout.physicalStartIndex(nodes, Direction::Y));
+    auto const y1      = static_cast<int>(layout.physicalEndIndex(nodes, Direction::Y));
+    std::size_t missed = 0;
+    for (int i = x0; i <= x1; ++i)
+        for (int j = y0; j <= y1; ++j)
+        {
+            bool touches = false;
+            for (int di = -3; di <= 2; ++di)
+                for (int dj = -3; dj <= 2; ++dj)
+                    touches = touches or nearBody(i + di, j + dj);
+            if (touches
+                and !listed.contains(
+                    {static_cast<std::uint32_t>(i), static_cast<std::uint32_t>(j)}))
+                ++missed;
+        }
+    EXPECT_EQ(missed, 0u) << "nodes";
+}
+
+TEST(InnerBoundaryMeshClassifier, secondOrderBandFacesRespectStencilMargin)
+{
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {2.05, 2.05}, 6.0};
+    auto const layout = squareLayout<GridLayout>(0, 12u);
+    auto classifier   = Mapper::withDefaults(sphere, layout);
+    ASSERT_EQ(classifier.params().scheme, PHARE::core::NearBodyScheme::SecondOrder);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    classifier(layout, buffers.tags);
+
+    for (auto const& [centering, axis] : {std::pair{kFaceXC, 0u}, std::pair{kFaceYC, 1u}})
+    {
+        auto const& degraded = buffers.tags.getDegradedElemsFromCentering(centering);
+        EXPECT_FALSE(degraded.empty());
+        auto const shape   = buffers.tags.getStatusFieldFromCentering(centering).shape();
+        bool inGhostRegion = false;
+        for (auto const& elem : degraded)
+        {
+            EXPECT_GE(elem.index[axis], 2u);
+            EXPECT_LE(elem.index[axis] + 3u, shape[axis]);
+            inGhostRegion = inGhostRegion or elem.index[axis] < 4u;
+        }
+        EXPECT_TRUE(inGhostRegion) << "band must reach the ghost region for this test to bite";
     }
 }
 

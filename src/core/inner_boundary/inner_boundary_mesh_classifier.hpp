@@ -37,6 +37,8 @@ public:
         NearBodyScheme scheme = NearBodyScheme::None;
 
         std::size_t full_reach = 1;
+
+        std::size_t band_radius = 1;
     };
 
     struct Overrides
@@ -81,6 +83,7 @@ public:
 
         Params p;
         p.full_reach   = full_reach;
+        p.band_radius  = full_reach - 1;
         p.scheme       = scheme;
         p.nghosts      = overrides.nghosts.value_or(underResolved ? std::size_t{1} : nghosts);
         p.cut_eps      = overrides.cut_eps.value_or(1e-6 * dx_min);
@@ -428,9 +431,11 @@ private:
         for (auto& vec : meshData.degradedElemsData)
             vec.clear();
 
-        if (params_.scheme != NearBodyScheme::FirstOrder)
+        if (params_.scheme == NearBodyScheme::None)
             return;
 
+        bool const secondOrder     = params_.scheme == NearBodyScheme::SecondOrder;
+        std::uint32_t const margin = secondOrder ? 2u : 1u;
         auto const& cell_status = meshData.cellStatusField();
         auto const cell_shape   = cell_status.shape();
 
@@ -458,7 +463,11 @@ private:
             }
         });
 
-        for (std::size_t layer = 0; layer < params_.full_reach && !frontier.empty(); ++layer)
+        if (secondOrder)
+            dilateChebyshev_(nearBody, cell_shape, params_.band_radius);
+
+        for (std::size_t layer = 0; !secondOrder && layer < params_.full_reach && !frontier.empty();
+             ++layer)
         {
             std::vector<signed_local_index_type> next_frontier;
             for (auto const& source : frontier)
@@ -518,10 +527,35 @@ private:
                     = local_index_type{static_cast<std::uint32_t>(local_idx_args)...};
                 for (std::size_t d = 0; d < dim; ++d)
                     if (centering[d] == QtyCentering::primal
-                        and (local_elem[d] == 0 or local_elem[d] + 1 >= shape[d]))
+                        and (local_elem[d] < margin or local_elem[d] + margin >= shape[d]))
                         return;
                 mark(local_idx_args...);
             });
+        }
+    }
+
+    static void dilateChebyshev_(std::vector<char>& mask, auto const& shape,
+                                 std::size_t const radius)
+    {
+        auto const r = static_cast<int>(radius);
+        for (std::size_t d = 0; d < dim; ++d)
+        {
+            std::size_t stride = 1;
+            for (std::size_t e = d + 1; e < dim; ++e)
+                stride *= shape[e];
+            auto const extent = static_cast<int>(shape[d]);
+
+            auto const previous = mask;
+            for (std::size_t flat = 0; flat < previous.size(); ++flat)
+            {
+                if (!previous[flat])
+                    continue;
+                auto const coord = static_cast<int>((flat / stride) % shape[d]);
+                for (int k = std::max(-r, -coord); k <= std::min(r, extent - 1 - coord); ++k)
+                    mask[static_cast<std::size_t>(
+                        static_cast<long>(flat) + static_cast<long>(k) * static_cast<long>(stride))]
+                        = 1;
+            }
         }
     }
 
