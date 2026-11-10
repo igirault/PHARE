@@ -24,6 +24,7 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -228,6 +229,34 @@ TEST(DegradedElectricField, secondOrderListedEdgeMatchesLinearUct)
         EXPECT_NEAR(got[0], expected[0], 1e-12) << "nonIdeal " << withNonIdeal;
         EXPECT_NEAR(got[1], expected[1], 1e-12) << "nonIdeal " << withNonIdeal;
     }
+}
+
+TEST(DegradedElectricField, secondOrderGhostEdgeIgnoresNonIdealOutsideDomain)
+{
+    DegradedElectricFieldFixture fix;
+    auto const& Ey   = fix.state.E(Component::Y);
+    auto const start = fix.layout.physicalStartIndex(Ey, Direction::X);
+    MeshIndex<2> const ghostEdge{start - 2, fix.layout.physicalStartIndex(Ey, Direction::Y) + 4};
+    ProbeIndices const probes{fix.at(Component::Z, 6, 5), ghostEdge, fix.at(Component::Z, 10, 9)};
+
+    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+    for (auto c : {Component::X, Component::Y, Component::Z})
+    {
+        auto& Ec = fix.active.E()(c);
+        fix.layout.evalOnGhostBox(Ec, [&](auto i, auto j) { Ec(i, j) = nan; });
+        fix.layout.evalOnBox(Ec, [&](auto i, auto j) { Ec(i, j) = 0.01; });
+    }
+
+    fix.list(Component::Y, ghostEdge);
+    WenozUct const uct{ohmInfo, fix.layout};
+    uct.degrade_E_near_inner_boundary(fix.ct, fix.inactive, fix.state, zeroB0, fix.meshData,
+                                      NearBodyScheme::SecondOrder);
+    double const ideal = fix.read(probes)[1];
+    ASSERT_TRUE(std::isfinite(ideal));
+
+    uct.degrade_E_near_inner_boundary(fix.ct, fix.active, fix.state, zeroB0, fix.meshData,
+                                      NearBodyScheme::SecondOrder);
+    EXPECT_EQ(fix.read(probes)[1], ideal);
 }
 
 TEST(DegradedElectricField, unlistedEdgeKeepsWenozValue)

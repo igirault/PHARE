@@ -73,6 +73,18 @@ public:
     }
 
 private:
+    bool inDomainBox_(auto const& field, auto const& idx) const
+    {
+        for (std::size_t d = 0; d < dimension; ++d)
+        {
+            auto const dir = static_cast<Direction>(d);
+            if (idx[d] < layout_.physicalStartIndex(field, dir)
+                or idx[d] > layout_.physicalEndIndex(field, dir))
+                return false;
+        }
+        return true;
+    }
+
     template<typename Rec, typename MeshData>
     void recompute_listed_E_(auto& ct_state, auto const& non_ideal_electric_state, auto& mhd_state,
                              auto const& B0, MeshData const& meshData, bool const addNonIdeal) const
@@ -86,7 +98,7 @@ private:
             {
                 auto const idx = elem.index.template as<std::size_t>();
                 recompute(idx);
-                if (addNonIdeal)
+                if (addNonIdeal and inDomainBox_(Ec, idx))
                     Ec(idx) += non_ideal_electric_state.E()(c)(idx);
             }
         };

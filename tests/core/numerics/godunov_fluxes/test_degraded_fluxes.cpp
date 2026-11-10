@@ -264,6 +264,32 @@ TEST(DegradedFluxes, secondOrderAddsNonIdealContributionOnce)
     EXPECT_NEAR(fix.fluxes.Etot_fx(listed), expected.Etot(), 1e-12);
 }
 
+TEST(DegradedFluxes, secondOrderGhostFaceIgnoresNonIdealOutsideDomain)
+{
+    WenozDegradedFluxFixture fix{true};
+    auto const start = fix.layout.physicalStartIndex(QtyCentering::primal, Direction::X);
+    MeshIndex<2> const ghostFace{start - 2, start + 5};
+
+    NonIdealElectricFieldState<VecFieldT> nonIdeal{true};
+    fix.storage.bindVec(nonIdeal.E());
+    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+    for (auto c : {Component::X, Component::Y, Component::Z})
+    {
+        auto& Ec = nonIdeal.E()(c);
+        fix.layout.evalOnGhostBox(Ec, [&](auto i, auto j) { Ec(i, j) = nan; });
+        fix.layout.evalOnBox(Ec, [&](auto i, auto j) { Ec(i, j) = 0.01; });
+    }
+
+    fix.godunov(fix.ct, nonIdeal, fix.state, zeroB0, fix.fluxes);
+    fix.list(ghostFace);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, nonIdeal, fix.meshData, fix.state,
+                                                   zeroB0, fix.fluxes, NearBodyScheme::SecondOrder);
+
+    auto const expected = linearVanLeerFlux(fix.state, ghostFace);
+    EXPECT_NEAR(fix.fluxes.Etot_fx(ghostFace), expected.Etot(), 1e-12);
+    EXPECT_NEAR(fix.fluxes.B_fx(Component::Y)(ghostFace), expected.B1.y, 1e-12);
+}
+
 TEST(DegradedFluxes, noneSchemeLeavesFluxesUntouched)
 {
     WenozDegradedFluxFixture fix{true};

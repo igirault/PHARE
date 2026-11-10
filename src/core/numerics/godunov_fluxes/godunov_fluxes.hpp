@@ -158,6 +158,18 @@ public:
     }
 
 private:
+    bool inDomainBox_(auto const& field, auto const& idx) const
+    {
+        for (std::size_t d = 0; d < dimension; ++d)
+        {
+            auto const dir = static_cast<Direction>(d);
+            if (idx[d] < layout_.physicalStartIndex(field, dir)
+                or idx[d] > layout_.physicalEndIndex(field, dir))
+                return false;
+        }
+        return true;
+    }
+
     template<typename RecT>
     void recompute_listed_fluxes_(auto& ct_state, auto const& non_ideal_electric_state,
                                   auto const& meshData, auto& state, auto const& b0, auto& fluxes,
@@ -187,7 +199,8 @@ private:
 
                 ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs, idx);
 
-                if (addNonIdeal)
+                if (addNonIdeal
+                    and inDomainBox_(fluxes.template expose_centering<direction>(), idx))
                 {
                     auto F              = fluxes.template get_dir<direction>(idx);
                     auto const [Et, Bt] = transverse_on_face_<direction>(
