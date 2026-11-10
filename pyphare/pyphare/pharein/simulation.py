@@ -657,6 +657,11 @@ def check_mhd_parameters(**kwargs):
     riemann = kwargs.get("riemann", "")
     mhd_timestepper = kwargs.get("mhd_timestepper", "")
 
+    if riemann == "HLLD":
+        raise ValueError(
+            "Error: riemann='HLLD' is not supported with the CT Poynting energy flux"
+        )
+
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
