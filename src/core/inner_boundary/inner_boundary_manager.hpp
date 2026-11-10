@@ -17,7 +17,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
@@ -73,6 +75,35 @@ public:
     }
 
     NO_DISCARD bool needsMomentExchange() const { return needsMomentExchange_; }
+
+    void markUncomputedMoments(GridLayoutT const& layout, PhysicalStateT& state,
+                               std::vector<double>& saved)
+    {
+        forEachUncomputedMoment_(layout, state, [&](auto& field, auto& ghost) {
+            auto& value = field(ghost.index);
+            saved.push_back(value);
+            value = std::numeric_limits<double>::quiet_NaN();
+        });
+    }
+
+    void restoreUncomputedMoments(GridLayoutT const& layout, PhysicalStateT& state,
+                                  std::vector<double> const& saved)
+    {
+        for (auto& ghosts : meshData_.ghostElemsData)
+            for (auto& ghost : ghosts)
+                ghost.stale = false;
+
+        std::size_t k = 0;
+        forEachUncomputedMoment_(layout, state, [&](auto& field, auto& ghost) {
+            auto& value = field(ghost.index);
+            if (std::isnan(value))
+            {
+                value       = saved[k];
+                ghost.stale = true;
+            }
+            ++k;
+        });
+    }
 
     static std::unique_ptr<InnerBoundaryManager>
     create(initializer::PHAREDict const& dict, std::vector<scalar_qty> const& scalarQuantities,
@@ -223,14 +254,35 @@ public:
     NO_DISCARD auto getCompileTimeResourcesViewList() { return std::forward_as_tuple(meshData_); }
 
 private:
+    template<typename Fn>
+    void forEachUncomputedMoment_(GridLayoutT const& layout, PhysicalStateT& state, Fn&& fn)
+    {
+        auto visit = [&](auto& field) {
+            auto& ghosts = meshData_.getGhostDataFromCentering(layout.centering(field));
+            for (auto& ghost : ghosts)
+                if (!ghost.mirrorIsInterpolable)
+                    fn(field, ghost);
+        };
+
+        if (partial_(scalarBCs_, scalar_qty::rho))
+            visit(state.rho);
+        if (partial_(vectorBCs_, vector_qty::rhoV))
+            for (auto const c : {Component::X, Component::Y, Component::Z})
+                visit(state.rhoV(c));
+        if (partial_(scalarBCs_, scalar_qty::Etot1))
+            visit(state.Etot1);
+    }
+
+    static bool partial_(auto const& map, auto const qty)
+    {
+        auto it = map.find(qty);
+        return it != map.end() and !it->second->fillsNonInterpolableGhosts();
+    }
+
     bool computeNeedsMomentExchange_() const
     {
-        auto partial = [](auto const& map, auto const qty) {
-            auto it = map.find(qty);
-            return it != map.end() and !it->second->fillsNonInterpolableGhosts();
-        };
-        return partial(scalarBCs_, scalar_qty::rho) or partial(scalarBCs_, scalar_qty::Etot1)
-               or partial(vectorBCs_, vector_qty::rhoV);
+        return partial_(scalarBCs_, scalar_qty::rho) or partial_(scalarBCs_, scalar_qty::Etot1)
+               or partial_(vectorBCs_, vector_qty::rhoV);
     }
 
     std::pair<int, std::function<void()>> scalarTask_(FieldT& field, GridLayoutT const& layout,

@@ -32,6 +32,7 @@ struct GhostElemData
     Point<double, dim> mirrorPoint;
     Point<double, dim> normal;
     bool mirrorIsInterpolable;
+    bool stale = false;
 };
 
 enum class InnerBoundaryShape { Sphere };

@@ -1,5 +1,7 @@
 #include "gtest/gtest.h"
 
+#include <cmath>
+
 #include "core/data/field/field.hpp"
 #include "core/data/ndarray/ndarray_vector.hpp"
 #include "core/inner_boundary/inner_boundary_manager.hpp"
@@ -133,9 +135,9 @@ struct ManagerFixture
 
     explicit ManagerFixture(Manager::SafeStateValues safe = {},
                             InnerBoundaryConditionType type
-                            = InnerBoundaryConditionType::FixedState)
-        : manager{std::make_unique<SphereInnerBoundary<2>>(BOUNDARY_NAME,
-                                                           Point<double, 2>{0.05, 0.05}, 4.0),
+                            = InnerBoundaryConditionType::FixedState,
+                            Point<double, 2> center = {0.05, 0.05})
+        : manager{std::make_unique<SphereInnerBoundary<2>>(BOUNDARY_NAME, center, 4.0),
                   type,
                   scalarQtys,
                   vectorQtys,
@@ -353,6 +355,110 @@ TEST(InnerBoundaryManager, fixedDensityGhostPressureMirrorsInterior)
         EXPECT_NEAR(P_g, P, 1e-10);
     }
     EXPECT_GT(checked, 0u);
+}
+
+struct EdgeSphereFixture
+{
+    static constexpr double rho = 1.0, vx = 0.3, P = 0.5, b1y = 1.0;
+
+    explicit EdgeSphereFixture(InnerBoundaryConditionType type)
+        : fix{{}, type, Point<double, 2>{8.05, 0.05}}
+        , st{fix.layout}
+    {
+        st.rho_s.fill(rho);
+        st.P_s.fill(P);
+        st.Etot1_s.fill(etot());
+        fillVec(st.rhoV, {rho * vx, 0., 0.});
+        fillVec(st.B1, {0., b1y, 0.});
+    }
+
+    static double etot() { return eosPToEtot1(adiabaticIndex, rho, vx, 0., 0., 0., b1y, 0., P); }
+
+    auto& ghosts()
+    {
+        return fix.manager.getMeshData().getGhostDataFromCentering(
+            fix.layout.centering(MHDQuantity::Scalar::rho));
+    }
+
+    std::size_t nonInterpolable()
+    {
+        std::size_t n = 0;
+        for (auto const& g : ghosts())
+            n += g.mirrorIsInterpolable ? 0 : 1;
+        return n;
+    }
+
+    ManagerFixture fix;
+    TestStateStorage st;
+};
+
+TEST(InnerBoundaryManager, markSetsNaNOnlyOnUncomputedEnergyGhosts)
+{
+    EdgeSphereFixture f{InnerBoundaryConditionType::FixedDensity};
+    auto const n = f.nonInterpolable();
+    ASSERT_GT(n, 0u);
+
+    std::vector<double> saved;
+    f.fix.manager.markUncomputedMoments(f.fix.layout, f.st, saved);
+
+    EXPECT_EQ(saved.size(), n);
+    for (auto const& g : f.ghosts())
+    {
+        MeshIndex<2> const idx{g.index[0], g.index[1]};
+        EXPECT_EQ(std::isnan(f.st.Etot1(idx)), !g.mirrorIsInterpolable);
+        EXPECT_EQ(f.st.rho(idx), EdgeSphereFixture::rho);
+        EXPECT_EQ(f.st.rhoV(Component::X)(idx), EdgeSphereFixture::rho * EdgeSphereFixture::vx);
+    }
+}
+
+TEST(InnerBoundaryManager, restoreRefillsNaNAndFlagsStale)
+{
+    EdgeSphereFixture f{InnerBoundaryConditionType::FixedDensity};
+    ASSERT_GT(f.nonInterpolable(), 1u);
+
+    std::vector<double> saved;
+    f.fix.manager.markUncomputedMoments(f.fix.layout, f.st, saved);
+
+    MeshIndex<2> filled{};
+    for (auto const& g : f.ghosts())
+        if (!g.mirrorIsInterpolable)
+        {
+            filled = {g.index[0], g.index[1]};
+            break;
+        }
+    f.st.Etot1(filled) = 42.0;
+
+    f.fix.manager.restoreUncomputedMoments(f.fix.layout, f.st, saved);
+
+    for (auto const& g : f.ghosts())
+    {
+        MeshIndex<2> const idx{g.index[0], g.index[1]};
+        if (idx == filled)
+        {
+            EXPECT_EQ(f.st.Etot1(idx), 42.0);
+            EXPECT_FALSE(g.stale);
+        }
+        else if (!g.mirrorIsInterpolable)
+        {
+            EXPECT_EQ(f.st.Etot1(idx), EdgeSphereFixture::etot());
+            EXPECT_TRUE(g.stale);
+        }
+        else
+            EXPECT_FALSE(g.stale);
+    }
+}
+
+TEST(InnerBoundaryManager, fixedStateMarksNothing)
+{
+    EdgeSphereFixture f{InnerBoundaryConditionType::FixedState};
+    ASSERT_GT(f.nonInterpolable(), 0u);
+
+    std::vector<double> saved;
+    f.fix.manager.markUncomputedMoments(f.fix.layout, f.st, saved);
+
+    EXPECT_TRUE(saved.empty());
+    for (auto const& g : f.ghosts())
+        EXPECT_EQ(f.st.Etot1(MeshIndex<2>{g.index[0], g.index[1]}), EdgeSphereFixture::etot());
 }
 
 TEST(InnerBoundaryManager, electricFieldGhostEdgesAreZeroed)
