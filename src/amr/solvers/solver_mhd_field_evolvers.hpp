@@ -273,8 +273,9 @@ public:
                 core_type constrained_transport_{info, layout};
                 model.externalFieldManager.state().visitB0([&](auto const& B0) {
                     constrained_transport_(ct_state, non_ideal_electric_state, mhd_state, B0);
-                    constrained_transport_.degrade_E_near_inner_boundary(ct_state, mhd_state, B0,
-                                                                         ibm.getMeshData());
+                    constrained_transport_.degrade_E_near_inner_boundary(
+                        ct_state, non_ideal_electric_state, mhd_state, B0, ibm.getMeshData(),
+                        ibm.nearBodyScheme(layout));
                 });
             }
             return;

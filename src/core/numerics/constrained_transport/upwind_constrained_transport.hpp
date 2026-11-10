@@ -2,7 +2,10 @@
 #define PHARE_UPWIND_CONSTRAINED_TRANSPORT_HPP
 
 
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/numerics/reconstructions/constant.hpp"
+#include "core/numerics/reconstructions/linear.hpp"
+#include "core/numerics/slope_limiters/van_leer.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
@@ -56,28 +59,46 @@ public:
     }
 
     template<typename MeshData>
-    void degrade_E_near_inner_boundary(auto& ct_state, auto& mhd_state, auto const& B0,
-                                       MeshData const& meshData) const
+    void degrade_E_near_inner_boundary(auto& ct_state, auto const& non_ideal_electric_state,
+                                       auto& mhd_state, auto const& B0, MeshData const& meshData,
+                                       NearBodyScheme const scheme) const
     {
-        using Constant = ConstantReconstruction<GridLayout>;
-
-        auto& E        = mhd_state.E;
-        auto const& B1 = mhd_state.B1;
-
-        auto degrade = [&](auto& Ec, auto&& recompute) {
-            for (auto const& elem : meshData.getDegradedElemsFromCentering(layout_.centering(Ec)))
-                recompute(elem.index.template as<std::size_t>());
-        };
-
-        degrade(E(Component::X),
-                [&](auto const& idx) { ExEq_<Constant>(ct_state, E(Component::X), B1, B0, idx); });
-        degrade(E(Component::Y),
-                [&](auto const& idx) { EyEq_<Constant>(ct_state, E(Component::Y), B1, B0, idx); });
-        degrade(E(Component::Z),
-                [&](auto const& idx) { EzEq_<Constant>(ct_state, E(Component::Z), B1, B0, idx); });
+        if (scheme == NearBodyScheme::FirstOrder)
+            recompute_listed_E_<ConstantReconstruction<GridLayout>>(
+                ct_state, non_ideal_electric_state, mhd_state, B0, meshData, false);
+        else if (scheme == NearBodyScheme::SecondOrder)
+            recompute_listed_E_<LinearReconstruction<GridLayout, VanLeerLimiter>>(
+                ct_state, non_ideal_electric_state, mhd_state, B0, meshData,
+                non_ideal_electric_state.active());
     }
 
 private:
+    template<typename Rec, typename MeshData>
+    void recompute_listed_E_(auto& ct_state, auto const& non_ideal_electric_state, auto& mhd_state,
+                             auto const& B0, MeshData const& meshData, bool const addNonIdeal) const
+    {
+        auto& E        = mhd_state.E;
+        auto const& B1 = mhd_state.B1;
+
+        auto degrade = [&](Component const c, auto&& recompute) {
+            auto& Ec = E(c);
+            for (auto const& elem : meshData.getDegradedElemsFromCentering(layout_.centering(Ec)))
+            {
+                auto const idx = elem.index.template as<std::size_t>();
+                recompute(idx);
+                if (addNonIdeal)
+                    Ec(idx) += non_ideal_electric_state.E()(c)(idx);
+            }
+        };
+
+        degrade(Component::X,
+                [&](auto const& idx) { ExEq_<Rec>(ct_state, E(Component::X), B1, B0, idx); });
+        degrade(Component::Y,
+                [&](auto const& idx) { EyEq_<Rec>(ct_state, E(Component::Y), B1, B0, idx); });
+        degrade(Component::Z,
+                [&](auto const& idx) { EzEq_<Rec>(ct_state, E(Component::Z), B1, B0, idx); });
+    }
+
     template<auto direction, auto src, auto dst, typename Rec = Reconstruction_t>
     static auto reconstructTotal_(auto const& B1, auto const& B0, Component component,
                                   MeshIndex<dimension> const& idx)
