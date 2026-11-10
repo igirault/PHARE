@@ -13,6 +13,7 @@
 #include "core/numerics/reconstructions/constant.hpp"
 #include "core/numerics/reconstructions/linear.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
+#include "core/numerics/reconstructions/wenoz.hpp"
 #include "core/numerics/riemann_solvers/rusanov.hpp"
 #include "core/numerics/slope_limiters/van_leer.hpp"
 #include "simulator/simulator_def.hpp"
@@ -21,6 +22,7 @@
 #include "tests/core/data/mhd_state/test_mhd_state_fixtures.hpp"
 #include "tests/core/data/vecfield/test_vecfield_fixtures_mhd.hpp"
 
+#include <limits>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -48,8 +50,13 @@ using MeshData  = InnerBoundaryMeshData<2, MHDQuantity>;
 template<typename L>
 using LinearVL = LinearReconstruction<L, VanLeerLimiter>;
 
+template<typename L>
+using WenoZ = WENOZReconstruction<L>;
+
 using GodunovT              = Godunov<Layout, LinearVL, Rusanov, MHDEquations<false>>;
+using WenozGodunovT         = Godunov<Layout, WenoZ, Rusanov, MHDEquations<false>>;
 using ConstantReconstructor = Reconstructor<ConstantReconstruction<Layout>>;
+using LinearVLReconstructor = Reconstructor<LinearReconstruction<Layout, VanLeerLimiter>>;
 
 ZeroVecField<VecFieldT> const zeroB0{MHDQuantity::Vector::B};
 
@@ -65,6 +72,8 @@ struct Storage
         std::apply([&](auto&... views) { (bindOne_(views), ...); },
                    resourceUser.getCompileTimeResourcesViewList());
     }
+
+    void bindVec(VecFieldT& v) { bindOne_(v); }
 
 private:
     void bindOne_(FieldT& f)
@@ -86,7 +95,8 @@ private:
     std::vector<std::unique_ptr<UsableVecFieldMHD<2>>> vecs_;
 };
 
-struct DegradedFluxFixture
+template<typename GodunovType>
+struct DegradedFluxFixtureT
 {
     Layout layout{{1.0, 1.0}, {16u, 16u}, {0.0, 0.0}};
     UsableMHDState<2> state{layout, "state"};
@@ -110,9 +120,9 @@ struct DegradedFluxFixture
     GhostElemPack<2>::ghost_elem_array_type ghostArray{};
     GhostElemPack<2>::ghost_elem_array_type degradedArray{};
 
-    GodunovT godunov{GodunovInfo{{0.0, 0.0, HyperMode::constant}, adiabaticIndex}, layout};
+    GodunovType godunov{GodunovInfo{{0.0, 0.0, HyperMode::constant}, adiabaticIndex}, layout};
 
-    DegradedFluxFixture()
+    explicit DegradedFluxFixtureT(bool const quadratic = false)
     {
         storage.bind(ct);
         storage.bind(fluxes);
@@ -120,8 +130,10 @@ struct DegradedFluxFixture
         meshData.degradedElemsData._data = &degradedArray;
 
         layout.evalOnGhostBox(state.rho, [&](auto i, auto j) {
-            state.rho(i, j)             = 1.0 + 0.1 * static_cast<double>(i);
-            state.P(i, j)               = 1.0 + 0.05 * static_cast<double>(i);
+            auto const x                = static_cast<double>(i);
+            auto const x2               = quadratic ? x * x : 0.0;
+            state.rho(i, j)             = 1.0 + 0.1 * x + 0.02 * x2;
+            state.P(i, j)               = 1.0 + 0.05 * x + 0.01 * x2;
             state.V(Component::X)(i, j) = 0.2;
             state.V(Component::Y)(i, j) = 0.0;
             state.V(Component::Z)(i, j) = 0.0;
@@ -133,7 +145,35 @@ struct DegradedFluxFixture
     }
 
     auto faceXCentering() const { return layout.centering(MHDQuantity::Scalar::ScalarFlux_x); }
+
+    MeshIndex<2> faceIndex(std::size_t ix, std::size_t iy) const
+    {
+        auto const start = layout.physicalStartIndex(QtyCentering::primal, Direction::X);
+        return {start + ix, start + iy};
+    }
+
+    void list(MeshIndex<2> const& idx)
+    {
+        meshData.getDegradedElemsFromCentering(faceXCentering())
+            .push_back({{static_cast<std::uint32_t>(idx[0]), static_cast<std::uint32_t>(idx[1])},
+                        {},
+                        {},
+                        false});
+    }
 };
+
+using DegradedFluxFixture      = DegradedFluxFixtureT<GodunovT>;
+using WenozDegradedFluxFixture = DegradedFluxFixtureT<WenozGodunovT>;
+
+auto linearVanLeerFlux(auto& state, MeshIndex<2> const& idx)
+{
+    auto [uL, uR] = LinearVLReconstructor::reconstruct<Direction::X>(state, zeroB0, idx);
+    MHDEquations<false> equations{adiabaticIndex};
+    Rusanov riemann{adiabaticIndex};
+    auto const fL = equations.compute<Direction::X>(uL);
+    auto const fR = equations.compute<Direction::X>(uR);
+    return riemann.solve<Direction::X>(uL, uR, fL, fR);
+}
 
 } // namespace
 
@@ -157,8 +197,8 @@ TEST(DegradedFluxes, listedFaceGetsFirstOrderIdealFlux)
                     {},
                     false});
 
-    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.meshData, fix.state, zeroB0,
-                                                   fix.fluxes);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.dissipative, fix.meshData, fix.state,
+                                                   zeroB0, fix.fluxes, NearBodyScheme::FirstOrder);
 
     auto [uL, uR] = ConstantReconstructor::reconstruct<Direction::X>(fix.state, zeroB0, listed);
     MHDEquations<false> equations{adiabaticIndex};
@@ -171,6 +211,74 @@ TEST(DegradedFluxes, listedFaceGetsFirstOrderIdealFlux)
     EXPECT_NEAR(fix.fluxes.Etot_fx(listed), expected.Etot(), 1e-12);
     EXPECT_GT(std::abs(fix.fluxes.rho_fx(listed) - highOrderListed), 1e-6);
     EXPECT_EQ(fix.fluxes.rho_fx(unlisted), highOrderUnlisted);
+}
+
+TEST(DegradedFluxes, secondOrderListedFaceMatchesLinearVanLeerFlux)
+{
+    WenozDegradedFluxFixture fix{true};
+    auto const listed   = fix.faceIndex(6, 5);
+    auto const unlisted = fix.faceIndex(9, 5);
+
+    fix.godunov(fix.ct, fix.dissipative, fix.state, zeroB0, fix.fluxes);
+    double const wenozListed   = fix.fluxes.rho_fx(listed);
+    double const wenozUnlisted = fix.fluxes.rho_fx(unlisted);
+
+    fix.list(listed);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.dissipative, fix.meshData, fix.state,
+                                                   zeroB0, fix.fluxes, NearBodyScheme::SecondOrder);
+
+    auto const expected = linearVanLeerFlux(fix.state, listed);
+    EXPECT_NEAR(fix.fluxes.rho_fx(listed), expected.rho, 1e-12);
+    EXPECT_NEAR(fix.fluxes.Etot_fx(listed), expected.Etot(), 1e-12);
+    EXPECT_GT(std::abs(fix.fluxes.rho_fx(listed) - wenozListed), 1e-8);
+    EXPECT_EQ(fix.fluxes.rho_fx(unlisted), wenozUnlisted);
+}
+
+TEST(DegradedFluxes, secondOrderAddsNonIdealContributionOnce)
+{
+    WenozDegradedFluxFixture fix{true};
+    auto const listed = fix.faceIndex(6, 5);
+
+    NonIdealElectricFieldState<VecFieldT> nonIdeal{true};
+    fix.storage.bindVec(nonIdeal.E());
+    std::array<double, 3> const Euniform{0.01, 0.02, 0.03};
+    for (auto c : {Component::X, Component::Y, Component::Z})
+        fix.layout.evalOnGhostBox(nonIdeal.E()(c), [&](auto i, auto j) {
+            nonIdeal.E()(c)(i, j) = Euniform[static_cast<std::size_t>(c)];
+        });
+
+    fix.godunov(fix.ct, nonIdeal, fix.state, zeroB0, fix.fluxes);
+    fix.list(listed);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, nonIdeal, fix.meshData, fix.state,
+                                                   zeroB0, fix.fluxes, NearBodyScheme::SecondOrder);
+
+    auto expected        = linearVanLeerFlux(fix.state, listed);
+    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+    PerIndexVector<double> Et{nan, Euniform[1], Euniform[2]};
+    PerIndexVector<double> Bt{nan, 0.1, 0.0};
+    MHDEquations<false>{adiabaticIndex}.non_ideal_contributions<Direction::X>(Et, Bt, expected.B1,
+                                                                              expected.Etot());
+
+    EXPECT_NEAR(fix.fluxes.B_fx(Component::Y)(listed), expected.B1.y, 1e-12);
+    EXPECT_NEAR(fix.fluxes.B_fx(Component::Z)(listed), expected.B1.z, 1e-12);
+    EXPECT_NEAR(fix.fluxes.Etot_fx(listed), expected.Etot(), 1e-12);
+}
+
+TEST(DegradedFluxes, noneSchemeLeavesFluxesUntouched)
+{
+    WenozDegradedFluxFixture fix{true};
+    auto const listed = fix.faceIndex(6, 5);
+
+    fix.godunov(fix.ct, fix.dissipative, fix.state, zeroB0, fix.fluxes);
+    double const rho  = fix.fluxes.rho_fx(listed);
+    double const etot = fix.fluxes.Etot_fx(listed);
+
+    fix.list(listed);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.dissipative, fix.meshData, fix.state,
+                                                   zeroB0, fix.fluxes, NearBodyScheme::None);
+
+    EXPECT_EQ(fix.fluxes.rho_fx(listed), rho);
+    EXPECT_EQ(fix.fluxes.Etot_fx(listed), etot);
 }
 
 int main(int argc, char** argv)

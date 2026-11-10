@@ -8,7 +8,10 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
+#include "core/inner_boundary/inner_boundary_defs.hpp"
 #include "core/numerics/reconstructions/constant.hpp"
+#include "core/numerics/reconstructions/linear.hpp"
+#include "core/numerics/slope_limiters/van_leer.hpp"
 #include "core/numerics/reconstructions/reconstructor.hpp"
 
 #include "initializer/data_provider.hpp"
@@ -71,6 +74,7 @@ class Godunov : public GodunovInfo
     using Reconstruction_t          = Reconstruction<GridLayout>;
     using Reconstructor_t           = Reconstructor<Reconstruction_t>;
     using ConstantReconstructor_t   = Reconstructor<ConstantReconstruction<GridLayout>>;
+    using LinearReconstructor_t = Reconstructor<LinearReconstruction<GridLayout, VanLeerLimiter>>;
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
     using Scalar                    = GridLayout::Scalar;
@@ -136,10 +140,28 @@ public:
         });
     }
 
-    template<typename CTState, typename MeshData, typename State, typename VecFieldT,
-             typename Fluxes>
-    void degrade_fluxes_near_inner_boundary(CTState& ct_state, MeshData const& meshData,
-                                            State& state, VecFieldT const& b0, Fluxes& fluxes)
+    template<typename CTState, typename NonIdealState, typename MeshData, typename State,
+             typename VecFieldT, typename Fluxes>
+    void degrade_fluxes_near_inner_boundary(CTState& ct_state,
+                                            NonIdealState const& non_ideal_electric_state,
+                                            MeshData const& meshData, State& state,
+                                            VecFieldT const& b0, Fluxes& fluxes,
+                                            NearBodyScheme const scheme)
+    {
+        if (scheme == NearBodyScheme::FirstOrder)
+            recompute_listed_fluxes_<ConstantReconstructor_t>(ct_state, non_ideal_electric_state,
+                                                              meshData, state, b0, fluxes, false);
+        else if (scheme == NearBodyScheme::SecondOrder)
+            recompute_listed_fluxes_<LinearReconstructor_t>(ct_state, non_ideal_electric_state,
+                                                            meshData, state, b0, fluxes,
+                                                            non_ideal_electric_state.active());
+    }
+
+private:
+    template<typename RecT>
+    void recompute_listed_fluxes_(auto& ct_state, auto const& non_ideal_electric_state,
+                                  auto const& meshData, auto& state, auto const& b0, auto& fluxes,
+                                  bool const addNonIdeal)
     {
         constexpr auto directions     = getDirections<dimension>();
         constexpr auto num_directions = std::tuple_size_v<std::decay_t<decltype(directions)>>;
@@ -154,9 +176,8 @@ public:
             {
                 auto const idx = elem.index.template as<std::size_t>();
 
-                auto&& [uL, uR]
-                    = ConstantReconstructor_t::template reconstruct<direction>(state, b0, idx);
-                auto&& u = std::forward_as_tuple(uL, uR);
+                auto&& [uL, uR] = RecT::template reconstruct<direction>(state, b0, idx);
+                auto&& u        = std::forward_as_tuple(uL, uR);
 
                 auto const& [fL, fR] = for_N<2, for_N_R_mode::make_tuple>(
                     [&](auto k) { return equations_.template compute<direction>(std::get<k>(u)); });
@@ -165,11 +186,18 @@ public:
                     = riemann_.template solve<direction>(uL, uR, fL, fR);
 
                 ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs, idx);
+
+                if (addNonIdeal)
+                {
+                    auto F              = fluxes.template get_dir<direction>(idx);
+                    auto const [Et, Bt] = transverse_on_face_<direction>(
+                        non_ideal_electric_state.E(), state.B1, idx);
+                    equations_.template non_ideal_contributions<direction>(Et, Bt, F.B1, F.Etot());
+                }
             }
         });
     }
 
-private:
     template<auto direction>
     auto transverse_on_face_(auto const& E, auto const& B, MeshIndex<dimension> idx) const
     {

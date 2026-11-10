@@ -131,7 +131,8 @@ public:
                 model.externalFieldManager.state().visitB0([&](auto const& B0) {
                     finite_volume_method(ct_state, non_ideal_electric_state, state, B0, fluxes);
                     finite_volume_method.degrade_fluxes_near_inner_boundary(
-                        ct_state, ibm.getMeshData(), state, B0, fluxes);
+                        ct_state, non_ideal_electric_state, ibm.getMeshData(), state, B0, fluxes,
+                        ibm.nearBodyScheme(layout));
                 });
             }
             return;
