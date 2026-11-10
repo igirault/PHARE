@@ -8,6 +8,7 @@
 
 #include "gtest/gtest.h"
 
+#include <limits>
 #include <vector>
 #include <cstddef>
 
@@ -104,6 +105,36 @@ TYPED_TEST(FieldBoxTest, operate_on_fields_keeps_the_max_of_two_regions)
 
     for_each_point(box, [&](auto const& point) {
         EXPECT_EQ(dst(point), (point[0] % 2 == 0) ? 2 * tag(point) : tag(point));
+    });
+}
+
+
+TYPED_TEST(FieldBoxTest, operate_on_fields_fill_if_nan_takes_src_only_where_dst_is_nan)
+{
+    auto& layout = this->layout;
+    auto& dst    = this->dst;
+    auto& src    = this->src;
+
+    double const nan = std::numeric_limits<double>::quiet_NaN();
+    auto const box   = thin_region(layout.ghostBoxFor(src));
+    for_each_point(box, [&](auto const& point) {
+        src(point) = tag(point);
+        dst(point) = (point[0] % 2 == 0) ? nan : -1.0;
+    });
+
+    FieldBox dst_box{dst, layout, box};
+    FieldBox const src_box{src, layout, box};
+    operate_on_fields<FillIfNaN<double>>(dst_box, src_box);
+
+    for_each_point(box, [&](auto const& point) {
+        EXPECT_EQ(dst(point), (point[0] % 2 == 0) ? tag(point) : -1.0);
+    });
+
+    for_each_point(box, [&](auto const& point) { src(point) = nan; });
+    operate_on_fields<FillIfNaN<double>>(dst_box, src_box);
+
+    for_each_point(box, [&](auto const& point) {
+        EXPECT_EQ(dst(point), (point[0] % 2 == 0) ? tag(point) : -1.0);
     });
 }
 

@@ -25,6 +25,8 @@ enum class RefinerType {
     PatchTensorFieldBorderSum,
     PatchFieldBorderMax,
     PatchVecFieldBorderMax,
+    PatchFieldBorderFillNaN,
+    PatchVecFieldBorderFillNaN,
     ExteriorGhostParticles
 };
 
@@ -49,6 +51,7 @@ class Refiner : private Communicator<RefinerTypes, ResourcesManager::dimension>
 
     using SetMaxOp     = core::SetMax<typename FieldData_t::value_type>;
     using PlusEqualsOp = core::PlusEquals<typename FieldData_t::value_type>;
+    using FillIfNaNOp  = core::FillIfNaN<typename FieldData_t::value_type>;
 
     // hard coded rank cause there's no real tensorfields that use this code yet
     using TensorFieldData_t = ResourcesManager::template UserTensorField_t<2>::patch_data_type;
@@ -139,6 +142,20 @@ private:
             return algo->createSchedule(
                 level, patchStrat_.get(),
                 std::make_shared<FieldBorderOpTransactionFactory<VecFieldData_t, SetMaxOp>>());
+        }
+
+        else if constexpr (Type == RefinerType::PatchFieldBorderFillNaN)
+        {
+            return algo->createSchedule(
+                level, patchStrat_.get(),
+                std::make_shared<FieldBorderOpTransactionFactory<FieldData_t, FillIfNaNOp>>());
+        }
+
+        else if constexpr (Type == RefinerType::PatchVecFieldBorderFillNaN)
+        {
+            return algo->createSchedule(
+                level, patchStrat_.get(),
+                std::make_shared<FieldBorderOpTransactionFactory<VecFieldData_t, FillIfNaNOp>>());
         }
 
         // this createSchedule overload is used to initialize fields.
