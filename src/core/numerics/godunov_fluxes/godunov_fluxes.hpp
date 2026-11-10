@@ -12,7 +12,6 @@
 
 #include "initializer/data_provider.hpp"
 
-#include <limits>
 #include <utility>
 #include <tuple>
 #include <cstddef>
@@ -71,7 +70,6 @@ class Godunov : public GodunovInfo
     using Reconstructor_t           = Reconstructor<Reconstruction_t>;
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
-    using Scalar                    = GridLayout::Scalar;
 
 public:
     using Info_t      = Super;
@@ -94,8 +92,7 @@ public:
     }
 
     template<typename State, typename Fluxes>
-    void operator()(auto& ct_state, auto const& non_ideal_electric_state, State& state,
-                    Fluxes& fluxes)
+    void operator()(auto& ct_state, State& state, Fluxes& fluxes)
     {
         constexpr auto directions = getDirections<dimension>();
 
@@ -121,58 +118,10 @@ public:
                     ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs,
                                                       {indices...});
                 });
-
-            if (non_ideal_electric_state.active())
-                layout_.evalOnBox(fluxes.template expose_centering<direction>(),
-                                  [&](auto&... indices) {
-                                      auto F = fluxes.template get_dir<direction>({indices...});
-                                      auto const [Et, Bt] = transverse_on_face_<direction>(
-                                          non_ideal_electric_state.E(), state.B, {indices...});
-                                      equations_.template non_ideal_contributions<direction>(
-                                          Et, Bt, F.B, F.Etot());
-                                  });
         });
     }
 
 private:
-    template<auto direction>
-    auto transverse_on_face_(auto const& E, auto const& B, MeshIndex<dimension> idx) const
-    {
-        auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
-
-        auto const& Ex = E(Component::X);
-        auto const& Ey = E(Component::Y);
-        auto const& Ez = E(Component::Z);
-        auto const& Bx = B(Component::X);
-        auto const& By = B(Component::Y);
-        auto const& Bz = B(Component::Z);
-
-        if constexpr (direction == Direction::X)
-            return std::make_pair(
-                PerIndexVector<double>{
-                    nan, GridLayout::template project<Scalar::Ey, Scalar::Bx>(Ey, idx),
-                    GridLayout::template project<Scalar::Ez, Scalar::Bx>(Ez, idx)},
-                PerIndexVector<double>{
-                    nan, GridLayout::template project<Scalar::By, Scalar::Bx>(By, idx),
-                    GridLayout::template project<Scalar::Bz, Scalar::Bx>(Bz, idx)});
-        else if constexpr (direction == Direction::Y)
-            return std::make_pair(
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Ex, Scalar::By>(Ex, idx), nan,
-                    GridLayout::template project<Scalar::Ez, Scalar::By>(Ez, idx)},
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Bx, Scalar::By>(Bx, idx), nan,
-                    GridLayout::template project<Scalar::Bz, Scalar::By>(Bz, idx)});
-        else
-            return std::make_pair(
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Ex, Scalar::Bz>(Ex, idx),
-                    GridLayout::template project<Scalar::Ey, Scalar::Bz>(Ey, idx), nan},
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Bx, Scalar::Bz>(Bx, idx),
-                    GridLayout::template project<Scalar::By, Scalar::Bz>(By, idx), nan});
-    }
-
     GridLayout layout_;
     Equations equations_;
     RiemannSolver_t riemann_;
