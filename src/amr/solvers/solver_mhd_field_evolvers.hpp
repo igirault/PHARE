@@ -4,7 +4,7 @@
 
 #include "core/numerics/time_integrator_utils.hpp"
 #include "core/numerics/finite_volume_euler/finite_volume_euler.hpp"
-#include "core/numerics/constrained_transport/dissipative_electric_field.hpp"
+#include "core/numerics/constrained_transport/non_ideal_electric_field.hpp"
 #include "core/numerics/constrained_transport/upwind_constrained_transport.hpp"
 #include "core/numerics/primite_conservative_converter/to_primitive_converter.hpp"
 #include "core/numerics/primite_conservative_converter/to_conservative_converter.hpp"
@@ -110,16 +110,16 @@ public:
     }
 
 
-    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& state, auto& fluxes)
+    void operator()(auto& ct_state, auto& non_ideal_electric_state, auto& state, auto& fluxes)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, state, fluxes,
+        for (auto& patch : rm.enumerate(level, ct_state, non_ideal_electric_state, state, fluxes,
                                         model.externalFieldManager.state()))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type finite_volume_method{info, layout};
             model.externalFieldManager.state().visitB0([&](auto const& B0) {
-                finite_volume_method(ct_state, dissipative_electric_state, state, B0, fluxes);
+                finite_volume_method(ct_state, non_ideal_electric_state, state, B0, fluxes);
             });
         }
     }
@@ -167,33 +167,32 @@ FiniteVolumeEulerTransformer(typename Model::amr_types::level_t&, Model&)
 
 
 
-template<typename Model>
-class DissipativeElectricFieldTransformer
+template<typename Model, bool Hall>
+class NonIdealElectricFieldTransformer
 {
     using GridLayout = Model::gridlayout_type;
     using level_t    = Model::amr_types::level_t;
-    using core_type  = core::DissipativeElectricField<GridLayout>;
+    using core_type  = core::NonIdealElectricField<GridLayout, Hall>;
 
 public:
     using info_type = core_type::Info_t;
 
-    explicit DissipativeElectricFieldTransformer(level_t& level, Model& model,
-                                                 info_type const& info)
+    explicit NonIdealElectricFieldTransformer(level_t& level, Model& model, info_type const& info)
         : level{level}
         , model{model}
         , info{info}
     {
     }
 
-    void operator()(auto& dissipative_electric_state, auto& mhd_state)
+    void operator()(auto& non_ideal_electric_state, auto& mhd_state)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, dissipative_electric_state, mhd_state,
+        for (auto& patch : rm.enumerate(level, non_ideal_electric_state, mhd_state,
                                         model.externalFieldManager.state()))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             model.externalFieldManager.state().visitB0([&](auto const& B0) {
-                core_type{info, layout}(dissipative_electric_state, mhd_state, B0);
+                core_type{info, layout}(non_ideal_electric_state, mhd_state, B0);
             });
         }
     }
@@ -206,11 +205,11 @@ public:
 
 
 
-template<typename GridLayout, typename Model, template<typename> typename Reconstruction, auto Hall>
+template<typename GridLayout, typename Model, template<typename> typename Reconstruction>
 class ConstrainedTransportTransformer
 {
     using level_t   = Model::amr_types::level_t;
-    using core_type = core::UpwindConstrainedTransport<GridLayout, Reconstruction, Hall>;
+    using core_type = core::UpwindConstrainedTransport<GridLayout, Reconstruction>;
 
 public:
     using info_type = core_type::Info_t;
@@ -222,16 +221,16 @@ public:
     {
     }
 
-    void operator()(auto& ct_state, auto& dissipative_electric_state, auto& mhd_state)
+    void operator()(auto& ct_state, auto& non_ideal_electric_state, auto& mhd_state)
     {
         auto& rm = *model.resourcesManager;
-        for (auto& patch : rm.enumerate(level, ct_state, dissipative_electric_state, mhd_state,
+        for (auto& patch : rm.enumerate(level, ct_state, non_ideal_electric_state, mhd_state,
                                         model.externalFieldManager.state()))
         {
             auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
             core_type constrained_transport_{info, layout};
             model.externalFieldManager.state().visitB0([&](auto const& B0) {
-                constrained_transport_(ct_state, dissipative_electric_state, mhd_state, B0);
+                constrained_transport_(ct_state, non_ideal_electric_state, mhd_state, B0);
             });
         }
     }
@@ -349,13 +348,14 @@ struct Dispatchers : FieldEvolverDispatchers<Model>
 
     using FiniteVolumeEuler_t = FiniteVolumeEulerTransformer<Model>;
 
-    using DissipativeElectricField_t = DissipativeElectricFieldTransformer<Model>;
+    template<bool Hall>
+    using NonIdealElectricField_t = NonIdealElectricFieldTransformer<Model, Hall>;
 
     using ExternalFieldSource_t = ExternalFieldSourceTransformer<Model>;
 
-    template<template<typename> typename Reconstruction, auto Hall>
+    template<template<typename> typename Reconstruction>
     using ConstrainedTransport_t
-        = ConstrainedTransportTransformer<GridLayout, Model, Reconstruction, Hall>;
+        = ConstrainedTransportTransformer<GridLayout, Model, Reconstruction>;
 
     using RKUtils_t = RKUtilsTransformer<Model>;
 };

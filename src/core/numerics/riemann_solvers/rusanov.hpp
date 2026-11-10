@@ -9,7 +9,6 @@ namespace PHARE::core
 // gridlayout not used right now as we dont need the inversemeshdir, torm maybe
 // do we want to keep supporting whistler waves in the fan ? maybe even then we want a better
 // mechanism for the 1/dx
-template<bool Hall>
 class Rusanov
 {
 public:
@@ -33,37 +32,6 @@ public:
         return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
     }
 
-    template<auto direction>
-    auto solve(auto& uL, auto& uR, auto const& fL, auto const& fR, auto const& jL, auto const& jR)
-    {
-        auto const speeds = rusanov_speeds_<direction>(uL, uR, jL, jR);
-
-        uL.to_conservative(gamma_);
-        uR.to_conservative(gamma_);
-
-        auto const [hydro_speed, mag_speed] = speeds;
-
-        auto split = [](auto const& t) {
-            auto const& [rho, rhoVx, rhoVy, rhoVz, Bx, By, Bz, Etot] = t;
-            return std::make_pair(std::make_tuple(rho, rhoVx, rhoVy, rhoVz),
-                                  std::make_tuple(Bx, By, Bz, Etot));
-        };
-
-        auto [uLhydro, uLmag] = split(uL.as_reduced_conservative_tuple());
-        auto [uRhydro, uRmag] = split(uR.as_reduced_conservative_tuple());
-
-        auto const [fLhydro, fLmag] = split(fL.as_tuple());
-        auto const [fRhydro, fRmag] = split(fR.as_tuple());
-
-        auto [Frho, FrhoVx, FrhoVy, FrhoVz]
-            = rusanov_(uLhydro, uRhydro, fLhydro, fRhydro, hydro_speed);
-        auto [FBx, FBy, FBz, FEtot] = rusanov_(uLmag, uRmag, fLmag, fRmag, mag_speed);
-
-        return PerIndex{Frho, {FrhoVx, FrhoVy, FrhoVz}, {FBx, FBy, FBz}, FEtot};
-    }
-
-    static auto riemann_averaging(auto const& L, auto const& R) { return 0.5 * (L + R); }
-
     // the normal component is actually needed for the 1D riemann solver for E in 1D and 2D. We
     // could have an if constexpr on the dimension there, and have an extra template on the
     // direction.
@@ -75,9 +43,6 @@ public:
 
     std::array<double, 4> uct_coefs;
     PerIndexVector<double> vt{std::nan(""), std::nan(""), std::nan("")};
-
-    PerIndexVector<double> jt{std::nan(""), std::nan(""), std::nan("")};
-    double rhot{std::nan("")};
 
 private:
     double const gamma_;
@@ -112,44 +77,6 @@ private:
                                   BtR.z);
     }
 
-    template<auto direction>
-    auto rusanov_speeds_(auto const& uL, auto const& uR, auto const& jL, auto const& jR)
-    {
-        auto const BtL    = uL.totalB();
-        auto const BtR    = uR.totalB();
-        auto const BdotBL = BtL.x * BtL.x + BtL.y * BtL.y + BtL.z * BtL.z;
-        auto const BdotBR = BtR.x * BtR.x + BtR.y * BtR.y + BtR.z * BtR.z;
-
-        auto compute_speeds = [&](auto rhoL, auto rhoR, auto PL, auto PR, auto BdotBL, auto BdotBR,
-                                  auto VcompL, auto VcompR, auto BcompL, auto BcompR) {
-            auto cfastL = compute_fast_magnetosonic_(gamma_, uL.rho, BcompL, BdotBL, uL.P);
-            auto cfastR = compute_fast_magnetosonic_(gamma_, uR.rho, BcompR, BdotBR, uR.P);
-
-            auto S = std::max(std::abs(VcompL) + cfastL, std::abs(VcompR) + cfastR);
-
-            // no-whistler test
-            // might need to do something for the layout if we want to use this again
-            auto cwL = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uL.rho, BdotBL);
-            auto cwR = 0.; // compute_whistler_(layout_.inverseMeshSize(direction), uR.rho, BdotBR);
-
-            auto Sb = std::max(std::abs(VcompL) + cfastL + cwL, std::abs(VcompR) + cfastR + cwR);
-
-            uct_coefs_(uL, uR, jL, jR, Sb);
-
-            return std::make_pair(S, Sb);
-        };
-
-        if constexpr (direction == Direction::X)
-            return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.x, uR.V.x, BtL.x,
-                                  BtR.x);
-        else if constexpr (direction == Direction::Y)
-            return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.y, uR.V.y, BtL.y,
-                                  BtR.y);
-        else if constexpr (direction == Direction::Z)
-            return compute_speeds(uL.rho, uR.rho, uL.P, uR.P, BdotBL, BdotBR, uL.V.z, uR.V.z, BtL.z,
-                                  BtR.z);
-    }
-
     auto rusanov_(auto const& uL, auto const& uR, auto const& fL, auto const& fR,
                   auto const S) const
     {
@@ -168,15 +95,6 @@ private:
         uct_coefs[2] = 0.5 * S;
         uct_coefs[3] = 0.5 * S;
         vt           = vector_riemann_averaging(uL.V, uR.V);
-    }
-
-    void uct_coefs_(auto const& uL, auto const& uR, auto const& jL, auto const& jR, auto const S)
-    {
-        uct_coefs_(uL, uR, S);
-
-        jt = vector_riemann_averaging(jL, jR);
-
-        rhot = riemann_averaging(uL.rho, uR.rho);
     }
 };
 } // namespace PHARE::core
