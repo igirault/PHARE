@@ -775,10 +775,13 @@ namespace solver
         {
             SAMRAI::hier::IntVector const ratio{SAMRAI::tbox::Dimension(dimension),
                                                 static_cast<int>(amr::refinementRatio)};
-            std::vector<double> dts{constantDt_};
+            std::vector<double> dts(static_cast<std::size_t>(std::max(1, nbrOfLevels_)),
+                                    constantDt_);
             for (int iLevel = 1; iLevel < nbrOfLevels_; ++iLevel)
-                dts.push_back(
-                    MultiPhysicsIntegrator::getMaxFinerLevelDt(iLevel, dts.back(), ratio));
+            {
+                auto const i = static_cast<std::size_t>(iLevel);
+                dts[i] = MultiPhysicsIntegrator::getMaxFinerLevelDt(iLevel, dts[i - 1], ratio);
+            }
             return dts;
         }
 
