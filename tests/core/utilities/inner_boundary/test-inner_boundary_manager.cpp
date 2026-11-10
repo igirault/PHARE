@@ -228,6 +228,19 @@ TEST(InnerBoundaryManager, fixedDensityNeedsMomentExchange)
     EXPECT_TRUE(mgr->needsMomentExchange());
 }
 
+TEST(InnerBoundaryManager, fixedDensityExchangesOnlyEnergy)
+{
+    auto dict                                = sphereDict();
+    dict["inner_boundary"]["condition_type"] = std::string{"fixed-density"};
+    dict["inner_boundary"]["density"]        = 1.0;
+    auto mgr = Manager::create(dict, {MHDQuantity::Scalar::rho, MHDQuantity::Scalar::Etot1},
+                               {MHDQuantity::Vector::rhoV}, adiabaticIndex);
+    ASSERT_NE(mgr, nullptr);
+    EXPECT_TRUE(mgr->needsMomentExchange(MHDQuantity::Scalar::Etot1));
+    EXPECT_FALSE(mgr->needsMomentExchange(MHDQuantity::Scalar::rho));
+    EXPECT_FALSE(mgr->needsMomentExchange(MHDQuantity::Vector::rhoV));
+}
+
 TEST(InnerBoundaryManager, fixedStateDoesNotNeedMomentExchange)
 {
     auto dict                          = sphereDict();

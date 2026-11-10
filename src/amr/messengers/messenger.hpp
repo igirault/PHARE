@@ -216,10 +216,7 @@ namespace amr
 
         virtual void postSynchronize(IPhysicalModel& model, level_t& level, double const time) = 0;
 
-        virtual void postInnerBoundarySetup(IPhysicalModel& /*model*/, level_t& /*level*/,
-                                            double const /*time*/)
-        {
-        }
+        virtual void postInnerBoundarySetup(IPhysicalModel&, level_t&, double const) {}
 
 
         /**

@@ -102,8 +102,8 @@ struct InnerBoundaryMeshClassifierBuffers
 
     PHARE::core::NdArrayVector<dim, double> phi_storage;
     std::vector<PHARE::core::NdArrayVector<dim, double>> elem_storages;
-    typename PHARE::core::GhostElemPack<dim>::ghost_elem_array_type ghost_array{};
-    typename PHARE::core::GhostElemPack<dim>::ghost_elem_array_type degraded_array{};
+    PHARE::core::GhostElemPack<dim>::ghost_elem_array_type ghost_array{};
+    PHARE::core::GhostElemPack<dim>::ghost_elem_array_type degraded_array{};
     MeshDataT tags;
 };
 

@@ -76,11 +76,25 @@ public:
 
     NO_DISCARD bool needsMomentExchange() const { return needsMomentExchange_; }
 
+    NO_DISCARD bool needsMomentExchange(scalar_qty const qty) const
+    {
+        return partial_(scalarBCs_, qty);
+    }
+
+    NO_DISCARD bool needsMomentExchange(vector_qty const qty) const
+    {
+        return partial_(vectorBCs_, qty);
+    }
+
     void markUncomputedMoments(GridLayoutT const& layout, PhysicalStateT& state,
                                std::vector<double>& saved)
     {
         forEachUncomputedMoment_(layout, state, [&](auto& field, auto& ghost) {
             auto& value = field(ghost.index);
+            saved.push_back(value);
+            value = std::numeric_limits<double>::quiet_NaN();
+        });
+        forEachGhostRegionInactive_(layout, state, [&](auto& value) {
             saved.push_back(value);
             value = std::numeric_limits<double>::quiet_NaN();
         });
@@ -101,6 +115,11 @@ public:
                 value       = saved[k];
                 ghost.stale = true;
             }
+            ++k;
+        });
+        forEachGhostRegionInactive_(layout, state, [&](auto& value) {
+            if (std::isnan(value))
+                value = saved[k];
             ++k;
         });
     }
@@ -262,6 +281,36 @@ private:
             for (auto& ghost : ghosts)
                 if (!ghost.mirrorIsInterpolable)
                     fn(field, ghost);
+        };
+
+        if (partial_(scalarBCs_, scalar_qty::rho))
+            visit(state.rho);
+        if (partial_(vectorBCs_, vector_qty::rhoV))
+            for (auto const c : {Component::X, Component::Y, Component::Z})
+                visit(state.rhoV(c));
+        if (partial_(scalarBCs_, scalar_qty::Etot1))
+            visit(state.Etot1);
+    }
+
+    template<typename Fn>
+    void forEachGhostRegionInactive_(GridLayoutT const& layout, PhysicalStateT& state, Fn&& fn)
+    {
+        auto visit = [&](auto& field) {
+            auto const& status = meshData_.getStatusFieldFromCentering(layout.centering(field));
+            layout.evalOnGhostBox(field, [&](auto... args) {
+                MeshIndex<dimension> const idx{args...};
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    auto const dir = static_cast<Direction>(d);
+                    if (idx[d] < layout.physicalStartIndex(field, dir)
+                        or idx[d] > layout.physicalEndIndex(field, dir))
+                    {
+                        if (status(idx) == toDouble(ElemStatus::Inactive))
+                            fn(field(idx));
+                        return;
+                    }
+                }
+            });
         };
 
         if (partial_(scalarBCs_, scalar_qty::rho))

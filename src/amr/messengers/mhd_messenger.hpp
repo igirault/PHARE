@@ -490,9 +490,12 @@ namespace amr
                                           saved.emplace_back());
 
             auto const levelNumber = level.getLevelNumber();
-            ibScalarFillRefiners_.fill(state.rho, levelNumber, time);
-            ibScalarFillRefiners_.fill(state.Etot1, levelNumber, time);
-            ibMomentumFillRefiners_.fill(state.rhoV, levelNumber, time);
+            if (ibm.needsMomentExchange(core::MHDQuantity::Scalar::rho))
+                ibScalarFillRefiners_.fill(state.rho, levelNumber, time);
+            if (ibm.needsMomentExchange(core::MHDQuantity::Scalar::Etot1))
+                ibScalarFillRefiners_.fill(state.Etot1, levelNumber, time);
+            if (ibm.needsMomentExchange(core::MHDQuantity::Vector::rhoV))
+                ibMomentumFillRefiners_.fill(state.rhoV, levelNumber, time);
 
             std::size_t ipatch = 0;
             for (auto& patch : rm.enumerate(level, state, ibm))
