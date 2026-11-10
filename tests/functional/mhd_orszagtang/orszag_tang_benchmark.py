@@ -20,11 +20,11 @@ from tests.simulator import SimulatorTest
 ph.NO_GUI()
 
 CONSTANT_DT = 0.0007
-CFL_WAVE = 1.0
+CFL = 1.0
 
 time_steps = {
     "constant": {"mode": "constant", "value": CONSTANT_DT},
-    "adaptive": {"mode": "adaptive", "cfl_wave": CFL_WAVE},
+    "adaptive": {"mode": "adaptive", "cfl": CFL},
 }
 
 

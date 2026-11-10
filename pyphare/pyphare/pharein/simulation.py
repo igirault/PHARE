@@ -200,7 +200,6 @@ def check_path(**kwargs):
 # ------------------------------------------------------------------------------
 
 
-
 # See: https://github.com/PHAREHUB/PHARE/wiki/exactSplitting
 # This should match possibleSimulators() in meta_utilities.h
 valid_refined_particle_nbr = {
@@ -758,8 +757,8 @@ def checker(func):
         ndim = compute_dimension(cells)
         kwargs["diag_options"] = check_diag_options(**kwargs)
 
-        kwargs["periodicities"], kwargs["domain_boundaries"] = boundary.resolve_boundaries(
-            ndim, **kwargs
+        kwargs["periodicities"], kwargs["domain_boundaries"] = (
+            boundary.resolve_boundaries(ndim, **kwargs)
         )
 
         kwargs["refined_particle_nbr"] = check_refined_particle_nbr(ndim, **kwargs)
@@ -818,6 +817,11 @@ def checker(func):
         kwargs["mhd_timestepper"] = mhd_timestepper
 
         kwargs["model_options"] = check_model_options(**kwargs)
+
+        if "MHDModel" in kwargs["model_options"] and isinstance(
+            kwargs["time_stepper"], timestepper.AdaptiveTimeStepper
+        ):
+            kwargs["time_stepper"].set_scheme(reconstruction, mhd_timestepper, hall)
 
         kwargs["refinement_order"] = check_refinement_operator(**kwargs)
 
@@ -886,17 +890,32 @@ class Simulation:
 
         * ``{"mode": "constant", "value": <dt>}`` - equivalent to passing ``time_step=<dt>``
           (``"value"`` is optional and may be replaced by ``final_time``/``time_step_nbr``).
-        * ``{"mode": "adaptive", "cfl_wave": <w>, "cfl_diffusive": <d>}`` - the time step is
-          recomputed each step from a CFL constraint. Requires ``final_time`` and
-          is incompatible with ``time_step_nbr``.
+        * ``{"mode": "adaptive", "cfl": <c>}`` - the time step is recomputed each step from the
+          linear stability limits of the scheme. Requires ``final_time`` and is incompatible with
+          ``time_step_nbr``. With mesh refinement, each level advances at its own stable time
+          step.
 
-          * **cfl_wave** (``float``), hyperbolic/wave CFL coefficient. Normalized so 1 is
-            the stability limit; choose in (0, 1]. In hall mhd and hybrid,
-            whistler wave speed limits is used. With mesh refinement, each level advances at
-            its own stable time step.
-          * **cfl_diffusive** (``float``), diffusive CFL coefficient. Normalized so 1 is
-            the diffusion stability limit; choose in (0, 1]. Defaults to ``cfl_wave``. Only
-            relevant when resistivity is non-zero.
+          In MHD the rates of the limits add up, each divided by the largest stable coefficient
+          of its term (a constant of the time integrator and reconstruction) times a fraction:
+          1/dt = sum_d (abs(v_d) + c_f,d) / (f_h C_h dx_d)
+          + sum_d k_d (v_w,d - v_A) / (f_w C_w)
+          + 4 eta sum_d 1/dx_d^2 / (f_d C_d) + kappa (sum_d 4/dx_d^2)^2 / (f_d C_nu),
+          where the whistler term is present with Hall only, v_w,d is the whistler speed at the
+          discrete grid-scale wavenumber k_d = 2/dx_d and kappa the hyper-resistive coefficient.
+          A fraction of 1 is the linear stability limit of its term: see
+          :ref:`adaptive_time_step` for the constants.
+
+          * **cfl** (``float``), default 0.8, fraction of the stability limit used for every term.
+          * **cfl_hyperbolic** (``float``), fraction for the advection and fast magnetosonic
+            speeds abs(v_d) + c_f,d. Defaults to ``cfl``.
+          * **cfl_whistler** (``float``), fraction for the Hall whistler, for example lower than
+            ``cfl`` to resolve whistlers in time. Defaults to ``cfl``.
+          * **cfl_diffusive** (``float``), fraction for resistivity and hyper-resistivity.
+            Defaults to ``cfl``.
+
+          Adaptive MHD runs with ``hall=True`` require ``TVDRK3`` or ``SSPRK4_5``, and
+          ``Euler`` requires the ``Constant`` or ``Linear`` reconstruction: the other
+          combinations have no stable time step.
           * **fine_level_substeps_max** (``int``), default 1000. The run stops when the stable
             time step of a refined level is more than this many times smaller than the one of
             the next coarser level, i.e. when a fine level would need more substeps than this

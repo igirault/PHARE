@@ -11,7 +11,7 @@ class HarrisAdaptive3LevelsTest(HarrisTest):
             full_cells,
             final_time=50,
             diag_dir="phare_outputs/mhd_harris_adaptive_3levels",
-            time_step={"mode": "adaptive", "cfl_wave": 0.8},
+            time_step={"mode": "adaptive", "cfl": 0.55},
             levels=3,
         )
 

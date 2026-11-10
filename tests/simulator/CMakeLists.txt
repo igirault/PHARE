@@ -17,6 +17,7 @@ endif()
 add_no_mpi_python3_test(periodicity test_init_periodicity.py ${CMAKE_CURRENT_BINARY_DIR})
 add_no_mpi_python3_test(mhd_only_api test_mhd_only_api.py ${CMAKE_CURRENT_BINARY_DIR})
 add_no_mpi_python3_test(time_step test_time_step.py ${CMAKE_CURRENT_BINARY_DIR})
+add_no_mpi_python3_test(stability_limits test_stability_limits.py ${CMAKE_CURRENT_BINARY_DIR})
 add_no_mpi_python3_test(patch_overlap test_patch_overlap.py ${CMAKE_CURRENT_BINARY_DIR})
 add_no_mpi_python3_test(multi_species_momentum test_multi_species_momentum.py ${CMAKE_CURRENT_BINARY_DIR})
 
