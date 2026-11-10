@@ -109,6 +109,11 @@ public:
                                                       fixedState, safe);
     }
 
+    NO_DISCARD NearBodyScheme nearBodyScheme(GridLayoutT const& layout) const
+    {
+        return classifier_type::withDefaults(*geometry_, layout).params().scheme;
+    }
+
     void classify(GridLayoutT const& layout)
     {
         auto classifier = classifier_type::withDefaults(*geometry_, layout);

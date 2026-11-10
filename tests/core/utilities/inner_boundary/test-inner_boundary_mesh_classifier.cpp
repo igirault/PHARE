@@ -29,6 +29,19 @@ inline constexpr PHARE::MHDFieldOptions<wenozOptions> wenozFieldOptions{};
 
 using GridLayout = PHARE::core::GridLayout<PHARE::MHDOptions<wenozFieldOptions>{}>;
 using Mapper   = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
+
+inline constexpr PHARE::SimOpts linearOptions{
+    .dimension           = 2,
+    .interp_order        = 1,
+    .reconstruction_type = PHARE::MHDOpts::ReconstructionType::Linear,
+    .slope_limiter_type  = PHARE::MHDOpts::SlopeLimiterType::VanLeer,
+    .riemann_solver_type = PHARE::MHDOpts::RiemannSolverType::Rusanov};
+
+inline constexpr PHARE::MHDFieldOptions<linearOptions> linearFieldOptions{};
+
+using LinearGridLayout = PHARE::core::GridLayout<PHARE::MHDOptions<linearFieldOptions>{}>;
+using LinearMapper
+    = PHARE::core::InnerBoundaryMeshClassifier<2, LinearGridLayout, PHARE::core::MHDQuantity>;
 using MeshData = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQuantity>;
 using ScalarField = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
 
@@ -52,11 +65,12 @@ constexpr std::array<PHARE::core::QtyCentering, 2> kFaceXC
 constexpr std::array<PHARE::core::QtyCentering, 2> kFaceYC
     = {PHARE::core::QtyCentering::dual, PHARE::core::QtyCentering::primal};
 
+template<typename Layout>
 struct InnerBoundaryMeshClassifierBuffers
 {
     static constexpr char const* BOUNDARY_NAME = "test";
 
-    explicit InnerBoundaryMeshClassifierBuffers(GridLayout const& layout)
+    explicit InnerBoundaryMeshClassifierBuffers(Layout const& layout)
         : phi_storage{layout.allocSize(PHARE::core::MHDQuantity::Scalar::NodeCentered)}
         , tags{BOUNDARY_NAME}
     {
@@ -363,6 +377,104 @@ TEST(InnerBoundaryMeshClassifier, underResolvedSphereCenteredOnANodeClassifies)
     InnerBoundaryMeshClassifierBuffers buffers{layout};
     EXPECT_NO_THROW(classifier(layout, buffers.tags));
     EXPECT_FALSE(buffers.tags.getGhostDataFromCentering(kCellC).empty());
+}
+
+template<typename Layout>
+Layout squareLayout(int lower, std::uint32_t ncell)
+{
+    auto const upper = lower + static_cast<int>(ncell) - 1;
+    return Layout{{1.0, 1.0},
+                  {ncell, ncell},
+                  {static_cast<double>(lower), static_cast<double>(lower)},
+                  PHARE::core::Box<int, 2>{{lower, lower}, {upper, upper}}};
+}
+
+template<typename MapperT, typename Layout>
+void expectBoxStencilOfEvolvedCellsNeverReachesInactive(double radius, int reach)
+{
+    using PHARE::core::Direction;
+    using PHARE::core::ElemStatus;
+    using PHARE::core::toDouble;
+
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.05, 0.05}, radius};
+    auto const layout = squareLayout<Layout>(-20, 40u);
+    auto classifier   = MapperT::withDefaults(sphere, layout);
+
+    InnerBoundaryMeshClassifierBuffers buffers{layout};
+    classifier(layout, buffers.tags);
+
+    auto const& cells = buffers.tags.getStatusFieldFromCentering(kCellC);
+    auto const x0     = layout.physicalStartIndex(cells, Direction::X);
+    auto const x1     = layout.physicalEndIndex(cells, Direction::X);
+    auto const y0     = layout.physicalStartIndex(cells, Direction::Y);
+    auto const y1     = layout.physicalEndIndex(cells, Direction::Y);
+
+    std::size_t reached = 0;
+    for (auto i = x0; i <= x1; ++i)
+        for (auto j = y0; j <= y1; ++j)
+        {
+            auto const s = cells(i, j);
+            if (s != toDouble(ElemStatus::Fluid) and s != toDouble(ElemStatus::Cut))
+                continue;
+            for (int di = -reach; di <= reach; ++di)
+                for (int dj = -reach; dj <= reach; ++dj)
+                    if (cells(i + di, j + dj) == toDouble(ElemStatus::Inactive))
+                        ++reached;
+        }
+    EXPECT_EQ(reached, 0u) << "radius " << radius;
+}
+
+TEST(InnerBoundaryMeshClassifier, schemeIsSecondOrderOnResolvedWenozLevel)
+{
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.05, 0.05}, 20.0};
+    auto const layout = squareLayout<GridLayout>(-30, 60u);
+    auto const params = Mapper::withDefaults(sphere, layout).params();
+
+    EXPECT_EQ(params.scheme, PHARE::core::NearBodyScheme::SecondOrder);
+    EXPECT_EQ(params.nghosts, 4u);
+}
+
+TEST(InnerBoundaryMeshClassifier, schemeIsFirstOrderWhenUnderResolved)
+{
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.05, 0.05}, 3.0};
+    auto const layout = squareLayout<GridLayout>(-20, 40u);
+    auto const params = Mapper::withDefaults(sphere, layout).params();
+
+    EXPECT_EQ(params.scheme, PHARE::core::NearBodyScheme::FirstOrder);
+    EXPECT_EQ(params.nghosts, 1u);
+}
+
+TEST(InnerBoundaryMeshClassifier, underResolvedThresholdIsFiveCells)
+{
+    auto const layout = squareLayout<GridLayout>(-20, 40u);
+
+    PHARE::core::SphereInnerBoundary<2> below{"sphere", {0.05, 0.05}, 4.9};
+    EXPECT_EQ(Mapper::withDefaults(below, layout).params().scheme,
+              PHARE::core::NearBodyScheme::FirstOrder);
+
+    PHARE::core::SphereInnerBoundary<2> above{"sphere", {0.05, 0.05}, 5.1};
+    EXPECT_EQ(Mapper::withDefaults(above, layout).params().scheme,
+              PHARE::core::NearBodyScheme::SecondOrder);
+}
+
+TEST(InnerBoundaryMeshClassifier, linearReconstructionHasNoBand)
+{
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.05, 0.05}, 20.0};
+    auto const layout = squareLayout<LinearGridLayout>(-30, 60u);
+    auto const params = LinearMapper::withDefaults(sphere, layout).params();
+
+    EXPECT_EQ(params.scheme, PHARE::core::NearBodyScheme::None);
+    EXPECT_EQ(params.nghosts, 4u);
+}
+
+TEST(InnerBoundaryMeshClassifier, boxStencilOfEvolvedCellsNeverReachesInactive)
+{
+    for (double radius : {7.3, 9.7, 12.3})
+    {
+        expectBoxStencilOfEvolvedCellsNeverReachesInactive<Mapper, GridLayout>(radius, 2);
+        expectBoxStencilOfEvolvedCellsNeverReachesInactive<LinearMapper, LinearGridLayout>(radius,
+                                                                                           2);
+    }
 }
 
 int main(int argc, char** argv)

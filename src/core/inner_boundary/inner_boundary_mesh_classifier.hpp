@@ -34,7 +34,7 @@ public:
         double cut_eps      = 0.0;
         double inactive_eps = 0.0;
 
-        bool degraded = false;
+        NearBodyScheme scheme = NearBodyScheme::None;
 
         std::size_t full_reach = 1;
     };
@@ -52,9 +52,17 @@ public:
     {
         auto const& dx     = layout.meshSize();
         auto const dx_min  = *std::min_element(dx.begin(), dx.end());
-        auto const nghosts = [&]() -> std::uint32_t {
+        auto const full_reach = [&]() -> std::uint32_t {
             if constexpr (requires { GridLayoutT::options.field_options.reconstruction_nghosts; })
                 return GridLayoutT::options.field_options.reconstruction_nghosts + 1;
+            else
+                return GridLayoutT::options.field_ghost_width;
+        }();
+        auto const nghosts = [&]() -> std::uint32_t {
+            if constexpr (requires { GridLayoutT::options.field_options.reconstruction_nghosts; })
+                return 2
+                       * std::min<std::uint32_t>(
+                           GridLayoutT::options.field_options.reconstruction_nghosts, 2);
             else
                 return GridLayoutT::options.field_ghost_width;
         }();
@@ -62,9 +70,18 @@ public:
         bool const underResolved
             = boundary.characteristicLength() < (static_cast<double>(nghosts) + 1.0) * dx_min;
 
+        auto const scheme = [&]() {
+            if (underResolved)
+                return NearBodyScheme::FirstOrder;
+            if constexpr (requires { GridLayoutT::options.field_options.reconstruction_nghosts; })
+                if (GridLayoutT::options.field_options.reconstruction_nghosts > 2)
+                    return NearBodyScheme::SecondOrder;
+            return NearBodyScheme::None;
+        }();
+
         Params p;
-        p.full_reach   = nghosts;
-        p.degraded     = underResolved;
+        p.full_reach   = full_reach;
+        p.scheme       = scheme;
         p.nghosts      = overrides.nghosts.value_or(underResolved ? std::size_t{1} : nghosts);
         p.cut_eps      = overrides.cut_eps.value_or(1e-6 * dx_min);
         p.inactive_eps = overrides.inactive_eps.value_or(p.cut_eps);
@@ -76,6 +93,8 @@ public:
         , params_{params}
     {
     }
+
+    NO_DISCARD Params const& params() const { return params_; }
 
     void operator()(GridLayoutT const& layout, mesh_data_type& meshData) const
     {
@@ -409,7 +428,7 @@ private:
         for (auto& vec : meshData.degradedElemsData)
             vec.clear();
 
-        if (!params_.degraded)
+        if (params_.scheme != NearBodyScheme::FirstOrder)
             return;
 
         auto const& cell_status = meshData.cellStatusField();

@@ -18,6 +18,8 @@ using layout_quantity_t = std::decay_t<decltype(GridLayoutT::options)>::FieldOpt
 
 enum class ElemStatus : std::uint8_t { Fluid, Cut, Ghost, Inactive };
 
+enum class NearBodyScheme : std::uint8_t { None, FirstOrder, SecondOrder };
+
 inline constexpr double toDouble(ElemStatus s)
 {
     return static_cast<double>(static_cast<std::uint8_t>(s));
