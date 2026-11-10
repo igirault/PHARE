@@ -20,6 +20,8 @@ def parse_args(argv):
     parser.add_argument("--restart", action="store_true")
     parser.add_argument("--under-resolved", action="store_true")
     parser.add_argument("--wenoz", action="store_true")
+    parser.add_argument("--fixed-density", action="store_true")
+    parser.add_argument("--decomposition-largest", type=int, default=None)
     parser.add_argument("--compare-decomposition", action="store_true")
     args, _ = parser.parse_known_args(argv)
     args.external_field = args.external_field or args.levels > 1
@@ -52,6 +54,7 @@ variant = "_".join(
         ("restart", ARGS.restart),
         ("under_resolved", ARGS.under_resolved),
         ("wenoz", ARGS.wenoz),
+        ("fixed_density", ARGS.fixed_density),
         ("decomposition", ARGS.compare_decomposition),
     )
     if on
@@ -61,6 +64,26 @@ diag_dir = "phare_outputs/mhd_inner_boundary_sphere_periodic" + (
 )
 restart_dir = diag_dir + "_checkpoints"
 continuous_dir = diag_dir + "_continuous"
+
+
+def inner_boundary():
+    ib = {
+        "name": "sphere",
+        "shape": "sphere",
+        "center": center,
+        "radius": radius,
+        "condition_type": "fixed-state",
+        "density": body_density,
+        "pressure": body_pressure,
+        "inactive_safe_state": {
+            "density": safe_density,
+            "pressure": safe_pressure,
+        },
+    }
+    if ARGS.fixed_density:
+        ib["condition_type"] = "fixed-density"
+        del ib["pressure"]
+    return ib
 
 
 def config(restart=None, out_dir=None, largest_patch_size=None):
@@ -103,19 +126,7 @@ def config(restart=None, out_dir=None, largest_patch_size=None):
         mhd_timestepper="TVDRK2",
         hall=hall,
         model_options=["MHDModel"],
-        inner_boundary={
-            "name": "sphere",
-            "shape": "sphere",
-            "center": center,
-            "radius": radius,
-            "condition_type": "fixed-state",
-            "density": body_density,
-            "pressure": body_pressure,
-            "inactive_safe_state": {
-                "density": safe_density,
-                "pressure": safe_pressure,
-            },
-        },
+        inner_boundary=inner_boundary(),
         **kwargs,
     )
 
@@ -209,7 +220,8 @@ class MHDInnerBoundarySphereTest(SimulatorTest):
 
     def _compare_decompositions(self):
         runs = {}
-        for largest in (cells[0], cells[0] // 4):
+        split = ARGS.decomposition_largest or cells[0] // 4
+        for largest in (cells[0], split):
             out_dir = f"{diag_dir}_largest{largest}"
             self.register_diag_dir_for_cleanup(out_dir)
             ph.global_vars.sim = None
