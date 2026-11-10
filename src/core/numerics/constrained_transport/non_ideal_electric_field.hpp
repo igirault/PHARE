@@ -4,6 +4,7 @@
 #include "core/def.hpp"
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/numerics/differential_operators.hpp"
+#include "core/numerics/hyper_resistivity.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/meta/meta_utilities.hpp"
@@ -64,6 +65,11 @@ public:
         auto const& B   = mhd_state.B;
         auto const& rho = mhd_state.rho;
 
+        auto const& meshSize = layout_.meshSize();
+        auto const dx        = *std::min_element(meshSize.begin(), meshSize.end());
+        HyperKappa<std::decay_t<decltype(B)>, std::decay_t<decltype(rho)>> const kappa{nu * dx * dx,
+                                                                                       B, rho};
+
         Constexprifier{isResistive(), isHyperResistive(),
                        hyper_mode}([&]<bool isResistive, bool isHyperResistive, HyperMode hyper>() {
             for_N<3>([&](auto i) {
@@ -75,9 +81,12 @@ public:
                     double e = 0.;
                     if constexpr (isResistive)
                         e += eta * Jc(idx);
-                    if constexpr (isHyperResistive)
-                        e -= hyper_coef_<component, hyper>(B, rho, idx)
-                             * laplacian(layout_, Jc, idx);
+                    if constexpr (isHyperResistive and hyper == HyperMode::constant)
+                        e -= nu * laplacian(layout_, Jc, idx);
+                    if constexpr (isHyperResistive and hyper == HyperMode::spatial)
+                        e += hyperResistiveDivergence<component,
+                                                      MHDQuantity::Scalar::ScalarAllPrimal>(
+                            layout_, Jc, kappa, idx);
                     if constexpr (Hall)
                         e += hall_<component>(J, B, rho, idx);
                     Ec(idx) = e;
@@ -87,6 +96,25 @@ public:
     }
 
 private:
+    template<typename BField, typename RhoField>
+    struct HyperKappa
+    {
+        template<auto dst>
+        NO_DISCARD double operator()(MeshIndex<dimension> const& p) const
+        {
+            using Scalar  = MHDQuantity::Scalar;
+            auto const bx = GridLayout::template project<Scalar::Bx, dst>(B(Component::X), p);
+            auto const by = GridLayout::template project<Scalar::By, dst>(B(Component::Y), p);
+            auto const bz = GridLayout::template project<Scalar::Bz, dst>(B(Component::Z), p);
+            auto const n  = GridLayout::template project<Scalar::rho, dst>(rho, p);
+            return coef * (std::sqrt(bx * bx + by * by + bz * bz) / n + 1);
+        }
+
+        double coef;
+        BField const& B;
+        RhoField const& rho;
+    };
+
     template<auto srcJ, auto face, typename JField, typename BField, typename RhoField>
     struct FaceProduct
     {
@@ -133,38 +161,6 @@ private:
         else
             return pair_<Scalar::Ez, Scalar::Jx, Scalar::By>(Jx, By, rho, idx)
                    - pair_<Scalar::Ez, Scalar::Jy, Scalar::Bx>(Jy, Bx, rho, idx);
-    }
-
-    template<auto component, HyperMode hyper>
-    double hyper_coef_(auto const& B, auto const& rho, MeshIndex<dimension> idx) const
-    {
-        if constexpr (hyper == HyperMode::constant)
-            return nu;
-        else
-        {
-            auto const& meshSize = layout_.meshSize();
-            auto const dx        = *std::min_element(meshSize.begin(), meshSize.end());
-
-            auto coef = [&]<auto dst>() {
-                auto const bx = GridLayout::template project<MHDQuantity::Scalar::Bx, dst>(
-                    B(Component::X), idx);
-                auto const by = GridLayout::template project<MHDQuantity::Scalar::By, dst>(
-                    B(Component::Y), idx);
-                auto const bz = GridLayout::template project<MHDQuantity::Scalar::Bz, dst>(
-                    B(Component::Z), idx);
-                auto const n
-                    = GridLayout::template project<MHDQuantity::Scalar::rho, dst>(rho, idx);
-                auto const b = std::sqrt(bx * bx + by * by + bz * bz);
-                return nu * dx * dx * (b / n + 1);
-            };
-
-            if constexpr (component == Component::X)
-                return coef.template operator()<MHDQuantity::Scalar::Ex>();
-            else if constexpr (component == Component::Y)
-                return coef.template operator()<MHDQuantity::Scalar::Ey>();
-            else
-                return coef.template operator()<MHDQuantity::Scalar::Ez>();
-        }
     }
 
     GridLayout layout_;
