@@ -31,6 +31,7 @@ namespace solver
         double hyperbolic;
         double whistler;
         double diffusive;
+        double hyperResistive;
     };
 
     /**

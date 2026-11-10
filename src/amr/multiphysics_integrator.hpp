@@ -111,7 +111,8 @@ namespace solver
             , cfl_{isAdaptive_
                        ? CFLNumbers{dict["time_step"]["cfl_hyperbolic"].template to<double>(),
                                     dict["time_step"]["cfl_whistler"].template to<double>(),
-                                    dict["time_step"]["cfl_diffusive"].template to<double>()}
+                                    dict["time_step"]["cfl_diffusive"].template to<double>(),
+                                    dict["time_step"]["cfl_hyper_resistive"].template to<double>()}
                        : CFLNumbers{}}
             , fineLevelSubstepsMax_{
                   isAdaptive_ ? dict["time_step"]["fine_level_substeps_max"].template to<int>() : 0}
