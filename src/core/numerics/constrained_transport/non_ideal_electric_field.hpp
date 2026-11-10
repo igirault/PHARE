@@ -6,12 +6,18 @@
 #include "core/numerics/differential_operators.hpp"
 #include "core/numerics/hyper_resistivity.hpp"
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/data/field/field_scratch.hpp"
+#include "core/data/ndarray/ndarray_vector.hpp"
+#include "core/utilities/box/box.hpp"
+#include "core/utilities/box/box_spans.hpp"
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/meta/meta_utilities.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <type_traits>
 #include <vector>
 #include <algorithm>
@@ -65,33 +71,38 @@ public:
         auto const& B   = mhd_state.B;
         auto const& rho = mhd_state.rho;
 
-        auto const& meshSize = layout_.meshSize();
-        auto const dx        = *std::min_element(meshSize.begin(), meshSize.end());
-        HyperKappa<std::decay_t<decltype(B)>, std::decay_t<decltype(rho)>> const kappa{nu * dx * dx,
-                                                                                       B, rho};
-
         Constexprifier{isResistive(), isHyperResistive(),
                        hyper_mode}([&]<bool isResistive, bool isHyperResistive, HyperMode hyper>() {
-            for_N<3>([&](auto i) {
-                constexpr auto component = static_cast<Component>(i());
-                auto& Ec                 = E(component);
-                auto const& Jc           = J(component);
-                layout_.evalOnBox(Ec, [&](auto&... args) {
-                    MeshIndex<dimension> idx{args...};
-                    double e = 0.;
-                    if constexpr (isResistive)
-                        e += eta * Jc(idx);
-                    if constexpr (isHyperResistive and hyper == HyperMode::constant)
-                        e -= nu * laplacian(layout_, Jc, idx);
-                    if constexpr (isHyperResistive and hyper == HyperMode::spatial)
-                        e += hyperResistiveDivergence<component,
-                                                      MHDQuantity::Scalar::ScalarAllPrimal>(
-                            layout_, Jc, kappa, idx);
-                    if constexpr (Hall)
-                        e += hall_<component>(J, B, rho, idx);
-                    Ec(idx) = e;
+            auto compute = [&](auto const& kappa) {
+                for_N<3>([&](auto i) {
+                    constexpr auto component = static_cast<Component>(i());
+                    auto& Ec                 = E(component);
+                    auto const& Jc           = J(component);
+                    layout_.evalOnBox(Ec, [&](auto&... args) {
+                        MeshIndex<dimension> idx{args...};
+                        double e = 0.;
+                        if constexpr (isResistive)
+                            e += eta * Jc(idx);
+                        if constexpr (isHyperResistive and hyper == HyperMode::constant)
+                            e -= nu * laplacian(layout_, Jc, idx);
+                        if constexpr (isHyperResistive and hyper == HyperMode::spatial)
+                            e += hyperResistiveDivergence<component,
+                                                          MHDQuantity::Scalar::ScalarAllPrimal>(
+                                layout_, Jc, kappa, idx);
+                        if constexpr (Hall)
+                            e += hall_<component>(J, B, rho, idx);
+                        Ec(idx) = e;
+                    });
                 });
-            });
+            };
+
+            if constexpr (isHyperResistive and hyper == HyperMode::spatial)
+            {
+                ScratchWrite scratch;
+                compute(cachedKappa_(scratch, B, rho));
+            }
+            else
+                compute(0);
         });
     }
 
@@ -100,7 +111,7 @@ private:
     struct HyperKappa
     {
         template<auto dst>
-        NO_DISCARD double operator()(MeshIndex<dimension> const& p) const
+        PHARE_NOINLINE NO_DISCARD double operator()(MeshIndex<dimension> const& p) const
         {
             using Scalar  = MHDQuantity::Scalar;
             auto const bx = GridLayout::template project<Scalar::Bx, dst>(B(Component::X), p);
@@ -114,6 +125,76 @@ private:
         BField const& B;
         RhoField const& rho;
     };
+
+    struct CachedKappa
+    {
+        template<auto dst>
+        NO_DISCARD double operator()(MeshIndex<dimension> const& p) const
+        {
+            using Scalar = MHDQuantity::Scalar;
+            if constexpr (dst == Scalar::ScalarAllPrimal)
+                return node(p);
+            else if constexpr (dst == Scalar::Bx)
+                return bx(p);
+            else if constexpr (dst == Scalar::By)
+                return by(p);
+            else
+            {
+                static_assert(dst == Scalar::Bz);
+                return bz(p);
+            }
+        }
+
+        NdArrayView<dimension, double> node, bx, by, bz;
+    };
+
+    template<auto location>
+    void fillKappa_(NdArrayView<dimension, double>& view, auto const& kappa) const
+    {
+        constexpr auto centering = GridLayout::centering(location);
+        Box<std::size_t, dimension> box;
+        for (std::size_t d = 0; d < dimension; ++d)
+        {
+            box.lower[d] = layout_.ghostStartIndex(centering[d], static_cast<Direction>(d)) + 1;
+            box.upper[d] = layout_.ghostEndIndex(centering[d], static_cast<Direction>(d)) - 1;
+        }
+        for_each_point(box,
+                       [&](auto const& p) { view(p) = kappa.template operator()<location>(p); });
+    }
+
+    CachedKappa cachedKappa_(ScratchWrite& scratch, auto const& B, auto const& rho) const
+    {
+        using Scalar = MHDQuantity::Scalar;
+
+        auto const& meshSize = layout_.meshSize();
+        auto const dx        = *std::min_element(meshSize.begin(), meshSize.end());
+        HyperKappa<std::decay_t<decltype(B)>, std::decay_t<decltype(rho)>> const kappa{nu * dx * dx,
+                                                                                       B, rho};
+
+        auto const nodeShape = layout_.allocSize(Scalar::ScalarAllPrimal);
+        auto const bxShape   = layout_.allocSize(Scalar::Bx);
+        auto const byShape   = layout_.allocSize(Scalar::By);
+        auto const bzShape   = layout_.allocSize(Scalar::Bz);
+
+        std::size_t const nodeSize = product(nodeShape, std::size_t{1});
+        std::size_t const bxSize   = product(bxShape, std::size_t{1});
+        std::size_t const bySize   = product(byShape, std::size_t{1});
+        std::size_t const bzSize   = product(bzShape, std::size_t{1});
+
+        auto* data = scratch.get().get_no_copy(nodeSize + bxSize + bySize + bzSize).data();
+
+        CachedKappa cache{
+            NdArrayView<dimension, double>{data, nodeShape},
+            NdArrayView<dimension, double>{data + nodeSize, bxShape},
+            NdArrayView<dimension, double>{data + nodeSize + bxSize, byShape},
+            NdArrayView<dimension, double>{data + nodeSize + bxSize + bySize, bzShape}};
+
+        fillKappa_<Scalar::ScalarAllPrimal>(cache.node, kappa);
+        fillKappa_<Scalar::Bx>(cache.bx, kappa);
+        fillKappa_<Scalar::By>(cache.by, kappa);
+        fillKappa_<Scalar::Bz>(cache.bz, kappa);
+        return cache;
+    }
 
     template<auto srcJ, auto face, typename JField, typename BField, typename RhoField>
     struct FaceProduct
