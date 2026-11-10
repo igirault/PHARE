@@ -245,6 +245,9 @@ void MHDModel<GridLayoutT, VecFieldT, AMR_Types, Grid_t>::fillMessengerInfo(
     MHDInfo.ghostMomentum.push_back(MHDInfo.modelMomentum);
     MHDInfo.ghostTotalEnergy.push_back(MHDInfo.modelTotalEnergy);
     MHDInfo.ghostElectric.push_back(MHDInfo.modelElectric);
+
+    MHDInfo.innerBoundaryExchange
+        = hasInnerBoundary() and innerBoundaryManager->needsMomentExchange();
 }
 
 

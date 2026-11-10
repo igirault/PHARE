@@ -42,6 +42,8 @@ namespace amr
         std::string refluxElectric;
         std::string fluxSumElectric;
 
+        bool innerBoundaryExchange = false;
+
         virtual ~MHDMessengerInfo() = default;
     };
 

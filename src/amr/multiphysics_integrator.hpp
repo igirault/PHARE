@@ -384,6 +384,7 @@ namespace solver
 
                     model.initializeExternalField(*level, restartTime_);
                     model.reinitializeAfterRestart(*level, restartTime_);
+                    messenger.postInnerBoundarySetup(model, *level, restartTime_);
 
                     // if load balance on restart advance
                     load_balancer_manager_->estimate(*level, model);

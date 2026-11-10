@@ -216,6 +216,11 @@ namespace amr
 
         virtual void postSynchronize(IPhysicalModel& model, level_t& level, double const time) = 0;
 
+        virtual void postInnerBoundarySetup(IPhysicalModel& /*model*/, level_t& /*level*/,
+                                            double const /*time*/)
+        {
+        }
+
 
         /**
          * @brief fineModelName returns the name of the fine model involved in the messenger

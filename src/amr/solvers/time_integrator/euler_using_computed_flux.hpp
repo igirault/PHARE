@@ -42,7 +42,10 @@ public:
         bc.fillStateGhosts(statenew, level, newTime);
 
         if (model.hasInnerBoundary())
+        {
             applyInnerBoundaryToMoments_(model, state, statenew, level, newTime, dt);
+            bc.exchangeInnerBoundaryMoments(model, statenew, level, newTime);
+        }
     }
 
 private:

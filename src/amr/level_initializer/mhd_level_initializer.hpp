@@ -60,6 +60,7 @@ public:
         }
 
         mhdModel.setupInnerBoundaryState(level, initDataTime);
+        messenger.postInnerBoundarySetup(model, level, initDataTime);
     }
 };
 

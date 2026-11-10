@@ -461,7 +461,43 @@ namespace amr
                 for (auto& patch : rm.enumerate(coarseLevel, state, ibm))
                     ibm.applyToMoments(layoutFromPatch<GridLayoutT>(*patch),
                                        core::InnerBCContext<MHDStateT>{state, state, time, 0.});
+                exchangeInnerBoundaryMoments(mhdModel, state, coarseLevel, time);
             }
+        }
+
+        void postInnerBoundarySetup(IPhysicalModel& model, level_t& level,
+                                    double const time) override
+        {
+            auto& mhdModel = static_cast<MHDModel&>(model);
+            exchangeInnerBoundaryMoments(mhdModel, mhdModel.state, level, time);
+        }
+
+        void exchangeInnerBoundaryMoments(MHDModel& model, MHDStateT& state, level_t& level,
+                                          double const time)
+        {
+            if (!ibExchange_ or !model.hasInnerBoundary())
+                return;
+            auto& ibm = *model.innerBoundaryManager;
+            if (!ibm.needsMomentExchange())
+                return;
+
+            PHARE_LOG_SCOPE(3, "MHDMessenger::exchangeInnerBoundaryMoments");
+
+            auto& rm = *resourcesManager_;
+            std::vector<std::vector<double>> saved;
+            for (auto& patch : rm.enumerate(level, state, ibm))
+                ibm.markUncomputedMoments(layoutFromPatch<GridLayoutT>(*patch), state,
+                                          saved.emplace_back());
+
+            auto const levelNumber = level.getLevelNumber();
+            ibScalarFillRefiners_.fill(state.rho, levelNumber, time);
+            ibScalarFillRefiners_.fill(state.Etot1, levelNumber, time);
+            ibMomentumFillRefiners_.fill(state.rhoV, levelNumber, time);
+
+            std::size_t ipatch = 0;
+            for (auto& patch : rm.enumerate(level, state, ibm))
+                ibm.restoreUncomputedMoments(layoutFromPatch<GridLayoutT>(*patch), state,
+                                             saved[ipatch++]);
         }
 
         // Fills the ghosts of the conserved state (B, rho, rhoV, Etot), then equalizes the B
@@ -504,6 +540,11 @@ namespace amr
                 forEachGhostFieldPool_([&](auto& pool) { pool.registerLevel(hierarchy, level); });
             }
             magMaxRefiners_.registerLevel(hierarchy, level);
+            if (ibExchange_)
+            {
+                ibScalarFillRefiners_.registerLevel(hierarchy, level);
+                ibMomentumFillRefiners_.registerLevel(hierarchy, level);
+            }
         }
 
 
@@ -660,6 +701,21 @@ namespace amr
                     std::make_shared<
                         TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
             }
+
+            ibExchange_ = info->innerBoundaryExchange;
+            if (ibExchange_)
+                for (std::size_t i = 0; i < nStates; ++i)
+                {
+                    for (auto const& name : {info->ghostDensity[i], info->ghostTotalEnergy[i]})
+                        ibScalarFillRefiners_.addStaticRefiner(
+                            name, name, nullptr, name,
+                            std::make_shared<FieldGhostInterpOverlapFillPattern<GridLayoutT>>());
+                    ibMomentumFillRefiners_.addStaticRefiner(
+                        info->ghostMomentum[i], info->ghostMomentum[i], nullptr,
+                        info->ghostMomentum[i],
+                        std::make_shared<
+                            TensorFieldGhostInterpOverlapFillPattern<GridLayoutT, /*rank_=*/1>>());
+                }
         }
 
 
@@ -799,6 +855,10 @@ namespace amr
         using PatchGhostRefinerPool       = RefinerPool<rm_t, RefinerType::PatchGhostField>;
         using InitDomPartRefinerPool      = RefinerPool<rm_t, RefinerType::InitInteriorPart>;
         using VecFieldGhostMaxRefinerPool = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderMax>;
+        using FieldGhostFillNaNRefinerPool
+            = RefinerPool<rm_t, RefinerType::PatchFieldBorderFillNaN>;
+        using VecFieldGhostFillNaNRefinerPool
+            = RefinerPool<rm_t, RefinerType::PatchVecFieldBorderFillNaN>;
 
 
         // coarsens the flux sums and E onto the coarser level, then refills their patch ghosts
@@ -819,6 +879,10 @@ namespace amr
 
         // ghostMagnetic includes the model B, also equalized after regrid
         VecFieldGhostMaxRefinerPool magMaxRefiners_{resourcesManager_};
+
+        bool ibExchange_ = false;
+        FieldGhostFillNaNRefinerPool ibScalarFillRefiners_{resourcesManager_};
+        VecFieldGhostFillNaNRefinerPool ibMomentumFillRefiners_{resourcesManager_};
 
         // B, rho, rhoV and Etot of the model state on new and regridded levels
         InitRefinerPool stateInitRefiners_{resourcesManager_};
