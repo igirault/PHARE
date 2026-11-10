@@ -7,6 +7,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 #include "core/data/vecfield/vecfield_component.hpp"
 #include "core/numerics/differential_operators.hpp"
+#include "core/numerics/hyper_resistivity.hpp"
 
 #include "initializer/data_provider.hpp"
 
@@ -256,36 +257,33 @@ private:
     }
 
 
+    template<typename VecField, typename Field>
+    struct HyperKappa
+    {
+        template<auto dst>
+        NO_DISCARD double operator()(MeshIndex<dimension> const& p) const
+        {
+            auto constexpr min_density = 0.1;
+            auto const bx = GridLayout::template project<Scalar::Bx, dst>(B(Component::X), p);
+            auto const by = GridLayout::template project<Scalar::By, dst>(B(Component::Y), p);
+            auto const bz = GridLayout::template project<Scalar::Bz, dst>(B(Component::Z), p);
+            auto const nf = GridLayout::template project<Scalar::rho, dst>(n, p);
+            return coef * (std::sqrt(bx * bx + by * by + bz * bz) / (nf + min_density) + 1);
+        }
+
+        double coef;
+        VecField const& B;
+        Field const& n;
+    };
+
+
     template<auto component, typename VecField, typename Field>
     auto spatial_hyperresistive_(VecField const& J, VecField const& B, Field const& n,
                                  MeshIndex<VecField::dimension> index) const
     {
-        auto const lvlCoeff        = 1. / std::pow(4, layout_.levelNumber());
-        auto constexpr min_density = 0.1;
-        auto computeHR             = [&]<auto dst>() {
-            auto const BxOnE
-                = GridLayout::template project<Scalar::Bx, dst>(B(Component::X), index);
-            auto const ByOnE
-                = GridLayout::template project<Scalar::By, dst>(B(Component::Y), index);
-            auto const BzOnE
-                = GridLayout::template project<Scalar::Bz, dst>(B(Component::Z), index);
-            auto const nOnE  = GridLayout::template project<Scalar::rho, dst>(n, index);
-            auto b           = std::sqrt(BxOnE * BxOnE + ByOnE * ByOnE + BzOnE * BzOnE);
-            return -nu * (b / (nOnE + min_density) + 1) * lvlCoeff
-                   * laplacian(layout_, J(component), index);
-        };
-        if constexpr (component == Component::X)
-        {
-            return computeHR.template operator()<Scalar::Ex>();
-        }
-        if constexpr (component == Component::Y)
-        {
-            return computeHR.template operator()<Scalar::Ey>();
-        }
-        if constexpr (component == Component::Z)
-        {
-            return computeHR.template operator()<Scalar::Ez>();
-        }
+        HyperKappa<VecField, Field> const kappa{nu / std::pow(4, layout_.levelNumber()), B, n};
+        return hyperResistiveDivergence<component, Scalar::rho>(layout_, J(component), kappa,
+                                                                index);
     }
 };
 

@@ -511,6 +511,161 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
 }
 
 
+template<typename Layout>
+using HyperBox_t = Box<std::size_t, Layout::dimension>;
+
+template<typename Layout>
+HyperBox_t<Layout> hyperGhostBox(Layout const& layout,
+                                 std::array<QtyCentering, Layout::dimension> const& centering)
+{
+    HyperBox_t<Layout> box;
+    for (std::size_t d = 0; d < Layout::dimension; ++d)
+    {
+        box.lower[d] = layout.ghostStartIndex(centering[d], static_cast<Direction>(d));
+        box.upper[d] = layout.ghostEndIndex(centering[d], static_cast<Direction>(d));
+    }
+    return box;
+}
+
+template<typename Layout>
+HyperBox_t<Layout> hyperPhysicalBox(Layout const& layout,
+                                    std::array<QtyCentering, Layout::dimension> const& centering)
+{
+    HyperBox_t<Layout> box;
+    for (std::size_t d = 0; d < Layout::dimension; ++d)
+    {
+        box.lower[d] = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
+        box.upper[d] = layout.physicalEndIndex(centering[d], static_cast<Direction>(d));
+    }
+    return box;
+}
+
+template<typename Layout, typename Field, typename Fn>
+void hyperFill(Layout const& layout, Field& field, Fn const& fn)
+{
+    auto const centering = layout.centering(field);
+    auto const& dl       = layout.meshSize();
+    for_each_point(hyperGhostBox(layout, centering), [&](auto const& idx) {
+        std::array<double, 3> x{0., 0., 0.};
+        for (std::size_t d = 0; d < Layout::dimension; ++d)
+        {
+            auto const start = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
+            auto const shift = centering[d] == QtyCentering::dual ? dl[d] / 2 : 0.;
+            x[d] = (static_cast<double>(idx[d]) - static_cast<double>(start)) * dl[d] + shift;
+        }
+        field(idx) = fn(x);
+    });
+}
+
+template<std::size_t c, std::size_t d>
+constexpr auto hybridKappaLocation()
+{
+    using Scalar = HybridQuantity::Scalar;
+    if constexpr (c == d)
+        return Scalar::rho;
+    else if constexpr (c + d == 1)
+        return Scalar::Bz;
+    else if constexpr (c + d == 2)
+        return Scalar::By;
+    else
+        return Scalar::Bx;
+}
+
+TYPED_TEST(OhmTest, spatialHyperResistivityDissipates)
+{
+    using Layout              = TestFixture::GridYee;
+    using Ohm_t               = TestFixture::Ohm_t;
+    using Scalar              = HybridQuantity::Scalar;
+    static constexpr auto dim = TestFixture::dim;
+    auto const& layout        = this->layout;
+    auto const& dl            = layout.meshSize();
+    double const nu           = 0.02;
+    std::array<double, 3> const direction{0.6, 0.3, 0.74};
+
+    std::array<double, 3> x0{0., 0., 0.};
+    for (std::size_t d = 0; d < dim; ++d)
+        x0[d] = 0.5 * layout.nbrCells()[d] * dl[d];
+
+    auto r2 = [&](auto const& x) {
+        double s = 0.;
+        for (std::size_t d = 0; d < 3; ++d)
+            s += (x[d] - x0[d]) * (x[d] - x0[d]);
+        return s;
+    };
+    auto bump = [&](auto const& x) {
+        double w = 1.;
+        for (std::size_t d = 0; d < dim; ++d)
+        {
+            double const margin = 3. * dl[d];
+            double const length = layout.nbrCells()[d] * dl[d] - 2. * margin;
+            double const u      = (x[d] - margin) / length;
+            w *= (u <= 0. or u >= 1.) ? 0. : std::pow(std::sin(M_PI * u), 2);
+        }
+        return w;
+    };
+
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        hyperFill(layout, this->J[c],
+                  [&](auto const& x) { return bump(x) * std::exp(-r2(x) / 0.25); });
+        hyperFill(layout, this->B[c], [&](auto const& x) {
+            return direction[c] * 30. * (1. - std::exp(-std::pow(std::sqrt(r2(x)) / 0.375, 8)));
+        });
+        hyperFill(layout, this->V[c], [](auto const&) { return 0.; });
+    }
+    hyperFill(layout, this->n, [](auto const& x) {
+        return 1.5 + 0.5 * std::sin(0.6 * x[0] + 1.1 * x[1] - 0.7 * x[2]);
+    });
+    hyperFill(layout, this->P, [](auto const&) { return 1.; });
+
+    auto electricField = [&](double const hyper) {
+        Ohm_t{OhmInfo{0., hyper, HyperMode::spatial}, layout}(this->n, this->V, this->P, this->B,
+                                                              this->J, this->Enew);
+        std::array<std::vector<double>, 3> E;
+        for (std::size_t c = 0; c < 3; ++c)
+            for_each_point(hyperPhysicalBox(layout, layout.centering(this->Enew[c])),
+                           [&](auto const& idx) { E[c].push_back(this->Enew[c](idx)); });
+        return E;
+    };
+
+    auto const withHyper    = electricField(nu);
+    auto const withoutHyper = electricField(0.);
+
+    double work = 0.;
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        std::size_t i = 0;
+        for_each_point(hyperPhysicalBox(layout, layout.centering(this->Enew[c])),
+                       [&](auto const& idx) {
+                           work += this->J[c](idx) * (withHyper[c][i] - withoutHyper[c][i]);
+                           ++i;
+                       });
+    }
+
+    double expected = 0.;
+    for_N<3>([&](auto ic) {
+        constexpr auto c = ic();
+        auto const& Jc   = this->J[c];
+        for_N<dim>([&](auto id) {
+            constexpr auto d   = id();
+            constexpr auto dst = hybridKappaLocation<c, d>();
+            auto const dJ      = partial<static_cast<Direction>(d)>(layout, Jc);
+            for_each_point(hyperPhysicalBox(layout, dJ.centering()), [&](auto const& p) {
+                auto const bx    = Layout::template project<Scalar::Bx, dst>(this->B[0], p);
+                auto const by    = Layout::template project<Scalar::By, dst>(this->B[1], p);
+                auto const bz    = Layout::template project<Scalar::Bz, dst>(this->B[2], p);
+                auto const n     = Layout::template project<Scalar::rho, dst>(this->n, p);
+                auto const kappa = nu * (std::sqrt(bx * bx + by * by + bz * bz) / (n + 0.1) + 1);
+                expected += kappa * dJ(p) * dJ(p);
+            });
+        });
+    });
+
+    EXPECT_GT(work, 0.);
+    EXPECT_NEAR(work, expected, 1e-12 * std::abs(expected));
+}
+
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
