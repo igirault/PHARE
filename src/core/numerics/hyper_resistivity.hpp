@@ -7,6 +7,7 @@
 #include "core/utilities/index/index.hpp"
 #include "core/utilities/types.hpp"
 
+#include <array>
 #include <cstddef>
 
 namespace PHARE::core
@@ -27,6 +28,25 @@ namespace detail
             return Scalar::Bx;
     }
 
+    template<auto Scalar0, std::size_t c>
+    consteval auto currentComponent()
+    {
+        using Scalar = decltype(Scalar0);
+        if constexpr (c == 0)
+            return Scalar::Jx;
+        else if constexpr (c == 1)
+            return Scalar::Jy;
+        else
+            return Scalar::Jz;
+    }
+
+    template<std::size_t d, std::size_t dim>
+    consteval auto flippedIn(std::array<QtyCentering, dim> centering)
+    {
+        centering[d] = flipped(centering[d]);
+        return centering;
+    }
+
     template<std::size_t d, std::size_t dim>
     MeshIndex<dim> shiftedIndex(MeshIndex<dim> idx, int const shift)
     {
@@ -41,14 +61,16 @@ NO_DISCARD double hyperResistiveDivergence(GridLayout const& layout, auto const&
                                            auto const& kappa,
                                            MeshIndex<GridLayout::dimension> const idx)
 {
-    constexpr auto c     = detail::vector_component_index<component>();
-    auto const centering = layout.centering(Jc);
+    constexpr auto c         = detail::vector_component_index<component>();
+    constexpr auto centering = GridLayout::centering(detail::currentComponent<NodeScalar, c>());
 
     return -sum(for_N_make_array<GridLayout::dimension>([&](auto id) {
         constexpr auto d        = id();
         constexpr auto location = detail::hyperKappaLocation<NodeScalar, c, d>();
-        auto const inv          = layout.inverseMeshSize(static_cast<Direction>(d));
-        int const upper         = centering[d] == QtyCentering::primal ? 0 : 1;
+        static_assert(GridLayout::centering(location) == detail::flippedIn<d>(centering));
+
+        auto const inv      = layout.inverseMeshSize(static_cast<Direction>(d));
+        constexpr int upper = centering[d] == QtyCentering::primal ? 0 : 1;
 
         auto const kUpper
             = kappa.template operator()<location>(detail::shiftedIndex<d>(idx, upper));

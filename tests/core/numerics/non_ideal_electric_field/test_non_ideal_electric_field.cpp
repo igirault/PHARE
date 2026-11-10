@@ -5,6 +5,8 @@
 #include "core/numerics/differential_operators.hpp"
 #include "core/numerics/constrained_transport/non_ideal_electric_field.hpp"
 
+#include "tests/core/data/gridlayout/test_centering_boxes.hpp"
+
 #include "gtest/gtest.h"
 
 #include <array>
@@ -83,59 +85,6 @@ private:
                                       std::numeric_limits<double>::quiet_NaN()};
     }
 };
-
-template<typename Layout>
-using Centering_t = std::array<QtyCentering, Layout::dimension>;
-
-template<typename Layout>
-using Box_t = Box<std::size_t, Layout::dimension>;
-
-template<typename Layout>
-Box_t<Layout> ghostBox(Layout const& layout, Centering_t<Layout> const& centering)
-{
-    Box_t<Layout> box;
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        box.lower[d] = layout.ghostStartIndex(centering[d], static_cast<Direction>(d));
-        box.upper[d] = layout.ghostEndIndex(centering[d], static_cast<Direction>(d));
-    }
-    return box;
-}
-
-template<typename Layout>
-Box_t<Layout> physicalBox(Layout const& layout, Centering_t<Layout> const& centering)
-{
-    Box_t<Layout> box;
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        box.lower[d] = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
-        box.upper[d] = layout.physicalEndIndex(centering[d], static_cast<Direction>(d));
-    }
-    return box;
-}
-
-template<typename Layout>
-std::array<double, 3> coordinates(Layout const& layout, Centering_t<Layout> const& centering,
-                                  MeshIndex<Layout::dimension> const& idx)
-{
-    auto const& dl = layout.meshSize();
-    std::array<double, 3> x{0., 0., 0.};
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        auto const start = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
-        auto const shift = centering[d] == QtyCentering::dual ? dl[d] / 2 : 0.;
-        x[d] = (static_cast<double>(idx[d]) - static_cast<double>(start)) * dl[d] + shift;
-    }
-    return x;
-}
-
-template<typename Layout, typename Field, typename Fn>
-void fill(Layout const& layout, Field& field, Fn const& fn)
-{
-    auto const centering = layout.centering(field);
-    for_each_point(ghostBox(layout, centering),
-                   [&](auto const& idx) { field(idx) = fn(coordinates(layout, centering, idx)); });
-}
 
 template<typename VecField>
 struct NonIdealState
@@ -435,6 +384,7 @@ double fluxDissipation(Fixture const& fixture, double const nu)
             constexpr auto d   = id();
             constexpr auto dst = kappaLocation<c, d>();
             auto const dJ      = partial<static_cast<Direction>(d)>(layout, Jc);
+            EXPECT_EQ(Layout::centering(dst), dJ.centering());
             for_each_point(physicalBox(layout, dJ.centering()), [&](auto const& p) {
                 auto const bx    = Layout::template project<Scalar::Bx, dst>(B[0], p);
                 auto const by    = Layout::template project<Scalar::By, dst>(B[1], p);

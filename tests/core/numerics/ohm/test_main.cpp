@@ -6,6 +6,7 @@
 #include "core/data/grid/gridlayoutdefs.hpp"
 
 #include "tests/core/data/vecfield/test_vecfield_fixtures.hpp"
+#include "tests/core/data/gridlayout/test_centering_boxes.hpp"
 
 
 #include "gmock/gmock.h"
@@ -511,52 +512,6 @@ TYPED_TEST(OhmTest, ThatElectricFieldIsOkFromOhmsLaw)
 }
 
 
-template<typename Layout>
-using HyperBox_t = Box<std::size_t, Layout::dimension>;
-
-template<typename Layout>
-HyperBox_t<Layout> hyperGhostBox(Layout const& layout,
-                                 std::array<QtyCentering, Layout::dimension> const& centering)
-{
-    HyperBox_t<Layout> box;
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        box.lower[d] = layout.ghostStartIndex(centering[d], static_cast<Direction>(d));
-        box.upper[d] = layout.ghostEndIndex(centering[d], static_cast<Direction>(d));
-    }
-    return box;
-}
-
-template<typename Layout>
-HyperBox_t<Layout> hyperPhysicalBox(Layout const& layout,
-                                    std::array<QtyCentering, Layout::dimension> const& centering)
-{
-    HyperBox_t<Layout> box;
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        box.lower[d] = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
-        box.upper[d] = layout.physicalEndIndex(centering[d], static_cast<Direction>(d));
-    }
-    return box;
-}
-
-template<typename Layout, typename Field, typename Fn>
-void hyperFill(Layout const& layout, Field& field, Fn const& fn)
-{
-    auto const centering = layout.centering(field);
-    auto const& dl       = layout.meshSize();
-    for_each_point(hyperGhostBox(layout, centering), [&](auto const& idx) {
-        std::array<double, 3> x{0., 0., 0.};
-        for (std::size_t d = 0; d < Layout::dimension; ++d)
-        {
-            auto const start = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
-            auto const shift = centering[d] == QtyCentering::dual ? dl[d] / 2 : 0.;
-            x[d] = (static_cast<double>(idx[d]) - static_cast<double>(start)) * dl[d] + shift;
-        }
-        field(idx) = fn(x);
-    });
-}
-
 template<std::size_t c, std::size_t d>
 constexpr auto hybridKappaLocation()
 {
@@ -606,24 +561,22 @@ TYPED_TEST(OhmTest, spatialHyperResistivityDissipates)
 
     for (std::size_t c = 0; c < 3; ++c)
     {
-        hyperFill(layout, this->J[c],
-                  [&](auto const& x) { return bump(x) * std::exp(-r2(x) / 0.25); });
-        hyperFill(layout, this->B[c], [&](auto const& x) {
+        fill(layout, this->J[c], [&](auto const& x) { return bump(x) * std::exp(-r2(x) / 0.25); });
+        fill(layout, this->B[c], [&](auto const& x) {
             return direction[c] * 30. * (1. - std::exp(-std::pow(std::sqrt(r2(x)) / 0.375, 8)));
         });
-        hyperFill(layout, this->V[c], [](auto const&) { return 0.; });
+        fill(layout, this->V[c], [](auto const&) { return 0.; });
     }
-    hyperFill(layout, this->n, [](auto const& x) {
-        return 1.5 + 0.5 * std::sin(0.6 * x[0] + 1.1 * x[1] - 0.7 * x[2]);
-    });
-    hyperFill(layout, this->P, [](auto const&) { return 1.; });
+    fill(layout, this->n,
+         [](auto const& x) { return 1.5 + 0.5 * std::sin(0.6 * x[0] + 1.1 * x[1] - 0.7 * x[2]); });
+    fill(layout, this->P, [](auto const&) { return 1.; });
 
     auto electricField = [&](double const hyper) {
         Ohm_t{OhmInfo{0., hyper, HyperMode::spatial}, layout}(this->n, this->V, this->P, this->B,
                                                               this->J, this->Enew);
         std::array<std::vector<double>, 3> E;
         for (std::size_t c = 0; c < 3; ++c)
-            for_each_point(hyperPhysicalBox(layout, layout.centering(this->Enew[c])),
+            for_each_point(physicalBox(layout, layout.centering(this->Enew[c])),
                            [&](auto const& idx) { E[c].push_back(this->Enew[c](idx)); });
         return E;
     };
@@ -635,11 +588,10 @@ TYPED_TEST(OhmTest, spatialHyperResistivityDissipates)
     for (std::size_t c = 0; c < 3; ++c)
     {
         std::size_t i = 0;
-        for_each_point(hyperPhysicalBox(layout, layout.centering(this->Enew[c])),
-                       [&](auto const& idx) {
-                           work += this->J[c](idx) * (withHyper[c][i] - withoutHyper[c][i]);
-                           ++i;
-                       });
+        for_each_point(physicalBox(layout, layout.centering(this->Enew[c])), [&](auto const& idx) {
+            work += this->J[c](idx) * (withHyper[c][i] - withoutHyper[c][i]);
+            ++i;
+        });
     }
 
     double expected = 0.;
@@ -650,7 +602,8 @@ TYPED_TEST(OhmTest, spatialHyperResistivityDissipates)
             constexpr auto d   = id();
             constexpr auto dst = hybridKappaLocation<c, d>();
             auto const dJ      = partial<static_cast<Direction>(d)>(layout, Jc);
-            for_each_point(hyperPhysicalBox(layout, dJ.centering()), [&](auto const& p) {
+            EXPECT_EQ(Layout::centering(dst), dJ.centering());
+            for_each_point(physicalBox(layout, dJ.centering()), [&](auto const& p) {
                 auto const bx    = Layout::template project<Scalar::Bx, dst>(this->B[0], p);
                 auto const by    = Layout::template project<Scalar::By, dst>(this->B[1], p);
                 auto const bz    = Layout::template project<Scalar::Bz, dst>(this->B[2], p);
