@@ -166,12 +166,6 @@ def config():
             "format": "phareh5",
             "options": {"dir": diag_dir, "mode": "overwrite"},
         },
-        external_field={
-            "type": "dipole",
-            "position": center,
-            "moment": (0.0, -m),
-            "radius": dipole_radius,
-        },
         inner_boundary={
             "name": "earth",
             "shape": "sphere",
@@ -197,6 +191,8 @@ def config():
         refinement="tagging",
         tagging_threshold=ARGS.tagging_threshold,
     )
+
+    ph.DipoleExternalField(position=center, moment=(0.0, -m), radius=dipole_radius)
 
     ph.MHDModel(
         density=density, vx=vx, vy=zero, vz=zero, b1x=b1x, b1y=b1y, b1z=zero, p=p

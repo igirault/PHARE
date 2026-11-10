@@ -65,13 +65,6 @@ def config(restart=None, out_dir=None, largest_patch_size=None):
     kwargs = {}
     if largest_patch_size is not None:
         kwargs["largest_patch_size"] = largest_patch_size
-    if ARGS.external_field:
-        kwargs["external_field"] = {
-            "type": "dipole",
-            "position": center,
-            "moment": (0.0, 2.0),
-            "radius": radius - 2 * dl[0],
-        }
     if ARGS.levels > 1:
         kwargs["tagging_threshold"] = 0.1
     if restart is not None:
@@ -136,6 +129,11 @@ def config(restart=None, out_dir=None, largest_patch_size=None):
 
     def p(x, y):
         return 1.0 + 0.0 * x
+
+    if ARGS.external_field:
+        ph.DipoleExternalField(
+            position=center, moment=(0.0, 2.0), radius=radius - 2 * dl[0]
+        )
 
     ph.MHDModel(
         density=density, vx=vx, vy=zero, vz=zero, b1x=zero, b1y=zero, b1z=bz, p=p
