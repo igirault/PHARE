@@ -161,7 +161,7 @@ struct DegradedElectricFieldFixture
                 active.E()(c)(i, j) = Euniform[static_cast<std::size_t>(c)];
             });
 
-        godunov(ct, inactive, state, zeroB0, fluxes);
+        godunov(ct, state, zeroB0, fluxes);
     }
 
     MeshIndex<2> at(Component c, std::size_t ix, std::size_t iy) const

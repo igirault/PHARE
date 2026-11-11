@@ -186,7 +186,7 @@ TEST(DegradedFluxes, listedFaceGetsFirstOrderIdealFlux)
     MeshIndex<2> const listed{start + 6, start + 5};
     MeshIndex<2> const unlisted{start + 9, start + 5};
 
-    fix.godunov(fix.ct, fix.dissipative, fix.state, zeroB0, fix.fluxes);
+    fix.godunov(fix.ct, fix.state, zeroB0, fix.fluxes);
 
     double const highOrderListed   = fix.fluxes.rho_fx(listed);
     double const highOrderUnlisted = fix.fluxes.rho_fx(unlisted);
@@ -197,8 +197,8 @@ TEST(DegradedFluxes, listedFaceGetsFirstOrderIdealFlux)
                     {},
                     false});
 
-    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.dissipative, fix.meshData, fix.state,
-                                                   zeroB0, fix.fluxes, NearBodyScheme::FirstOrder);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.meshData, fix.state, zeroB0,
+                                                   fix.fluxes, NearBodyScheme::FirstOrder);
 
     auto [uL, uR] = ConstantReconstructor::reconstruct<Direction::X>(fix.state, zeroB0, listed);
     MHDEquations<false> equations{adiabaticIndex};
@@ -219,13 +219,13 @@ TEST(DegradedFluxes, secondOrderListedFaceMatchesLinearVanLeerFlux)
     auto const listed   = fix.faceIndex(6, 5);
     auto const unlisted = fix.faceIndex(9, 5);
 
-    fix.godunov(fix.ct, fix.dissipative, fix.state, zeroB0, fix.fluxes);
+    fix.godunov(fix.ct, fix.state, zeroB0, fix.fluxes);
     double const wenozListed   = fix.fluxes.rho_fx(listed);
     double const wenozUnlisted = fix.fluxes.rho_fx(unlisted);
 
     fix.list(listed);
-    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.dissipative, fix.meshData, fix.state,
-                                                   zeroB0, fix.fluxes, NearBodyScheme::SecondOrder);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.meshData, fix.state, zeroB0,
+                                                   fix.fluxes, NearBodyScheme::SecondOrder);
 
     auto const expected = linearVanLeerFlux(fix.state, listed);
     EXPECT_NEAR(fix.fluxes.rho_fx(listed), expected.rho, 1e-12);
@@ -234,74 +234,18 @@ TEST(DegradedFluxes, secondOrderListedFaceMatchesLinearVanLeerFlux)
     EXPECT_EQ(fix.fluxes.rho_fx(unlisted), wenozUnlisted);
 }
 
-TEST(DegradedFluxes, secondOrderAddsNonIdealContributionOnce)
-{
-    WenozDegradedFluxFixture fix{true};
-    auto const listed = fix.faceIndex(6, 5);
-
-    NonIdealElectricFieldState<VecFieldT> nonIdeal{true};
-    fix.storage.bindVec(nonIdeal.E());
-    std::array<double, 3> const Euniform{0.01, 0.02, 0.03};
-    for (auto c : {Component::X, Component::Y, Component::Z})
-        fix.layout.evalOnGhostBox(nonIdeal.E()(c), [&](auto i, auto j) {
-            nonIdeal.E()(c)(i, j) = Euniform[static_cast<std::size_t>(c)];
-        });
-
-    fix.godunov(fix.ct, nonIdeal, fix.state, zeroB0, fix.fluxes);
-    fix.list(listed);
-    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, nonIdeal, fix.meshData, fix.state,
-                                                   zeroB0, fix.fluxes, NearBodyScheme::SecondOrder);
-
-    auto expected        = linearVanLeerFlux(fix.state, listed);
-    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
-    PerIndexVector<double> Et{nan, Euniform[1], Euniform[2]};
-    PerIndexVector<double> Bt{nan, 0.1, 0.0};
-    MHDEquations<false>{adiabaticIndex}.non_ideal_contributions<Direction::X>(Et, Bt, expected.B1,
-                                                                              expected.Etot());
-
-    EXPECT_NEAR(fix.fluxes.B_fx(Component::Y)(listed), expected.B1.y, 1e-12);
-    EXPECT_NEAR(fix.fluxes.B_fx(Component::Z)(listed), expected.B1.z, 1e-12);
-    EXPECT_NEAR(fix.fluxes.Etot_fx(listed), expected.Etot(), 1e-12);
-}
-
-TEST(DegradedFluxes, secondOrderGhostFaceIgnoresNonIdealOutsideDomain)
-{
-    WenozDegradedFluxFixture fix{true};
-    auto const start = fix.layout.physicalStartIndex(QtyCentering::primal, Direction::X);
-    MeshIndex<2> const ghostFace{start - 2, start + 5};
-
-    NonIdealElectricFieldState<VecFieldT> nonIdeal{true};
-    fix.storage.bindVec(nonIdeal.E());
-    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
-    for (auto c : {Component::X, Component::Y, Component::Z})
-    {
-        auto& Ec = nonIdeal.E()(c);
-        fix.layout.evalOnGhostBox(Ec, [&](auto i, auto j) { Ec(i, j) = nan; });
-        fix.layout.evalOnBox(Ec, [&](auto i, auto j) { Ec(i, j) = 0.01; });
-    }
-
-    fix.godunov(fix.ct, nonIdeal, fix.state, zeroB0, fix.fluxes);
-    fix.list(ghostFace);
-    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, nonIdeal, fix.meshData, fix.state,
-                                                   zeroB0, fix.fluxes, NearBodyScheme::SecondOrder);
-
-    auto const expected = linearVanLeerFlux(fix.state, ghostFace);
-    EXPECT_NEAR(fix.fluxes.Etot_fx(ghostFace), expected.Etot(), 1e-12);
-    EXPECT_NEAR(fix.fluxes.B_fx(Component::Y)(ghostFace), expected.B1.y, 1e-12);
-}
-
 TEST(DegradedFluxes, noneSchemeLeavesFluxesUntouched)
 {
     WenozDegradedFluxFixture fix{true};
     auto const listed = fix.faceIndex(6, 5);
 
-    fix.godunov(fix.ct, fix.dissipative, fix.state, zeroB0, fix.fluxes);
+    fix.godunov(fix.ct, fix.state, zeroB0, fix.fluxes);
     double const rho  = fix.fluxes.rho_fx(listed);
     double const etot = fix.fluxes.Etot_fx(listed);
 
     fix.list(listed);
-    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.dissipative, fix.meshData, fix.state,
-                                                   zeroB0, fix.fluxes, NearBodyScheme::None);
+    fix.godunov.degrade_fluxes_near_inner_boundary(fix.ct, fix.meshData, fix.state, zeroB0,
+                                                   fix.fluxes, NearBodyScheme::None);
 
     EXPECT_EQ(fix.fluxes.rho_fx(listed), rho);
     EXPECT_EQ(fix.fluxes.Etot_fx(listed), etot);
