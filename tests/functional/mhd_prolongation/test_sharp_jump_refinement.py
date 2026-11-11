@@ -17,6 +17,7 @@ WIDTH = 0.005
 NSTEPS = 12
 DT = 0.2 / (4.0 / DL[0] + 4.0 / DL[1])
 DIAG_DIR = "phare_outputs/mhd_prolongation/sharp_jump"
+PRESSURE_SCALES = (1.0, 0.1)
 
 
 def inner(x, y):
@@ -28,8 +29,9 @@ def tangential(x, y):
     return 1.0 - 2.0 * inner(x, y)
 
 
-def run_simulation():
+def run_simulation(pressure_scale):
     ph.global_vars.sim = None
+    diag_dir = f"{DIAG_DIR}_{pressure_scale}"
     timestamps = DT * np.arange(NSTEPS + 1)
     ph.Simulation(
         smallest_patch_size=8,
@@ -52,7 +54,7 @@ def run_simulation():
         model_options=["MHDModel"],
         diag_options={
             "format": "phareh5",
-            "options": {"dir": DIAG_DIR, "mode": "overwrite"},
+            "options": {"dir": diag_dir, "mode": "overwrite"},
         },
     )
     ph.MHDModel(
@@ -63,14 +65,14 @@ def run_simulation():
         bx=lambda x, y: 0.75 * COS - tangential(x, y) * SIN,
         by=lambda x, y: 0.75 * SIN + tangential(x, y) * COS,
         bz=lambda x, y: 0 * x,
-        p=lambda x, y: 1.0 - 0.9 * inner(x, y),
+        p=lambda x, y: pressure_scale * (1.0 - 0.9 * inner(x, y)),
     )
     ph.MHDDiagnostics(quantity="P", write_timestamps=timestamps)
     simulator = Simulator(ph.global_vars.sim)
     simulator.run().reset()
     del simulator
     ph.global_vars.sim = None
-    return Run(DIAG_DIR), timestamps
+    return Run(diag_dir), timestamps
 
 
 def own(data):
@@ -79,7 +81,12 @@ def own(data):
 
 class SharpJumpRefinementTest(unittest.TestCase):
     def test_refining_a_sharp_jump_keeps_the_pressure_positive(self):
-        run, timestamps = run_simulation()
+        for pressure_scale in PRESSURE_SCALES:
+            with self.subTest(pressure_scale=pressure_scale):
+                self._check_positive_pressure(pressure_scale)
+
+    def _check_positive_pressure(self, pressure_scale):
+        run, timestamps = run_simulation(pressure_scale)
         for time in timestamps:
             hierarchy = run.GetMHDP(time, all_primal=False)
             levels = hierarchy.levels(time)
