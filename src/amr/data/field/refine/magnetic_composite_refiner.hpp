@@ -5,6 +5,7 @@
 #include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/models/quantities/mhd_quantities.hpp"
 #include "core/utilities/types.hpp"
 
 #include "coarse_cell_round_out.hpp"
@@ -18,6 +19,7 @@
 #include <cstddef>
 #include <memory>
 #include <stdexcept>
+#include <type_traits>
 
 
 namespace PHARE::amr
@@ -29,8 +31,9 @@ namespace PHARE::amr
  *
  * Per component the fill is the composite one (composite_field_refiner.hpp): the primal-even
  * direction (collocated with coarse) an exact copy, primal-odd (a new fine face) a half-point
- * interpolation, the dual directions the ±¼ child ladder. This stage makes no divB claim — stage
- * 2, the cross-component touch-up (magnetic_refine_patch_strategy.hpp), is what establishes
+ * interpolation, the dual directions the ±¼ child ladder, minmod-limited for MHD
+ * (CompositeFill::fillLimited) so that a jump does not overshoot. This stage makes no divB claim —
+ * stage 2, the cross-component touch-up (magnetic_refine_patch_strategy.hpp), is what establishes
  * it.
  *
  * What is magnetic here, and the whole reason this is a kernel of its own rather than the plain
@@ -51,9 +54,15 @@ public:
                    SAMRAI::hier::Box const& destFieldBox, SAMRAI::hier::Box const& sourceFieldBox,
                    SAMRAI::hier::IntVector const& ratio) const override
     {
-        Fill::fill(sourceField, destinationField,
-                   gatherRegion_(intersectionBox, centering, destFieldBox), centering, destFieldBox,
-                   sourceFieldBox, ratio);
+        auto const region = gatherRegion_(intersectionBox, centering, destFieldBox);
+
+        if constexpr (std::is_same_v<typename FieldT::physical_quantity_type,
+                                     core::MHDQuantity::Scalar>)
+            Fill::fillLimited(sourceField, destinationField, region, centering, destFieldBox,
+                              sourceFieldBox, ratio);
+        else
+            Fill::fill(sourceField, destinationField, region, centering, destFieldBox,
+                       sourceFieldBox, ratio);
     }
 
     int coarseStencilWidth() const override { return Fill::coarseStencilWidth(); }
