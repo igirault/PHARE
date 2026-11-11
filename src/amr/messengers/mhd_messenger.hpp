@@ -512,7 +512,8 @@ namespace amr
 
             for (std::size_t i = 0; i < nStates; ++i)
             {
-                auto internalEnergyStrat = std::make_shared<InternalEnergyRefinePatchStrategyT>();
+                auto internalEnergyStrat = std::make_shared<InternalEnergyRefinePatchStrategyT>(
+                    InternalEnergyRefinePatchStrategyT::Rebuild::everywhere);
                 auto&& [rhoId, rhoVId, BId, EtotId] = resourcesManager_->getIDsList(
                     info->ghostDensity[i], info->ghostMomentum[i], info->ghostMagnetic[i],
                     info->ghostTotalEnergy[i]);
@@ -625,6 +626,14 @@ namespace amr
                 strategies.push_back(momentumPatchStrats.front());
             if (!totalEnergyPatchStrats.empty())
                 strategies.push_back(totalEnergyPatchStrats.front());
+
+            auto internalEnergyStrat = std::make_shared<InternalEnergyRefinePatchStrategyT>(
+                InternalEnergyRefinePatchStrategyT::Rebuild::nonPositivePressure);
+            auto&& [rhoId, rhoVId, BId, EtotId]
+                = resourcesManager_->getIDsList(info->modelDensity, info->modelMomentum,
+                                                info->modelMagnetic, info->modelTotalEnergy);
+            internalEnergyStrat->registerIDs(rhoId, rhoVId, BId, EtotId);
+            strategies.push_back(internalEnergyStrat);
 
             std::vector<RefineItem> items{{.dst         = info->modelMagnetic,
                                            .src         = info->modelMagnetic,
