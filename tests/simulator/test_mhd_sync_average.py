@@ -148,14 +148,18 @@ class MHDSyncAverageTest(SimulatorTest):
             raise error if error is not None else RuntimeError("check failed on rank 0")
 
     def _check(self, diag_dir, with_body):
-        coarse_x = (np.arange(cells[0]) + 0.5) * dl[0]
-        coarse_y = (np.arange(cells[1]) + 0.5) * dl[1]
-        X, Y = np.meshgrid(coarse_x, coarse_y, indexing="ij")
-        far_from_body = (
-            np.sqrt((X - center[0]) ** 2 + (Y - center[1]) ** 2) > radius + 4 * dl[0]
-        )
+        node_x = np.arange(cells[0] + 1) * dl[0]
+        node_y = np.arange(cells[1] + 1) * dl[1]
+        NX, NY = np.meshgrid(node_x, node_y, indexing="ij")
+        phi = np.sqrt((NX - center[0]) ** 2 + (NY - center[1]) ** 2) - radius
+        corners = (phi[:-1, :-1], phi[1:, :-1], phi[:-1, 1:], phi[1:, 1:])
+        phi_min = np.minimum.reduce(corners)
+        phi_max = np.maximum.reduce(corners)
+        evolved = phi_max > 0
+        cut = evolved & (phi_min <= 0)
 
         compared = 0
+        compared_cut = 0
         for time in timestamps[1:]:
             for qty, keys in (
                 ("rho", ["mhdRho"]),
@@ -171,7 +175,7 @@ class MHDSyncAverageTest(SimulatorTest):
                     coarse, mean = levels[0], fine_mean(levels[1])
                     covered = np.isfinite(mean)
                     if with_body:
-                        covered &= far_from_body
+                        covered &= evolved
                     self.assertTrue(np.all(np.isfinite(coarse)), f"{key} not finite")
                     np.testing.assert_allclose(
                         coarse[covered],
@@ -181,6 +185,8 @@ class MHDSyncAverageTest(SimulatorTest):
                         err_msg=f"{key} t={time}",
                     )
                     compared += covered.sum()
+                    if with_body:
+                        compared_cut += (covered & cut).sum()
 
             P = level_arrays(os.path.join(diag_dir, "mhd_P.h5"), "mhdP", time)[0]
             self.assertTrue(np.all(np.isfinite(P)))
@@ -190,6 +196,8 @@ class MHDSyncAverageTest(SimulatorTest):
                 )
 
         self.assertGreater(compared, 0)
+        if with_body:
+            self.assertGreater(compared_cut, 0)
 
     def test_covered_coarse_cells_are_fine_averages(self):
         self._run_and_check(with_body=False)

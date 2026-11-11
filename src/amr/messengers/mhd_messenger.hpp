@@ -403,7 +403,10 @@ namespace amr
                     auto const layout      = layoutFromPatch<GridLayoutT>(*patch);
                     auto const& cellStatus = ibm.getMeshData().cellStatusField();
                     layout.evalOnGhostBox(syncBlocked_, [&](auto&... args) {
-                        syncBlocked_(args...) = isEvolved_(cellStatus(args...)) ? 0. : 1.;
+                        syncBlocked_(args...)
+                            = cellStatus(args...) == core::toDouble(core::ElemStatus::Inactive)
+                                  ? 1.
+                                  : 0.;
                     });
                 }
             }
