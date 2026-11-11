@@ -80,6 +80,21 @@ class MHDOnlyAPITest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mhd_simulation(refined_particle_nbr=nbr)
 
+    def test_hlld_is_rejected(self):
+        ph.global_vars.sim = None
+        with self.assertRaisesRegex(ValueError, "HLLD"):
+            ph.Simulation(
+                time_step=0.001,
+                time_step_nbr=1,
+                cells=cells,
+                dl=dl,
+                model_options=["MHDModel"],
+                reconstruction="Constant",
+                limiter="None",
+                riemann="HLLD",
+                mhd_timestepper="TVDRK2",
+            )
+
     def test_single_patch_for_LO(self):
         """regression: this used to build a GridLayout with no ghosts_nbr, which an
         MHD-only run cannot derive from its (absent) interp_order"""
