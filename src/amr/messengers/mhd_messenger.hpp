@@ -26,6 +26,7 @@
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/data/field/refine/field_refine_patch_strategy.hpp"
 #include "amr/data/field/refine/magnetic_refine_patch_strategy.hpp"
+#include "amr/data/field/refine/mhd_internal_energy_refine_patch_strategy.hpp"
 #include "amr/data/field/field_variable_fill_pattern.hpp"
 
 
@@ -664,6 +665,12 @@ namespace amr
 
             for (std::size_t i = 0; i < nStates; ++i)
             {
+                auto internalEnergyStrat = std::make_shared<InternalEnergyRefinePatchStrategyT>();
+                auto&& [rhoId, rhoVId, BId, EtotId] = resourcesManager_->getIDsList(
+                    info->ghostDensity[i], info->ghostMomentum[i], info->ghostMagnetic[i],
+                    info->ghostTotalEnergy[i]);
+                internalEnergyStrat->registerIDs(rhoId, rhoVId, BId, EtotId);
+
                 stateGhostsRefiners_.addRefiner(
                     info->ghostMagnetic[i],
                     {{.dst         = info->ghostMagnetic[i],
@@ -697,7 +704,7 @@ namespace amr
                     std::make_shared<CompositeRefinePatchStrategy>(
                         std::vector<CompositeRefinePatchStrategy::strategy_ptr>{
                             magPatchStrats[i], rhoPatchStrats[i], momentumPatchStrats[i],
-                            totalEnergyPatchStrats[i]}));
+                            totalEnergyPatchStrats[i], internalEnergyStrat}));
 
                 magMaxRefiners_.addStaticRefiner(
                     info->ghostMagnetic[i], info->ghostMagnetic[i], nullptr, info->ghostMagnetic[i],
@@ -848,7 +855,7 @@ namespace amr
         VecFieldT Bold_{stratName + "Bold", core::MHDQuantity::Vector::B1};
 
 
-        using rm_t = typename MHDModel::resources_manager_type;
+        using rm_t = MHDModel::resources_manager_type;
         std::shared_ptr<typename MHDModel::resources_manager_type> resourcesManager_;
         std::shared_ptr<BoundaryManagerT> boundaryManager_;
         int const firstLevel_;
@@ -967,6 +974,8 @@ namespace amr
             = FieldRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>;
         using MagneticRefinePatchStrategyT
             = MagneticRefinePatchStrategy<VectorFieldDataT, BoundaryManagerT>;
+        using InternalEnergyRefinePatchStrategyT
+            = MHDInternalEnergyRefinePatchStrategy<FieldDataT, VectorFieldDataT>;
         using FieldRefinePatchStrategyList
             = std::vector<std::shared_ptr<FieldRefinePatchStrategyT>>;
         using VectorFieldRefinePatchStrategyList

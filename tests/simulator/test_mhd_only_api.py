@@ -80,6 +80,45 @@ class MHDOnlyAPITest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 mhd_simulation(refined_particle_nbr=nbr)
 
+    def test_hlld_is_rejected(self):
+        ph.global_vars.sim = None
+        with self.assertRaisesRegex(ValueError, "HLLD"):
+            ph.Simulation(
+                time_step=0.001,
+                time_step_nbr=1,
+                cells=cells,
+                dl=dl,
+                model_options=["MHDModel"],
+                reconstruction="Constant",
+                limiter="None",
+                riemann="HLLD",
+                mhd_timestepper="TVDRK2",
+            )
+
+    def test_reflux_energy_defaults_to_conservative(self):
+        self.assertEqual(mhd_simulation().reflux_energy, "conservative")
+
+    def test_reflux_energy_accepts_consistent(self):
+        self.assertEqual(
+            mhd_simulation(reflux_energy="consistent").reflux_energy, "consistent"
+        )
+
+    def test_unknown_reflux_energy_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "reflux_energy"):
+            mhd_simulation(reflux_energy="exact")
+
+    def test_reflux_energy_is_rejected_for_hybrid(self):
+        ph.global_vars.sim = None
+        with self.assertRaisesRegex(ValueError, "reflux_energy"):
+            ph.Simulation(
+                time_step=0.001,
+                time_step_nbr=1,
+                cells=cells,
+                dl=dl,
+                interp_order=1,
+                reflux_energy="consistent",
+            )
+
     def test_single_patch_for_LO(self):
         """regression: this used to build a GridLayout with no ghosts_nbr, which an
         MHD-only run cannot derive from its (absent) interp_order"""

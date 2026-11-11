@@ -24,6 +24,8 @@ public:
 
         uL.to_conservative(gamma_);
         uR.to_conservative(gamma_);
+        uL.Etot() -= 0.5 * (uL.B1.x * uL.B1.x + uL.B1.y * uL.B1.y + uL.B1.z * uL.B1.z);
+        uR.Etot() -= 0.5 * (uR.B1.x * uR.B1.x + uR.B1.y * uR.B1.y + uR.B1.z * uR.B1.z);
 
         auto const [Frho, FrhoVx, FrhoVy, FrhoVz, FBx, FBy, FBz, FEtot]
             = rusanov_(uL.as_reduced_conservative_tuple(), uR.as_reduced_conservative_tuple(),

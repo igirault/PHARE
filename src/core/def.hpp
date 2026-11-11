@@ -11,9 +11,11 @@
 #if defined(__GNUC__) || defined(__clang__)
 #define PHARE_LAMBDA_ALWAYS_INLINE __attribute__((always_inline))
 #define PHARE_ALWAYS_INLINE __attribute__((always_inline)) inline
+#define PHARE_NOINLINE __attribute__((noinline))
 #else
 #define PHARE_LAMBDA_ALWAYS_INLINE
 #define PHARE_ALWAYS_INLINE inline
+#define PHARE_NOINLINE
 #endif
 
 #if !defined(NDEBUG) || defined(PHARE_FORCE_DEBUG_DO)

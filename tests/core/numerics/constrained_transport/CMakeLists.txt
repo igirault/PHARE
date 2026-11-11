@@ -6,3 +6,19 @@ add_executable(${PROJECT_NAME} test_degraded_electric_field.cpp)
 target_include_directories(${PROJECT_NAME} PRIVATE ${GTEST_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} PRIVATE phare_core phare_simulator ${GTEST_LIBS})
 add_no_mpi_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})
+
+project(test-poynting-stencil-defect)
+
+set(SOURCES test_poynting_stencil_defect.cpp)
+
+add_executable(${PROJECT_NAME} ${SOURCES})
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${GTEST_INCLUDE_DIRS}
+  )
+
+target_link_libraries(${PROJECT_NAME} PRIVATE
+  phare_core
+  ${GTEST_LIBS})
+
+add_no_mpi_phare_test(${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR})

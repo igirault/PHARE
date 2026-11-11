@@ -16,7 +16,6 @@
 
 #include "initializer/data_provider.hpp"
 
-#include <limits>
 #include <utility>
 #include <tuple>
 #include <cstddef>
@@ -77,7 +76,6 @@ class Godunov : public GodunovInfo
     using LinearReconstructor_t = Reconstructor<LinearReconstruction<GridLayout, VanLeerLimiter>>;
     using RiemannSolver_t           = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
-    using Scalar                    = GridLayout::Scalar;
 
 public:
     using Info_t      = Super;
@@ -100,8 +98,7 @@ public:
     }
 
     template<typename State, typename VecFieldT, typename Fluxes>
-    void operator()(auto& ct_state, auto const& non_ideal_electric_state, State& state,
-                    VecFieldT const& b0, Fluxes& fluxes)
+    void operator()(auto& ct_state, State& state, VecFieldT const& b0, Fluxes& fluxes)
     {
         constexpr auto directions = getDirections<dimension>();
 
@@ -127,53 +124,26 @@ public:
                     ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs,
                                                       {indices...});
                 });
-
-            if (non_ideal_electric_state.active())
-                layout_.evalOnBox(fluxes.template expose_centering<direction>(),
-                                  [&](auto&... indices) {
-                                      auto F = fluxes.template get_dir<direction>({indices...});
-                                      auto const [Et, Bt] = transverse_on_face_<direction>(
-                                          non_ideal_electric_state.E(), state.B1, {indices...});
-                                      equations_.template non_ideal_contributions<direction>(
-                                          Et, Bt, F.B1, F.Etot());
-                                  });
         });
     }
 
-    template<typename CTState, typename NonIdealState, typename MeshData, typename State,
-             typename VecFieldT, typename Fluxes>
-    void degrade_fluxes_near_inner_boundary(CTState& ct_state,
-                                            NonIdealState const& non_ideal_electric_state,
-                                            MeshData const& meshData, State& state,
-                                            VecFieldT const& b0, Fluxes& fluxes,
+    template<typename CTState, typename MeshData, typename State, typename VecFieldT,
+             typename Fluxes>
+    void degrade_fluxes_near_inner_boundary(CTState& ct_state, MeshData const& meshData,
+                                            State& state, VecFieldT const& b0, Fluxes& fluxes,
                                             NearBodyScheme const scheme)
     {
         if (scheme == NearBodyScheme::FirstOrder)
-            recompute_listed_fluxes_<ConstantReconstructor_t>(ct_state, non_ideal_electric_state,
-                                                              meshData, state, b0, fluxes, false);
+            recompute_listed_fluxes_<ConstantReconstructor_t>(ct_state, meshData, state, b0,
+                                                              fluxes);
         else if (scheme == NearBodyScheme::SecondOrder)
-            recompute_listed_fluxes_<LinearReconstructor_t>(ct_state, non_ideal_electric_state,
-                                                            meshData, state, b0, fluxes,
-                                                            non_ideal_electric_state.active());
+            recompute_listed_fluxes_<LinearReconstructor_t>(ct_state, meshData, state, b0, fluxes);
     }
 
 private:
-    bool inDomainBox_(auto const& field, auto const& idx) const
-    {
-        for (std::size_t d = 0; d < dimension; ++d)
-        {
-            auto const dir = static_cast<Direction>(d);
-            if (idx[d] < layout_.physicalStartIndex(field, dir)
-                or idx[d] > layout_.physicalEndIndex(field, dir))
-                return false;
-        }
-        return true;
-    }
-
     template<typename RecT>
-    void recompute_listed_fluxes_(auto& ct_state, auto const& non_ideal_electric_state,
-                                  auto const& meshData, auto& state, auto const& b0, auto& fluxes,
-                                  bool const addNonIdeal)
+    void recompute_listed_fluxes_(auto& ct_state, auto const& meshData, auto& state,
+                                  auto const& b0, auto& fluxes)
     {
         constexpr auto directions     = getDirections<dimension>();
         constexpr auto num_directions = std::tuple_size_v<std::decay_t<decltype(directions)>>;
@@ -198,55 +168,8 @@ private:
                     = riemann_.template solve<direction>(uL, uR, fL, fR);
 
                 ct_state.template save<direction>(riemann_.vt, riemann_.uct_coefs, idx);
-
-                if (addNonIdeal
-                    and inDomainBox_(fluxes.template expose_centering<direction>(), idx))
-                {
-                    auto F              = fluxes.template get_dir<direction>(idx);
-                    auto const [Et, Bt] = transverse_on_face_<direction>(
-                        non_ideal_electric_state.E(), state.B1, idx);
-                    equations_.template non_ideal_contributions<direction>(Et, Bt, F.B1, F.Etot());
-                }
             }
         });
-    }
-
-    template<auto direction>
-    auto transverse_on_face_(auto const& E, auto const& B, MeshIndex<dimension> idx) const
-    {
-        auto constexpr nan = std::numeric_limits<double>::quiet_NaN();
-
-        auto const& Ex = E(Component::X);
-        auto const& Ey = E(Component::Y);
-        auto const& Ez = E(Component::Z);
-        auto const& Bx = B(Component::X);
-        auto const& By = B(Component::Y);
-        auto const& Bz = B(Component::Z);
-
-        if constexpr (direction == Direction::X)
-            return std::make_pair(
-                PerIndexVector<double>{
-                    nan, GridLayout::template project<Scalar::Ey, Scalar::Bx>(Ey, idx),
-                    GridLayout::template project<Scalar::Ez, Scalar::Bx>(Ez, idx)},
-                PerIndexVector<double>{
-                    nan, GridLayout::template project<Scalar::By, Scalar::Bx>(By, idx),
-                    GridLayout::template project<Scalar::Bz, Scalar::Bx>(Bz, idx)});
-        else if constexpr (direction == Direction::Y)
-            return std::make_pair(
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Ex, Scalar::By>(Ex, idx), nan,
-                    GridLayout::template project<Scalar::Ez, Scalar::By>(Ez, idx)},
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Bx, Scalar::By>(Bx, idx), nan,
-                    GridLayout::template project<Scalar::Bz, Scalar::By>(Bz, idx)});
-        else
-            return std::make_pair(
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Ex, Scalar::Bz>(Ex, idx),
-                    GridLayout::template project<Scalar::Ey, Scalar::Bz>(Ey, idx), nan},
-                PerIndexVector<double>{
-                    GridLayout::template project<Scalar::Bx, Scalar::Bz>(Bx, idx),
-                    GridLayout::template project<Scalar::By, Scalar::Bz>(By, idx), nan});
     }
 
     GridLayout layout_;

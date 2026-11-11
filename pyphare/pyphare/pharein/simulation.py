@@ -658,7 +658,23 @@ def check_mhd_parameters(**kwargs):
     riemann = kwargs.get("riemann", "")
     mhd_timestepper = kwargs.get("mhd_timestepper", "")
 
+    if riemann == "HLLD":
+        raise ValueError(
+            "Error: riemann='HLLD' is not supported with the CT Poynting energy flux"
+        )
+
     return reconstruction, limiter, riemann, mhd_timestepper
+
+
+def check_reflux_energy(**kwargs):
+    if "reflux_energy" in kwargs and "MHDModel" not in kwargs["model_options"]:
+        raise ValueError("Error: reflux_energy only applies to an MHD simulation")
+    reflux_energy = kwargs.get("reflux_energy", "conservative")
+    if reflux_energy not in ("conservative", "consistent"):
+        raise ValueError(
+            f"Error: reflux_energy should be 'conservative' or 'consistent', got {reflux_energy!r}"
+        )
+    return reflux_energy
 
 
 def check_refinement_operator(**kwargs):
@@ -732,6 +748,7 @@ def checker(func):
             "inner_boundary",
             "pressure_floor",
             "density_floor",
+            "reflux_energy",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -835,6 +852,12 @@ def checker(func):
         kwargs["mhd_timestepper"] = mhd_timestepper
 
         kwargs["model_options"] = check_model_options(**kwargs)
+        kwargs["reflux_energy"] = check_reflux_energy(**kwargs)
+
+        if "MHDModel" in kwargs["model_options"] and isinstance(
+            kwargs["time_stepper"], timestepper.AdaptiveTimeStepper
+        ):
+            kwargs["time_stepper"].set_scheme(reconstruction, mhd_timestepper, hall)
 
         kwargs["refinement_order"] = check_refinement_operator(**kwargs)
 
@@ -903,17 +926,32 @@ class Simulation:
 
         * ``{"mode": "constant", "value": <dt>}`` - equivalent to passing ``time_step=<dt>``
           (``"value"`` is optional and may be replaced by ``final_time``/``time_step_nbr``).
-        * ``{"mode": "adaptive", "cfl_wave": <w>, "cfl_diffusive": <d>}`` - the time step is
-          recomputed each step from a CFL constraint. Requires ``final_time`` and
-          is incompatible with ``time_step_nbr``.
+        * ``{"mode": "adaptive", "cfl": <c>}`` - the time step is recomputed each step from the
+          linear stability limits of the scheme. Requires ``final_time`` and is incompatible with
+          ``time_step_nbr``. With mesh refinement, each level advances at its own stable time
+          step.
 
-          * **cfl_wave** (``float``), hyperbolic/wave CFL coefficient. Normalized so 1 is
-            the stability limit; choose in (0, 1]. In hall mhd and hybrid,
-            whistler wave speed limits is used. With mesh refinement, each level advances at
-            its own stable time step.
-          * **cfl_diffusive** (``float``), diffusive CFL coefficient. Normalized so 1 is
-            the diffusion stability limit; choose in (0, 1]. Defaults to ``cfl_wave``. Only
-            relevant when resistivity is non-zero.
+          In MHD the rates of the limits add up, each divided by the largest stable coefficient
+          of its term (a constant of the time integrator and reconstruction) times a fraction:
+          1/dt = sum_d (abs(v_d) + c_f,d) / (f_h C_h dx_d)
+          + sum_d k_d (v_w,d - v_A) / (f_w C_w)
+          + 4 eta sum_d 1/dx_d^2 / (f_d C_d) + kappa (sum_d 4/dx_d^2)^2 / (f_d C_nu),
+          where the whistler term is present with Hall only, v_w,d is the whistler speed at the
+          discrete grid-scale wavenumber k_d = 2/dx_d and kappa the hyper-resistive coefficient.
+          A fraction of 1 is the linear stability limit of its term: see
+          :ref:`adaptive_time_step` for the constants.
+
+          * **cfl** (``float``), default 0.8, fraction of the stability limit used for every term.
+          * **cfl_hyperbolic** (``float``), fraction for the advection and fast magnetosonic
+            speeds abs(v_d) + c_f,d. Defaults to ``cfl``.
+          * **cfl_whistler** (``float``), fraction for the Hall whistler, for example lower than
+            ``cfl`` to resolve whistlers in time. Defaults to ``cfl``.
+          * **cfl_diffusive** (``float``), fraction for resistivity and hyper-resistivity.
+            Defaults to ``cfl``.
+
+          Adaptive MHD runs with ``hall=True`` require ``TVDRK3`` or ``SSPRK4_5``, and
+          ``Euler`` requires the ``Constant`` or ``Linear`` reconstruction: the other
+          combinations have no stable time step.
           * **fine_level_substeps_max** (``int``), default 1000. The run stops when the stable
             time step of a refined level is more than this many times smaller than the one of
             the next coarser level, i.e. when a fine level would need more substeps than this
@@ -1154,8 +1192,16 @@ class Simulation:
         * **hall** (``bool``), default=False, whether the Hall term is included in the MHD Ohm's law.
         * **reconstruction** (``str``), spatial reconstruction scheme used by the MHD finite-volume solver (e.g. "WENOZ").
         * **limiter** (``str``), slope limiter used with the reconstruction scheme (e.g. "None").
-        * **riemann** (``str``), Riemann solver used at cell interfaces (e.g. "Rusanov").
+        * **riemann** (``str``), Riemann solver used at cell interfaces, "Rusanov" or "HLL".
+          The magnetic energy is carried by the Poynting flux of the constrained-transport
+          electric field, which "HLLD" does not support yet.
         * **mhd_timestepper** (``str``), mandatory for an MHD simulation, time integration scheme for the MHD solver (e.g. "TVDRK3").
+        * **reflux_energy** (``str``), {"conservative" (default), "consistent"}, how a fine level's total
+          energy fluxes are passed to the coarser level's reflux. "conservative" gives the coarse
+          face the sum of the fine fluxes, so the total energy is conserved, but the coarse cells along
+          the coarse-fine boundary receive magnetic energy their magnetic field does not see.
+          "consistent" removes that part of the sum, so these cells stay consistent with their magnetic
+          field, at the cost of a small departure from exact total energy conservation.
 
         `reconstruction`, `limiter`, `riemann` and `hall` select which pre-compiled MHD module is
         loaded, so their combination must be one that was built (see ``res/sim/all.txt``).

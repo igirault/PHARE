@@ -33,9 +33,6 @@ public:
         auto const GeneralisedPressure = P + MagPressure;
 
         auto const HydroEnergy = P / (gamma_ - 1.0) + kineticEnergy(rho, V.x, V.y, V.z);
-        auto const Ex          = V.z * B.y - V.y * B.z;
-        auto const Ey          = V.x * B.z - V.z * B.x;
-        auto const Ez          = V.y * B.x - V.x * B.y;
 
         if constexpr (direction == Direction::X)
         {
@@ -47,7 +44,7 @@ public:
             auto F_Bx    = 0.0;
             auto F_By    = B.y * V.x - V.y * B.x;
             auto F_Bz    = B.z * V.x - V.z * B.x;
-            auto F_Etot  = (HydroEnergy + P) * V.x + Ey * B1.z - Ez * B1.y;
+            auto F_Etot  = (HydroEnergy + P) * V.x;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -61,7 +58,7 @@ public:
             auto F_Bx    = B.x * V.y - V.x * B.y;
             auto F_By    = 0.0;
             auto F_Bz    = B.z * V.y - V.z * B.y;
-            auto F_Etot  = (HydroEnergy + P) * V.y + Ez * B1.x - Ex * B1.z;
+            auto F_Etot  = (HydroEnergy + P) * V.y;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }
@@ -75,32 +72,9 @@ public:
             auto F_Bx    = B.x * V.z - V.x * B.z;
             auto F_By    = B.y * V.z - V.y * B.z;
             auto F_Bz    = 0.0;
-            auto F_Etot  = (HydroEnergy + P) * V.z + Ex * B1.y - Ey * B1.x;
+            auto F_Etot  = (HydroEnergy + P) * V.z;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
-        }
-    }
-
-    template<auto direction>
-    void non_ideal_contributions(auto const& Et, auto const& Bt, auto& F_B, auto& F_Etot) const
-    {
-        if constexpr (direction == Direction::X)
-        {
-            F_B.y += -Et.z;
-            F_B.z += Et.y;
-            F_Etot += Et.y * Bt.z - Et.z * Bt.y;
-        }
-        if constexpr (direction == Direction::Y)
-        {
-            F_B.x += Et.z;
-            F_B.z += -Et.x;
-            F_Etot += Et.z * Bt.x - Et.x * Bt.z;
-        }
-        if constexpr (direction == Direction::Z)
-        {
-            F_B.x += -Et.y;
-            F_B.y += Et.x;
-            F_Etot += Et.x * Bt.y - Et.y * Bt.x;
         }
     }
 

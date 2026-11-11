@@ -1,10 +1,12 @@
 #include "phare_core.hpp"
 #include "simulator/simulator_def.hpp"
 #include "core/utilities/box/box.hpp"
-#include "core/numerics/ampere/ampere.hpp"
 #include "core/data/field/zero_field.hpp"
+#include "core/numerics/ampere/ampere.hpp"
 #include "core/numerics/differential_operators.hpp"
 #include "core/numerics/constrained_transport/non_ideal_electric_field.hpp"
+
+#include "tests/core/data/gridlayout/test_centering_boxes.hpp"
 
 #include "gtest/gtest.h"
 
@@ -84,59 +86,6 @@ private:
                                       std::numeric_limits<double>::quiet_NaN()};
     }
 };
-
-template<typename Layout>
-using Centering_t = std::array<QtyCentering, Layout::dimension>;
-
-template<typename Layout>
-using Box_t = Box<std::size_t, Layout::dimension>;
-
-template<typename Layout>
-Box_t<Layout> ghostBox(Layout const& layout, Centering_t<Layout> const& centering)
-{
-    Box_t<Layout> box;
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        box.lower[d] = layout.ghostStartIndex(centering[d], static_cast<Direction>(d));
-        box.upper[d] = layout.ghostEndIndex(centering[d], static_cast<Direction>(d));
-    }
-    return box;
-}
-
-template<typename Layout>
-Box_t<Layout> physicalBox(Layout const& layout, Centering_t<Layout> const& centering)
-{
-    Box_t<Layout> box;
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        box.lower[d] = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
-        box.upper[d] = layout.physicalEndIndex(centering[d], static_cast<Direction>(d));
-    }
-    return box;
-}
-
-template<typename Layout>
-std::array<double, 3> coordinates(Layout const& layout, Centering_t<Layout> const& centering,
-                                  MeshIndex<Layout::dimension> const& idx)
-{
-    auto const& dl = layout.meshSize();
-    std::array<double, 3> x{0., 0., 0.};
-    for (std::size_t d = 0; d < Layout::dimension; ++d)
-    {
-        auto const start = layout.physicalStartIndex(centering[d], static_cast<Direction>(d));
-        auto const shift = centering[d] == QtyCentering::dual ? dl[d] / 2 : 0.;
-        x[d] = (static_cast<double>(idx[d]) - static_cast<double>(start)) * dl[d] + shift;
-    }
-    return x;
-}
-
-template<typename Layout, typename Field, typename Fn>
-void fill(Layout const& layout, Field& field, Fn const& fn)
-{
-    auto const centering = layout.centering(field);
-    for_each_point(ghostBox(layout, centering),
-                   [&](auto const& idx) { field(idx) = fn(coordinates(layout, centering, idx)); });
-}
 
 template<typename VecField>
 struct NonIdealState
@@ -357,6 +306,199 @@ TYPED_TEST(NonIdealElectricFieldTest, hallCurlVanishesForB0PerpK)
         else
             check(curlE.x, this->B.view[0]);
         EXPECT_LT(maxCurl, 1e-12);
+    }
+}
+
+
+template<std::size_t c, std::size_t d>
+constexpr auto kappaLocation()
+{
+    using Scalar = MHDQuantity::Scalar;
+    if constexpr (c == d)
+        return Scalar::ScalarAllPrimal;
+    else if constexpr (c + d == 1)
+        return Scalar::Bz;
+    else if constexpr (c + d == 2)
+        return Scalar::By;
+    else
+        return Scalar::Bx;
+}
+
+
+template<typename Fixture>
+std::array<double, 3> boxCentre(Fixture const&)
+{
+    std::array<double, 3> x0{0., 0., 0.};
+    for (std::size_t d = 0; d < Fixture::dim; ++d)
+        x0[d] = 0.5 * cellCounts[d] * meshSizes[d];
+    return x0;
+}
+
+
+template<typename Fixture>
+double compactBump(Fixture const& fixture, std::array<double, 3> const& x)
+{
+    auto const& dl = fixture.layout.meshSize();
+    double w       = 1.;
+    for (std::size_t d = 0; d < Fixture::dim; ++d)
+    {
+        double const margin = 3. * dl[d];
+        double const length = cellCounts[d] * dl[d] - 2. * margin;
+        double const u      = (x[d] - margin) / length;
+        w *= (u <= 0. or u >= 1.) ? 0. : std::pow(std::sin(M_PI * u), 2);
+    }
+    return w;
+}
+
+
+template<typename Fixture>
+double totalWork(Fixture const& fixture)
+{
+    double work = 0.;
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        auto const& Ec = fixture.E.view[c];
+        auto const& Jc = fixture.J.view[c];
+        for_each_point(physicalBox(fixture.layout, fixture.layout.centering(Ec)),
+                       [&](auto const& idx) { work += Jc(idx) * Ec(idx); });
+    }
+    return work;
+}
+
+
+template<typename Fixture>
+double fluxDissipation(Fixture const& fixture, double const nu)
+{
+    using Layout              = Fixture::Layout;
+    using Scalar              = MHDQuantity::Scalar;
+    static constexpr auto dim = Fixture::dim;
+    auto const& layout        = fixture.layout;
+    auto const& meshSize      = layout.meshSize();
+    auto const dx             = *std::min_element(meshSize.begin(), meshSize.end());
+    auto const& B             = fixture.B.view;
+    auto const& rho           = fixture.rho.field;
+
+    double total = 0.;
+    for_N<3>([&](auto ic) {
+        constexpr auto c = ic();
+        auto const& Jc   = fixture.J.view[c];
+        for_N<dim>([&](auto id) {
+            constexpr auto d   = id();
+            constexpr auto dst = kappaLocation<c, d>();
+            auto const dJ      = partial<static_cast<Direction>(d)>(layout, Jc);
+            EXPECT_EQ(Layout::centering(dst), dJ.centering());
+            for_each_point(physicalBox(layout, dJ.centering()), [&](auto const& p) {
+                auto const bx    = Layout::template project<Scalar::Bx, dst>(B[0], p);
+                auto const by    = Layout::template project<Scalar::By, dst>(B[1], p);
+                auto const bz    = Layout::template project<Scalar::Bz, dst>(B[2], p);
+                auto const n     = Layout::template project<Scalar::rho, dst>(rho, p);
+                auto const kappa = nu * dx * dx * (std::sqrt(bx * bx + by * by + bz * bz) / n + 1);
+                total += kappa * dJ(p) * dJ(p);
+            });
+        });
+    });
+    return total;
+}
+
+
+TYPED_TEST(NonIdealElectricFieldTest, hyperResistivityDissipates)
+{
+    auto const& layout = this->layout;
+    auto const x0      = boxCentre(*this);
+    double const nu    = 0.02;
+    std::array<double, 3> const direction{0.6, 0.3, 0.74};
+
+    auto r2 = [&](auto const& x) {
+        double s = 0.;
+        for (std::size_t d = 0; d < 3; ++d)
+            s += (x[d] - x0[d]) * (x[d] - x0[d]);
+        return s;
+    };
+
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        fill(layout, this->J.view[c],
+             [&](auto const& x) { return compactBump(*this, x) * std::exp(-r2(x) / 0.25); });
+        fill(layout, this->B.view[c], [&](auto const& x) {
+            return direction[c] * 30. * (1. - std::exp(-std::pow(std::sqrt(r2(x)) / 0.375, 8)));
+        });
+    }
+    fill(layout, this->rho.field,
+         [](auto const& x) { return 1.5 + 0.5 * std::sin(0.6 * x[0] + 1.1 * x[1] - 0.7 * x[2]); });
+
+    this->template compute<false>(OhmInfo{0.0, nu, HyperMode::spatial});
+
+    auto const work     = totalWork(*this);
+    auto const expected = fluxDissipation(*this, nu);
+    EXPECT_GT(work, 0.);
+    EXPECT_NEAR(work, expected, 1e-12 * std::abs(expected));
+}
+
+
+TYPED_TEST(NonIdealElectricFieldTest, hyperResistivityConstantModeUnchanged)
+{
+    auto const& layout = this->layout;
+    double const nu    = 0.02;
+
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        fill(layout, this->J.view[c], [&](auto const& x) {
+            return std::sin(1.3 * x[0] + 0.7 * c + 0.4 * x[1] - 0.2 * x[2]);
+        });
+        fill(layout, this->B.view[c], [&](auto const& x) {
+            return 0.5 + 0.3 * c + 0.2 * std::sin(0.9 * x[0] - 0.5 * x[1] + 0.8 * x[2] + c);
+        });
+    }
+    fill(layout, this->rho.field,
+         [](auto const& x) { return 1.5 + 0.5 * std::sin(0.6 * x[0] + 1.1 * x[1] - 0.7 * x[2]); });
+
+    this->template compute<false>(OhmInfo{0.0, nu, HyperMode::constant});
+
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        auto const& Ec = this->E.view[c];
+        auto const& Jc = this->J.view[c];
+        for_each_point(physicalBox(layout, layout.centering(Ec)), [&](auto const& idx) {
+            EXPECT_EQ(Ec(idx), -nu * laplacian(layout, Jc, idx));
+        });
+    }
+}
+
+
+TYPED_TEST(NonIdealElectricFieldTest, hyperResistivityUniformKappaMatchesLaplacian)
+{
+    auto const& layout   = this->layout;
+    auto const& meshSize = layout.meshSize();
+    auto const dx        = *std::min_element(meshSize.begin(), meshSize.end());
+    double const nu      = 0.02;
+    std::array<double, 3> const b{0.3, 0.8, 1.3};
+    double const rho = 2.;
+    double const kappa
+        = nu * dx * dx * (std::sqrt(b[0] * b[0] + b[1] * b[1] + b[2] * b[2]) / rho + 1);
+
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        fill(layout, this->J.view[c], [&](auto const& x) {
+            return std::sin(1.3 * x[0] + 0.7 * c + 0.4 * x[1] - 0.2 * x[2]);
+        });
+        fill(layout, this->B.view[c], [&](auto const&) { return b[c]; });
+    }
+    fill(layout, this->rho.field, [&](auto const&) { return rho; });
+
+    this->template compute<false>(OhmInfo{0.0, nu, HyperMode::spatial});
+
+    for (std::size_t c = 0; c < 3; ++c)
+    {
+        auto const& Ec = this->E.view[c];
+        auto const& Jc = this->J.view[c];
+        double scale   = 0.;
+        for_each_point(physicalBox(layout, layout.centering(Ec)), [&](auto const& idx) {
+            scale = std::max(scale, std::abs(kappa * laplacian(layout, Jc, idx)));
+        });
+        EXPECT_GT(scale, 0.);
+        for_each_point(physicalBox(layout, layout.centering(Ec)), [&](auto const& idx) {
+            EXPECT_NEAR(Ec(idx), -kappa * laplacian(layout, Jc, idx), 1e-13 * scale);
+        });
     }
 }
 

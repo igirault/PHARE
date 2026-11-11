@@ -24,6 +24,7 @@ def _populate_algo(dp, sim):
         sim.mhd_timestepper,
     )
     dp.add_bool("simulation/algo/fv_method/hall", sim.hall)
+    dp.add_string("simulation/algo/reflux_energy", sim.reflux_energy)
     dp.add_double("simulation/algo/to_primitive/heat_capacity_ratio", sim.gamma)
     dp.add_double("simulation/algo/to_primitive/pressure_floor", sim.pressure_floor)
     dp.add_double("simulation/algo/to_primitive/density_floor", sim.density_floor)

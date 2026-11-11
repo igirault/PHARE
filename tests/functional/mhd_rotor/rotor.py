@@ -26,7 +26,7 @@ def config():
 
     sim = ph.Simulation(
         smallest_patch_size=15,
-        time_step={"mode": "adaptive", "cfl_wave": 0.8},
+        time_step={"mode": "adaptive", "cfl": 0.8},
         final_time=final_time,
         cells=cells,
         dl=dl,

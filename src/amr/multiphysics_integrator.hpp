@@ -90,8 +90,8 @@ namespace solver
     class MultiPhysicsIntegrator : public SAMRAI::mesh::StandardTagAndInitStrategy,
                                    public SAMRAI::algs::TimeRefinementLevelStrategy
     {
-        using SimFunctorParams = typename core::PHARE_Sim_Types::SimFunctorParams;
-        using SimFunctors      = typename core::PHARE_Sim_Types::SimulationFunctors;
+        using SimFunctorParams = core::PHARE_Sim_Types::SimFunctorParams;
+        using SimFunctors      = core::PHARE_Sim_Types::SimulationFunctors;
 
     public:
         static constexpr auto dimension = MessengerFactory::dimension;
@@ -109,8 +109,10 @@ namespace solver
             , constantDt_{cppdict::get_value(dict, "time_step/value", 0.)}
             , levelDts_(nbrOfLevels_, std::numeric_limits<double>::quiet_NaN())
             , cfl_{isAdaptive_
-                       ? CFLNumbers{dict["time_step"]["cfl_wave"].template to<double>(),
-                                    dict["time_step"]["cfl_diffusive"].template to<double>()}
+                       ? CFLNumbers{dict["time_step"]["cfl_hyperbolic"].template to<double>(),
+                                    dict["time_step"]["cfl_whistler"].template to<double>(),
+                                    dict["time_step"]["cfl_diffusive"].template to<double>(),
+                                    dict["time_step"]["cfl_hyper_resistive"].template to<double>()}
                        : CFLNumbers{}}
             , fineLevelSubstepsMax_{
                   isAdaptive_ ? dict["time_step"]["fine_level_substeps_max"].template to<int>() : 0}
@@ -782,10 +784,13 @@ namespace solver
         {
             SAMRAI::hier::IntVector const ratio{SAMRAI::tbox::Dimension(dimension),
                                                 static_cast<int>(amr::refinementRatio)};
-            std::vector<double> dts{constantDt_};
+            std::vector<double> dts(static_cast<std::size_t>(std::max(1, nbrOfLevels_)),
+                                    constantDt_);
             for (int iLevel = 1; iLevel < nbrOfLevels_; ++iLevel)
-                dts.push_back(
-                    MultiPhysicsIntegrator::getMaxFinerLevelDt(iLevel, dts.back(), ratio));
+            {
+                auto const i = static_cast<std::size_t>(iLevel);
+                dts[i] = MultiPhysicsIntegrator::getMaxFinerLevelDt(iLevel, dts[i - 1], ratio);
+            }
             return dts;
         }
 

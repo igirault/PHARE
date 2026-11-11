@@ -5,6 +5,7 @@
 #include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "core/data/grid/gridlayoutdefs.hpp"
+#include "core/models/quantities/mhd_quantities.hpp"
 #include "core/utilities/point/point.hpp"
 #include "core/utilities/types.hpp"
 #include "core/utilities/box/box_spans.hpp"
@@ -81,6 +82,9 @@ namespace detail
      *                            (directionalProlongation)
      * and the fine value is the tensor product of those rows applied to the coarse field. Every
      * combination of sites is a compile-time stencil, selected per fine index.
+     * MHD quantities dual in every direction instead take ū_I ± ¼ minmod(ū_I − ū_{I−1},
+     * ū_{I+1} − ū_I) per direction, which keeps each child within its coarse neighbours' range
+     * (fillLimited: the magnetic kernel also uses it for MHD faces, averaging along the normal).
      *
      * Stateless: the kernels below are thin IFieldRefineKernel adapters over it that differ only
      * in the region they hand it, so a kernel costs one virtual call per overlap box.
@@ -113,6 +117,14 @@ namespace detail
                     throw std::runtime_error(
                         "composite field refinement supports refinement ratio 2 only");
 
+            if constexpr (isMHD_)
+                if (primalCount_(centering) == 0)
+                {
+                    fillLimited(sourceField, destinationField, region, centering, destFieldBox,
+                                sourceFieldBox, ratio);
+                    return;
+                }
+
             core::for_each_point(phare_box_from<dimension>(region), [&](auto const& fineIndex) {
                 std::array<FineSite, dimension> fineSites;
                 for (std::size_t d = 0; d < dimension; ++d)
@@ -125,8 +137,78 @@ namespace detail
             });
         }
 
+        static void fillLimited(FieldT const& sourceField, FieldT& destinationField,
+                                SAMRAI::hier::Box const& region,
+                                std::array<core::QtyCentering, dimension> const& centering,
+                                SAMRAI::hier::Box const& destFieldBox,
+                                SAMRAI::hier::Box const& sourceFieldBox,
+                                SAMRAI::hier::IntVector const& ratio)
+        {
+            for (std::size_t d = 0; d < dimension; ++d)
+                if (ratio(d) != 2)
+                    throw std::runtime_error(
+                        "composite field refinement supports refinement ratio 2 only");
+
+            if (primalCount_(centering) > 1)
+                throw std::runtime_error("limited refinement expects at most one primal direction");
+
+            core::for_each_point(phare_box_from<dimension>(region), [&](auto const& fineIndex) {
+                auto const anchor = AMRToLocal(toCoarseIndex<dimension>(fineIndex), sourceFieldBox);
+
+                auto value = reconstruct_(sourceField, anchor, fineIndex, centering);
+                for (std::size_t d = 0; d < dimension; ++d)
+                    if (centering[d] == core::QtyCentering::primal and isOddIndex(fineIndex[d]))
+                    {
+                        auto next = anchor;
+                        next[d] += 1;
+                        value
+                            = 0.5 * (value + reconstruct_(sourceField, next, fineIndex, centering));
+                    }
+
+                assignIfUnset_(destinationField, AMRToLocal(fineIndex, destFieldBox), value);
+            });
+        }
+
     private:
         using Point_t = core::Point<int, dimension>;
+
+        static constexpr bool isMHD_
+            = std::is_same_v<typename FieldT::physical_quantity_type, core::MHDQuantity::Scalar>;
+
+        static std::size_t primalCount_(std::array<core::QtyCentering, dimension> const& centering)
+        {
+            std::size_t count = 0;
+            for (auto const c : centering)
+                count += (c == core::QtyCentering::primal);
+            return count;
+        }
+
+        static double minmod_(double const a, double const b)
+        {
+            if (a * b <= 0.)
+                return 0.;
+            return std::abs(a) < std::abs(b) ? a : b;
+        }
+
+        static double reconstruct_(FieldT const& src, Point_t const& coarse,
+                                   Point_t const& fineIndex,
+                                   std::array<core::QtyCentering, dimension> const& centering)
+        {
+            double const center = src(coarse);
+            double value        = center;
+            for (std::size_t d = 0; d < dimension; ++d)
+            {
+                if (centering[d] != core::QtyCentering::dual)
+                    continue;
+                auto below = coarse;
+                auto above = coarse;
+                below[d] -= 1;
+                above[d] += 1;
+                auto const slope = minmod_(center - src(below), src(above) - center);
+                value += (isOddIndex(fineIndex[d]) ? 0.25 : -0.25) * slope;
+            }
+            return value;
+        }
 
         // the 1-D row of direction `dir` for a fine index at `site`
         template<std::size_t dir, FineSite site>
