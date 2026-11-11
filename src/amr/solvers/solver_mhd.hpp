@@ -2,15 +2,18 @@
 #define PHARE_SOLVER_MHD_HPP
 
 
+#include "amr/amr_constants.hpp"
 #include "amr/messengers/messenger.hpp"
 #include "amr/messengers/mhd_messenger_info.hpp"
 #include "amr/physical_models/physical_model.hpp"
 #include "amr/solvers/solver.hpp"
 #include "amr/solvers/time_integrator/euler_using_computed_flux.hpp"
+#include "amr/utilities/box/amr_box.hpp"
 
 #include "core/errors.hpp"
 #include "core/logger.hpp"
 #include "core/models/quantities/mhd_quantities.hpp"
+#include "core/numerics/constrained_transport/poynting_stencil_defect.hpp"
 #include "core/numerics/godunov_fluxes/godunov_utils.hpp"
 #include "core/numerics/ohm/ohm.hpp"
 #include "core/numerics/riemann_solvers/mhd_speeds.hpp"
@@ -18,11 +21,17 @@
 
 #include "initializer/data_provider.hpp"
 
+#include <SAMRAI/hier/BoxLevel.h>
+#include <SAMRAI/hier/CoarseFineBoundary.h>
+
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 namespace PHARE::solver
@@ -61,11 +70,19 @@ private:
 
     std::unordered_map<std::size_t, double> oldTime_;
 
+    struct CoarseFineFaces
+    {
+        std::weak_ptr<SAMRAI::hier::BoxLevel const> boxLevel;
+        std::shared_ptr<SAMRAI::hier::CoarseFineBoundary> boundary;
+    };
+    std::unordered_map<int, CoarseFineFaces> coarseFineFaces_;
+
     double const gamma_; // adiabatic index
     double const eta_;   // resistivity
     double const nu_;
     core::HyperMode const hyperMode_;
     bool const isHall_;
+    bool const consistentRefluxEnergy_;
 
 public:
     SolverMHD(PHARE::initializer::PHAREDict const& dict)
@@ -104,7 +121,12 @@ public:
         , nu_{dict["fv_method"]["hyper_resistivity"].template to<double>()}
         , hyperMode_{cppdict::get_value(dict, "fv_method/hyper_mode", core::HyperMode::constant)}
         , isHall_{cppdict::get_value(dict, "fv_method/hall", false)}
+        , consistentRefluxEnergy_{
+              cppdict::get_value(dict, "reflux_energy", std::string{"conservative"})
+              == "consistent"}
     {
+        static_assert(amr::refinementRatio == 2,
+                      "the consistent reflux energy assumes a refinement ratio of 2");
     }
 
     virtual ~SolverMHD() = default;
@@ -150,6 +172,10 @@ public:
 
 private:
     void mhdNaNCheck_(MHDModel& state, level_t const& level, double time);
+
+    void updateCoarseFineFaces_(hierarchy_t const& hierarchy, int const levelNumber);
+
+    void removePoyntingStencilDefect_(MHDModel& mhdModel, level_t& level, double const coef);
 };
 
 // -----------------------------------------------------------------------------
@@ -333,6 +359,80 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::accumulateFluxSum(
         core::operate<core::PlusEqualsProduct>(fluxSum_, timeFluxes, coef);
         core::operate<core::PlusEqualsProduct>(fluxSumE_, timeElectric, coef);
     }
+
+    if (consistentRefluxEnergy_ and level.getLevelNumber() > 0)
+        removePoyntingStencilDefect_(mhdModel, level, coef);
+}
+
+template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>
+void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::updateCoarseFineFaces_(
+    hierarchy_t const& hierarchy, int const levelNumber)
+{
+    auto const& boxLevel = hierarchy.getPatchLevel(levelNumber)->getBoxLevel();
+    auto& entry          = coarseFineFaces_[levelNumber];
+    if (entry.boundary and entry.boxLevel.lock() == boxLevel)
+        return;
+
+    entry.boxLevel = boxLevel;
+    entry.boundary = std::make_shared<SAMRAI::hier::CoarseFineBoundary>(
+        hierarchy, levelNumber,
+        SAMRAI::hier::IntVector::getZero(SAMRAI::tbox::Dimension{dimension}));
+}
+
+template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>
+void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::removePoyntingStencilDefect_(
+    MHDModel& mhdModel, level_t& level, double const coef)
+{
+    PHARE_LOG_SCOPE(1, "SolverMHD::removePoyntingStencilDefect_");
+
+    if constexpr (dimension > 1)
+    {
+        auto const entry = coarseFineFaces_.find(level.getLevelNumber());
+        if (entry == coarseFineFaces_.end() or !entry->second.boundary)
+            throw std::runtime_error("SolverMHD: no coarse-fine boundary for this level");
+        auto const& boundary = *entry->second.boundary;
+
+        auto& rm           = *mhdModel.resourcesManager;
+        auto&& tf          = evolve_.exposeFluxes();
+        auto& timeElectric = std::get<1>(tf);
+        auto& B            = mhdModel.state.B;
+
+        for (auto& patch : level)
+        {
+            auto const& boxes = boundary.getBoundaries(patch->getGlobalId(), 1);
+            if (boxes.empty())
+                continue;
+
+            auto const patchBox = amr::phare_box_from<dimension>(patch->getBox());
+            std::array<std::vector<core::Box<int, dimension>>, dimension> faces;
+            for (auto const& boundaryBox : boxes)
+            {
+                auto box = amr::phare_box_from<dimension>(boundaryBox.getBox());
+                for (std::size_t d = 0; d < dimension; ++d)
+                {
+                    bool const below = box.upper[d] < patchBox.lower[d];
+                    bool const above = box.lower[d] > patchBox.upper[d];
+                    if (!below and !above)
+                        continue;
+
+                    auto face = box;
+                    for (std::size_t k = 0; k < dimension; ++k)
+                    {
+                        face.lower[k] = std::max(box.lower[k], patchBox.lower[k]);
+                        face.upper[k] = std::min(box.upper[k], patchBox.upper[k]);
+                    }
+                    face.lower[d] = face.upper[d]
+                        = below ? patchBox.lower[d] : patchBox.upper[d] + 1;
+                    faces[d].push_back(face);
+                }
+            }
+
+            auto const layout = amr::layoutFromPatch<GridLayout>(*patch);
+            auto _            = rm.setOnPatch(*patch, fluxSum_, timeElectric, B, stateOld_);
+            core::PoyntingStencilDefect<GridLayout>{layout}(fluxSum_, timeElectric, stateOld_.B, B,
+                                                            faces, coef);
+        }
+    }
 }
 
 template<typename MHDModel, typename AMR_Types, typename TimeIntegratorStrategy>
@@ -374,6 +474,9 @@ void SolverMHD<MHDModel, AMR_Types, TimeIntegratorStrategy>::advanceLevel(
     auto& mhdModel    = dynamic_cast<MHDModel&>(model);
     auto& fromCoarser = dynamic_cast<Messenger&>(fromCoarserMessenger);
     auto level        = hierarchy.getPatchLevel(levelNumber);
+
+    if (consistentRefluxEnergy_ and levelNumber > 0)
+        updateCoarseFineFaces_(hierarchy, levelNumber);
 
     try
     {

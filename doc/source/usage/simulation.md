@@ -192,3 +192,35 @@ unstable value in brackets): the analysis predicts the measured limits within ab
 
 On a 2D Harris sheet the runs stay stable further, because the Hall term dominates only in
 part of the domain.
+
+(reflux_energy)=
+
+## Total energy at coarse-fine boundaries (MHD)
+
+The magnetic part of the MHD total energy flux is the Poynting flux of the
+constrained-transport electric field, computed from the electric field on the
+edges of each face. When a coarse level is corrected with the fluxes of a finer
+level (refluxing), the fine electric field on fine edges that lie between two
+coarse edges enters the summed energy flux of the coarse face, but not the coarse
+magnetic field update. The coarse cells along the coarse-fine boundary then
+receive magnetic energy that their magnetic field does not see, and the
+difference goes into their pressure. The error is linear in the perturbation and
+of order $h^2 \partial^2 E$, so it is small for smooth flows and grows where the
+electric field varies sharply along the boundary.
+
+`reflux_energy` chooses which property to keep:
+
+- `"conservative"` (default): the coarse face receives the sum of the fine
+  fluxes, so the total energy is conserved exactly.
+- `"consistent"`: that part of the sum is removed, so the coarse cells stay
+  consistent with their magnetic field. The total energy is then not exactly
+  conserved. For a smooth wave the relative drift is $10^{-10}$ to $10^{-5}$
+  (quadratic in the amplitude, third order in the mesh size); with discontinuities
+  crossing the boundary it is a systematic gain, about $10^{-5}$ in an oblique
+  Brio-Wu test (second order in the mesh size).
+
+The two cannot be combined without constraining the fine electric field along the
+boundary, which degrades the fine solution. With `WENOZ`, `"consistent"` lowers the
+pressure error along the boundary by a factor 3 to 7, close to the level of a scheme
+without the Poynting flux; with `Linear`, whose own boundary error is larger, it
+lowers that error by up to a factor 2. In one dimension both choices are identical.
