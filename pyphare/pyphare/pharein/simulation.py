@@ -665,6 +665,17 @@ def check_mhd_parameters(**kwargs):
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
+def check_reflux_energy(**kwargs):
+    if "reflux_energy" in kwargs and "MHDModel" not in kwargs["model_options"]:
+        raise ValueError("Error: reflux_energy only applies to an MHD simulation")
+    reflux_energy = kwargs.get("reflux_energy", "conservative")
+    if reflux_energy not in ("conservative", "consistent"):
+        raise ValueError(
+            f"Error: reflux_energy should be 'conservative' or 'consistent', got {reflux_energy!r}"
+        )
+    return reflux_energy
+
+
 def check_refinement_operator(**kwargs):
     """Selects the field-refinement (prolongation) operator order.
 
@@ -723,6 +734,7 @@ def checker(func):
             "riemann",
             "mhd_timestepper",
             "refinement_order",
+            "reflux_energy",
         ]
 
         kwargs = deepcopy(kwargs_in)  # local copy - dictionaries are weird
@@ -822,6 +834,7 @@ def checker(func):
         kwargs["mhd_timestepper"] = mhd_timestepper
 
         kwargs["model_options"] = check_model_options(**kwargs)
+        kwargs["reflux_energy"] = check_reflux_energy(**kwargs)
 
         if "MHDModel" in kwargs["model_options"] and isinstance(
             kwargs["time_stepper"], timestepper.AdaptiveTimeStepper
@@ -1165,6 +1178,12 @@ class Simulation:
           The magnetic energy is carried by the Poynting flux of the constrained-transport
           electric field, which "HLLD" does not support yet.
         * **mhd_timestepper** (``str``), mandatory for an MHD simulation, time integration scheme for the MHD solver (e.g. "TVDRK3").
+        * **reflux_energy** (``str``), {"conservative" (default), "consistent"}, how a fine level's total
+          energy fluxes are passed to the coarser level's reflux. "conservative" gives the coarse
+          face the sum of the fine fluxes, so the total energy is conserved, but the coarse cells along
+          the coarse-fine boundary receive magnetic energy their magnetic field does not see.
+          "consistent" removes that part of the sum, so these cells stay consistent with their magnetic
+          field, at the cost of a small departure from exact total energy conservation.
 
         `reconstruction`, `limiter`, `riemann` and `hall` select which pre-compiled MHD module is
         loaded, so their combination must be one that was built (see ``res/sim/all.txt``).
