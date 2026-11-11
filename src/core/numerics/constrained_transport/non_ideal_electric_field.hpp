@@ -111,7 +111,7 @@ private:
     struct HyperKappa
     {
         template<auto dst>
-        PHARE_NOINLINE NO_DISCARD double operator()(MeshIndex<dimension> const& p) const
+        NO_DISCARD PHARE_NOINLINE double operator()(MeshIndex<dimension> const& p) const
         {
             using Scalar  = MHDQuantity::Scalar;
             auto const bx = GridLayout::template project<Scalar::Bx, dst>(B(Component::X), p);
