@@ -12,4 +12,5 @@ if(HighFive)
   ## These test use dump diagnostics so require HighFive!
   phare_python3_exec(9 ct_energy_wenoz_decay test_wenoz_mode_decay.py ${CMAKE_CURRENT_BINARY_DIR})
   phare_python3_exec(9 ct_energy_dt_limit test_dt_limit_noise.py ${CMAKE_CURRENT_BINARY_DIR})
+  phare_python3_exec(9 ct_energy_reflux test_reflux_energy.py ${CMAKE_CURRENT_BINARY_DIR})
 endif()
