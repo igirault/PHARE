@@ -4,6 +4,7 @@
 #include "simulator/simulator_def.hpp"
 
 #include "core/data/grid/grid.hpp"
+#include "core/models/quantities/mhd_quantities.hpp"
 #include "core/data/grid/gridlayout.hpp"
 #include "core/data/grid/gridlayoutimplyee.hpp"
 
@@ -25,8 +26,10 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -704,6 +707,155 @@ static void runEqualizeCase()
 TEST(MagneticTouchUp2D, equalizesSubzoneDivergenceOnGenericNonDivFreeCoarseData)
 {
     runEqualizeCase<2>();
+}
+
+
+namespace
+{
+using MHDGrid1D = Grid<NdArrayVector<1>, MHDQuantity::Scalar>;
+using MHDGrid2D = Grid<NdArrayVector<2>, MHDQuantity::Scalar>;
+
+std::vector<double> refineMHD1D(std::array<double, 8> const& coarse)
+{
+    std::array<QtyCentering, 1> centering{QtyCentering::dual};
+    MHDGrid1D src{"c", MHDQuantity::Scalar::rho, 8u};
+    MHDGrid1D dst{"f", MHDQuantity::Scalar::rho, std::array<std::uint32_t, 1>{16u}, NaN};
+    for (std::size_t i = 0; i < src.shape()[0]; ++i)
+        src(i) = coarse[i];
+    CompositeFieldRefiner<GridYee1D, MHDGrid1D, 2>{}.refineBox(src, dst, boxOf<1>({2}, {13}),
+                                                               centering, boxOf<1>({0}, {15}),
+                                                               boxOf<1>({0}, {7}), ratio2(1));
+    std::vector<double> fine(16);
+    for (std::size_t i = 0; i < 16; ++i)
+        fine[i] = dst(i);
+    return fine;
+}
+} // namespace
+
+
+// the unlimited ±¼ child of a local minimum next to a steep rise goes negative: 0.5 + (1 − 10)/8
+TEST(limitedMHDRefiner1D, childOfAMinimumNextToASteepRiseStaysInRange)
+{
+    auto const fine = refineMHD1D({10., 10., 10., 0.5, 1., 1., 1., 1.});
+    for (int f = 6; f <= 7; ++f)
+    {
+        EXPECT_GE(fine[f], 0.5);
+        EXPECT_LE(fine[f], 10.);
+    }
+    EXPECT_DOUBLE_EQ(fine[7], 0.5);
+}
+
+
+TEST(limitedMHDRefiner1D, childrenStayWithinTheirCoarseNeighboursAndMeanBackToTheParent)
+{
+    std::array<double, 8> const coarse = {1.0, 1.3, 0.4, 2.0, 0.05, 0.7, 0.9, 0.2};
+    auto const fine                    = refineMHD1D(coarse);
+    for (int ix = 1; ix <= 6; ++ix)
+    {
+        auto const lo = std::min({coarse[ix - 1], coarse[ix], coarse[ix + 1]});
+        auto const hi = std::max({coarse[ix - 1], coarse[ix], coarse[ix + 1]});
+        for (int child : {2 * ix, 2 * ix + 1})
+        {
+            EXPECT_GE(fine[child], lo);
+            EXPECT_LE(fine[child], hi);
+        }
+        EXPECT_NEAR(0.5 * (fine[2 * ix] + fine[2 * ix + 1]), coarse[ix], 1e-14);
+    }
+}
+
+
+TEST(limitedMHDRefiner1D, linearProfileIsReproducedExactly)
+{
+    std::array<double, 8> coarse;
+    for (std::size_t i = 0; i < 8; ++i)
+        coarse[i] = 0.3 + 0.8 * i;
+    auto const fine = refineMHD1D(coarse);
+    for (int f = 2; f <= 13; ++f)
+        EXPECT_NEAR(fine[f], 0.3 + 0.8 * (f - 0.5) / 2., 1e-13);
+}
+
+
+TEST(limitedMHDRefiner2D, cellCentredChildrenAreBoundedConservativeAndExactOnLinearProfiles)
+{
+    std::array<QtyCentering, 2> centering{QtyCentering::dual, QtyCentering::dual};
+
+    auto refine = [&](auto const& value) {
+        MHDGrid2D src{"c", MHDQuantity::Scalar::Etot, 8u, 8u};
+        MHDGrid2D dst{"f", MHDQuantity::Scalar::Etot, std::array<std::uint32_t, 2>{16u, 16u}, NaN};
+        for (std::uint32_t i = 0; i < 8; ++i)
+            for (std::uint32_t j = 0; j < 8; ++j)
+                src(i, j) = value(i, j);
+        CompositeFieldRefiner<GridYee2D, MHDGrid2D, 2>{}.refineBox(
+            src, dst, boxOf<2>({2, 2}, {13, 13}), centering, boxOf<2>({0, 0}, {15, 15}),
+            boxOf<2>({0, 0}, {7, 7}), ratio2(2));
+        return std::make_pair(std::move(src), std::move(dst));
+    };
+
+    auto const rough = [](std::uint32_t i, std::uint32_t j) {
+        return 0.1 + static_cast<double>((7 * i + 3 * j * j) % 11);
+    };
+    auto const [src, dst] = refine(rough);
+    for (std::uint32_t i = 1; i <= 6; ++i)
+        for (std::uint32_t j = 1; j <= 6; ++j)
+        {
+            double lo = src(i, j), hi = src(i, j);
+            for (int di = -1; di <= 1; ++di)
+                for (int dj = -1; dj <= 1; ++dj)
+                {
+                    lo = std::min(lo, src(i + di, j + dj));
+                    hi = std::max(hi, src(i + di, j + dj));
+                }
+            double mean = 0.;
+            for (std::uint32_t a = 0; a < 2; ++a)
+                for (std::uint32_t b = 0; b < 2; ++b)
+                {
+                    auto const v = dst(2 * i + a, 2 * j + b);
+                    EXPECT_GE(v, lo);
+                    EXPECT_LE(v, hi);
+                    mean += 0.25 * v;
+                }
+            EXPECT_NEAR(mean, src(i, j), 1e-13);
+        }
+
+    auto const linear       = [](double i, double j) { return 1.2 - 0.4 * i + 0.7 * j; };
+    auto const [lsrc, ldst] = refine(linear);
+    for (std::uint32_t f = 2; f <= 13; ++f)
+        for (std::uint32_t g = 2; g <= 13; ++g)
+            EXPECT_NEAR(ldst(f, g), linear((f - 0.5) / 2., (g - 0.5) / 2.), 1e-13);
+}
+
+
+TEST(limitedMHDMagneticRefiner2D, tangentialStepDoesNotOvershootAndLinearProfilesStayExact)
+{
+    std::array<QtyCentering, 2> centering{QtyCentering::primal, QtyCentering::dual};
+
+    auto refine = [&](auto const& value) {
+        MHDGrid2D src{"c", MHDQuantity::Scalar::Bx, 8u, 8u};
+        MHDGrid2D dst{"f", MHDQuantity::Scalar::Bx, std::array<std::uint32_t, 2>{16u, 16u}, NaN};
+        for (std::uint32_t i = 0; i < 8; ++i)
+            for (std::uint32_t j = 0; j < 8; ++j)
+                src(i, j) = value(i, j);
+        MagneticCompositeRefiner<GridYee2D, MHDGrid2D, 2>{}.refineBox(
+            src, dst, boxOf<2>({2, 2}, {13, 13}), centering, boxOf<2>({0, 0}, {15, 15}),
+            boxOf<2>({0, 0}, {7, 7}), ratio2(2));
+        return dst;
+    };
+
+    auto const step = [](double i, double j) { return (j < 4 ? 1. : 10.) + 0.2 * i; };
+    auto const dst  = refine(step);
+    for (std::uint32_t f = 2; f <= 13; ++f)
+        for (std::uint32_t g = 2; g <= 13; ++g)
+        {
+            auto const i = static_cast<double>(f / 2);
+            EXPECT_GE(dst(f, g), 1. + 0.2 * i);
+            EXPECT_LE(dst(f, g), 10. + 0.2 * (i + (f % 2)));
+        }
+
+    auto const linear = [](double i, double j) { return 1.2 - 0.4 * i + 0.7 * j; };
+    auto const ldst   = refine(linear);
+    for (std::uint32_t f = 2; f <= 13; ++f)
+        for (std::uint32_t g = 2; g <= 13; ++g)
+            EXPECT_NEAR(ldst(f, g), linear(f / 2., (g - 0.5) / 2.), 1e-13);
 }
 
 
