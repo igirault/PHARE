@@ -36,7 +36,7 @@ public:
 
         if constexpr (direction == Direction::X)
         {
-            auto F_rho   = rho * V.x;
+            auto F_rho = rho * V.x;
             auto F_rhoVx
                 = rho * V.x * V.x + GeneralisedPressure - (B1.x * B1.x + B1.x * B0.x + B0.x * B1.x);
             auto F_rhoVy = rho * V.x * V.y - (B1.x * B1.y + B1.x * B0.y + B0.x * B1.y);
@@ -69,10 +69,10 @@ public:
             auto F_rhoVy = rho * V.z * V.y - (B1.z * B1.y + B1.z * B0.y + B0.z * B1.y);
             auto F_rhoVz
                 = rho * V.z * V.z + GeneralisedPressure - (B1.z * B1.z + B1.z * B0.z + B0.z * B1.z);
-            auto F_Bx    = B.x * V.z - V.x * B.z;
-            auto F_By    = B.y * V.z - V.y * B.z;
-            auto F_Bz    = 0.0;
-            auto F_Etot  = (HydroEnergy + P) * V.z;
+            auto F_Bx   = B.x * V.z - V.x * B.z;
+            auto F_By   = B.y * V.z - V.y * B.z;
+            auto F_Bz   = 0.0;
+            auto F_Etot = (HydroEnergy + P) * V.z;
 
             return PerIndex{F_rho, {F_rhoVx, F_rhoVy, F_rhoVz}, {F_Bx, F_By, F_Bz}, F_Etot};
         }

@@ -120,7 +120,7 @@ private:
                             + GridLayout::template project<Scalar::By, dst>(B0(Component::Y), p);
             auto const bz = GridLayout::template project<Scalar::Bz, dst>(B1(Component::Z), p)
                             + GridLayout::template project<Scalar::Bz, dst>(B0(Component::Z), p);
-            auto const n  = GridLayout::template project<Scalar::rho, dst>(rho, p);
+            auto const n = GridLayout::template project<Scalar::rho, dst>(rho, p);
             return coef * (std::sqrt(bx * bx + by * by + bz * bz) / n + 1);
         }
 

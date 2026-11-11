@@ -69,12 +69,12 @@ template<typename GridLayout, template<typename> typename Reconstruction, typena
          typename Equations>
 class Godunov : public GodunovInfo
 {
-    using Super                     = GodunovInfo;
-    using Reconstruction_t          = Reconstruction<GridLayout>;
-    using Reconstructor_t           = Reconstructor<Reconstruction_t>;
-    using ConstantReconstructor_t   = Reconstructor<ConstantReconstruction<GridLayout>>;
-    using LinearReconstructor_t = Reconstructor<LinearReconstruction<GridLayout, VanLeerLimiter>>;
-    using RiemannSolver_t           = RiemannSolver;
+    using Super                   = GodunovInfo;
+    using Reconstruction_t        = Reconstruction<GridLayout>;
+    using Reconstructor_t         = Reconstructor<Reconstruction_t>;
+    using ConstantReconstructor_t = Reconstructor<ConstantReconstruction<GridLayout>>;
+    using LinearReconstructor_t   = Reconstructor<LinearReconstruction<GridLayout, VanLeerLimiter>>;
+    using RiemannSolver_t         = RiemannSolver;
     constexpr static auto dimension = GridLayout::dimension;
 
 public:
@@ -142,8 +142,8 @@ public:
 
 private:
     template<typename RecT>
-    void recompute_listed_fluxes_(auto& ct_state, auto const& meshData, auto& state,
-                                  auto const& b0, auto& fluxes)
+    void recompute_listed_fluxes_(auto& ct_state, auto const& meshData, auto& state, auto const& b0,
+                                  auto& fluxes)
     {
         constexpr auto directions     = getDirections<dimension>();
         constexpr auto num_directions = std::tuple_size_v<std::decay_t<decltype(directions)>>;
