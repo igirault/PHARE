@@ -88,32 +88,34 @@ def run_simulation():
     ph.global_vars.sim = None
 
 
-def projection(hierarchy, time, name, k, length):
-    values = {}
+def own_points(hierarchy, time, name):
+    xs, ys, values = [], [], []
     for level in hierarchy.levels(time).values():
         for patch in level.patches:
             data = patch.patch_datas[name]
-            x, y = data.meshgrid()
-            field = np.asarray(data.dataset[:])
-            inside = (
-                (x >= -1e-9)
-                & (x < length[0] - 1e-9)
-                & (y >= -1e-9)
-                & (y < length[1] - 1e-9)
+            own = tuple(
+                slice(g, g + n) for g, n in zip(data.ghosts_nbr, data.box.shape)
             )
-            for xi, yi, vi in zip(x[inside], y[inside], field[inside]):
-                values[(round(xi, 6), round(yi, 6))] = vi
-    points = np.array(list(values.keys()))
-    field = np.array(list(values.values()))
-    phase = np.exp(-1j * (k[0] * points[:, 0] + k[1] * points[:, 1]))
-    return np.sum(field * phase) / len(field)
+            x, y = data.meshgrid(own)
+            xs.append(x.ravel())
+            ys.append(y.ravel())
+            values.append(np.asarray(data.dataset[:])[own].ravel())
+    values = np.concatenate(values)
+    assert values.size == CELLS[0] * CELLS[1]
+    return np.concatenate(xs), np.concatenate(ys), values
 
 
-def mode_amplitudes(run, time, k, length):
+def projection(hierarchy, time, name, k):
+    x, y, field = own_points(hierarchy, time, name)
+    phase = np.exp(-1j * (k[0] * x + k[1] * y))
+    return np.sum(field * phase) / field.size
+
+
+def mode_amplitudes(run, time, k):
     out = []
     for getter, names in GETTERS:
         hierarchy = getattr(run, getter)(time, all_primal=False)
-        out += [projection(hierarchy, time, name, k, length) for name in names]
+        out += [projection(hierarchy, time, name, k) for name in names]
     return np.array(out)
 
 
@@ -121,8 +123,8 @@ class WenozModeDecayTest(unittest.TestCase):
     def test_wenoz_mode_decays(self):
         run_simulation()
         run = Run(DIAG_DIR)
-        a0 = mode_amplitudes(run, 0.0, K, L)
-        a1 = mode_amplitudes(run, FINAL, K, L)
+        a0 = mode_amplitudes(run, 0.0, K)
+        a1 = mode_amplitudes(run, FINAL, K)
         ratio = np.linalg.norm(a1) / np.linalg.norm(a0)
         print(f"WENOZ mode amplitude ratio t={FINAL}/t=0: {ratio:.4f}", flush=True)
         self.assertLess(ratio, 0.9)

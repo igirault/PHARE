@@ -86,18 +86,26 @@ def run_simulation():
     ph.global_vars.sim = None
 
 
-def mean_square_deviation(hierarchy, time, name, base):
-    values = {}
+def own_points(hierarchy, time, name):
+    xs, ys, values = [], [], []
     for level in hierarchy.levels(time).values():
         for patch in level.patches:
             data = patch.patch_datas[name]
-            x, y = data.meshgrid()
-            field = np.asarray(data.dataset[:])
-            inside = (x >= -1e-9) & (x < L[0] - 1e-9) & (y >= -1e-9) & (y < L[1] - 1e-9)
-            for xi, yi, vi in zip(x[inside], y[inside], field[inside]):
-                values[(round(xi, 6), round(yi, 6))] = vi
-    deviation = np.array(list(values.values())) - base
-    return float(np.mean(deviation**2))
+            own = tuple(
+                slice(g, g + n) for g, n in zip(data.ghosts_nbr, data.box.shape)
+            )
+            x, y = data.meshgrid(own)
+            xs.append(x.ravel())
+            ys.append(y.ravel())
+            values.append(np.asarray(data.dataset[:])[own].ravel())
+    values = np.concatenate(values)
+    assert values.size == CELLS[0] * CELLS[1]
+    return np.concatenate(xs), np.concatenate(ys), values
+
+
+def mean_square_deviation(hierarchy, time, name, base):
+    _, _, values = own_points(hierarchy, time, name)
+    return float(np.mean((values - base) ** 2))
 
 
 def perturbation_rms(run, time):
