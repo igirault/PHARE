@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 namespace PHARE::amr
 {
@@ -35,6 +36,13 @@ class MHDInternalEnergyRefinePatchStrategy : public SAMRAI::xfer::RefinePatchStr
     static constexpr std::size_t dimension = FieldDataT::dimension;
 
 public:
+    enum class Rebuild { everywhere, nonPositivePressure };
+
+    explicit MHDInternalEnergyRefinePatchStrategy(Rebuild const rebuild)
+        : rebuild_{rebuild}
+    {
+    }
+
     void registerIDs(int const rho, int const rhoV, int const B, int const Etot)
     {
         rhoId_  = rho;
@@ -70,15 +78,30 @@ public:
         if (fillBox.empty())
             return;
 
+        auto const& fineLayout    = FieldDataT::getLayout(fine, EtotId_);
+        auto& fineEtot            = FieldDataT::getField(fine, EtotId_);
+        auto const fineNonThermal = nonThermalEnergy_(fine);
+
+        std::vector<core::Point<int, dimension>> rebuilt;
+        core::for_each_point(phare_box_from<dimension>(fillBox), [&](auto const& amr) {
+            auto const cell = fineLayout.AMRToLocal(amr);
+            if (rebuild_ == Rebuild::everywhere or fineEtot(cell) - fineNonThermal(cell) <= 0.)
+            {
+                fineEtot(cell) = nan_;
+                rebuilt.push_back(amr);
+            }
+        });
+        if (rebuilt.empty())
+            return;
+
         auto const coarseGhostBox = coarse.getPatchData(EtotId_)->getGhostBox();
         auto coarseCells          = fillBox;
         coarseCells.coarsen(ratio);
         coarseCells.grow(SAMRAI::hier::IntVector::getOne(fillBox.getDim()));
         coarseCells = coarseCells * coarseGhostBox;
 
-        auto const& coarseLayout = FieldDataT::getLayout(coarse, EtotId_);
-        auto const& coarseEtot   = FieldDataT::getField(coarse, EtotId_);
-
+        auto const& coarseLayout    = FieldDataT::getLayout(coarse, EtotId_);
+        auto const& coarseEtot      = FieldDataT::getField(coarse, EtotId_);
         auto const coarseNonThermal = nonThermalEnergy_(coarse);
 
         grid_type rhoEps{"rhoEps", Scalar::Etot, coarseEtot.shape(), nan_};
@@ -87,23 +110,16 @@ public:
             rhoEps(cell)    = coarseEtot(cell) - coarseNonThermal(cell);
         });
 
-        auto const& fineLayout = FieldDataT::getLayout(fine, EtotId_);
-        auto& fineEtot         = FieldDataT::getField(fine, EtotId_);
-        auto const fineCells   = phare_box_from<dimension>(fillBox);
-
-        core::for_each_point(fineCells,
-                             [&](auto const& amr) { fineEtot(fineLayout.AMRToLocal(amr)) = nan_; });
-
         std::array<core::QtyCentering, dimension> centering;
         centering.fill(core::QtyCentering::dual);
         Fill::fillLimited(rhoEps, fineEtot, fillBox, centering, fineGhostBox, coarseGhostBox,
                           ratio);
 
-        auto const fineNonThermal = nonThermalEnergy_(fine);
-        core::for_each_point(fineCells, [&](auto const& amr) {
+        for (auto const& amr : rebuilt)
+        {
             auto const cell = fineLayout.AMRToLocal(amr);
             fineEtot(cell) += fineNonThermal(cell);
-        });
+        }
     }
 
 private:
@@ -132,6 +148,7 @@ private:
         };
     }
 
+    Rebuild rebuild_;
     int rhoId_  = -1;
     int rhoVId_ = -1;
     int BId_    = -1;
