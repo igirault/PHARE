@@ -11,6 +11,8 @@
 #include "tests/core/utilities/inner_boundary/plane_inner_boundary.hpp"
 
 #include <algorithm>
+#include <array>
+#include <memory>
 #include <set>
 #include <utility>
 #include <cmath>
@@ -30,7 +32,7 @@ inline constexpr PHARE::SimOpts wenozOptions{
 inline constexpr PHARE::MHDFieldOptions<wenozOptions> wenozFieldOptions{};
 
 using GridLayout = PHARE::core::GridLayout<PHARE::MHDOptions<wenozFieldOptions>{}>;
-using Mapper   = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
+using Mapper = PHARE::core::InnerBoundaryMeshClassifier<2, GridLayout, PHARE::core::MHDQuantity>;
 
 inline constexpr PHARE::SimOpts linearOptions{
     .dimension           = 2,
@@ -44,7 +46,7 @@ inline constexpr PHARE::MHDFieldOptions<linearOptions> linearFieldOptions{};
 using LinearGridLayout = PHARE::core::GridLayout<PHARE::MHDOptions<linearFieldOptions>{}>;
 using LinearMapper
     = PHARE::core::InnerBoundaryMeshClassifier<2, LinearGridLayout, PHARE::core::MHDQuantity>;
-using MeshData = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQuantity>;
+using MeshData    = PHARE::core::InnerBoundaryMeshData<2, PHARE::core::MHDQuantity>;
 using ScalarField = PHARE::core::Field<2, PHARE::core::MHDQuantity::Scalar, double>;
 
 constexpr auto reconstructionNghosts = wenozFieldOptions.reconstruction_nghosts;
@@ -132,6 +134,186 @@ GridLayout3D cubeLayout(int lower, std::uint32_t ncell)
                         {ncell, ncell, ncell},
                         {o, o, o},
                         PHARE::core::Box<int, 3>{{lower, lower, lower}, {upper, upper, upper}}};
+}
+
+template<typename Layout>
+Layout boxLayout(int lower, std::uint32_t ncell, double dx)
+{
+    constexpr auto dim = Layout::dimension;
+    std::array<double, dim> meshSize{};
+    std::array<std::uint32_t, dim> cells{};
+    PHARE::core::Point<double, dim> origin{};
+    PHARE::core::Point<int, dim> lo{}, up{};
+    for (std::size_t d = 0; d < dim; ++d)
+    {
+        meshSize[d] = dx;
+        cells[d]    = ncell;
+        origin[d]   = lower * dx;
+        lo[d]       = lower;
+        up[d]       = lower + static_cast<int>(ncell) - 1;
+    }
+    return Layout{meshSize, cells, origin, PHARE::core::Box<int, dim>{lo, up}};
+}
+
+template<typename Layout>
+std::vector<Layout> tiling(int lower, int upper, std::uint32_t tile, double dx)
+{
+    constexpr auto dim = Layout::dimension;
+    std::vector<Layout> subs;
+    auto const n      = (upper - lower + 1) / static_cast<int>(tile);
+    std::size_t count = 1;
+    for (std::size_t d = 0; d < dim; ++d)
+        count *= static_cast<std::size_t>(n);
+    for (std::size_t flat = 0; flat < count; ++flat)
+    {
+        std::array<double, dim> meshSize{};
+        std::array<std::uint32_t, dim> cells{};
+        PHARE::core::Point<double, dim> origin{};
+        PHARE::core::Point<int, dim> lo{}, up{};
+        auto rest = flat;
+        for (std::size_t d = 0; d < dim; ++d)
+        {
+            auto const t = static_cast<int>(rest % static_cast<std::size_t>(n));
+            rest /= static_cast<std::size_t>(n);
+            meshSize[d] = dx;
+            cells[d]    = tile;
+            lo[d]       = lower + t * static_cast<int>(tile);
+            up[d]       = lo[d] + static_cast<int>(tile) - 1;
+            origin[d]   = lo[d] * dx;
+        }
+        subs.emplace_back(meshSize, cells, origin, PHARE::core::Box<int, dim>{lo, up});
+    }
+    return subs;
+}
+
+template<typename Layout, typename FieldT>
+auto amrOffset(Layout const& layout, FieldT const& field)
+{
+    constexpr auto dim = Layout::dimension;
+    std::array<int, dim> off{};
+    for (std::size_t d = 0; d < dim; ++d)
+        off[d] = layout.AMRBox().lower[d]
+                 - static_cast<int>(
+                     layout.physicalStartIndex(field, static_cast<PHARE::core::Direction>(d)));
+    return off;
+}
+
+template<std::size_t dim, typename Fn>
+void forEachIndex(std::array<std::uint32_t, dim> const& shape, Fn&& fn)
+{
+    std::size_t count = 1;
+    for (std::size_t d = 0; d < dim; ++d)
+        count *= shape[d];
+    for (std::size_t flat = 0; flat < count; ++flat)
+    {
+        std::array<std::uint32_t, dim> idx{};
+        auto rest = flat;
+        for (std::size_t d = dim; d-- > 0;)
+        {
+            idx[d] = static_cast<std::uint32_t>(rest % shape[d]);
+            rest /= shape[d];
+        }
+        fn(idx);
+    }
+}
+
+template<typename MapperT, typename Layout, typename Geometry>
+void expectSameClassification(Geometry const& body, Layout const& big,
+                              std::vector<Layout> const& subs)
+{
+    constexpr auto dim = Layout::dimension;
+    using Buffers      = InnerBoundaryMeshClassifierBuffers<Layout>;
+    using MeshDataT    = Buffers::MeshDataT;
+    using AmrIndex     = std::array<int, dim>;
+
+    auto classify = [&](Layout const& layout) {
+        auto buffers    = std::make_unique<Buffers>(layout);
+        auto classifier = MapperT::withDefaults(body, layout);
+        classifier(layout, buffers->tags);
+        return buffers;
+    };
+
+    auto degradedSet = [](Layout const& layout, MeshDataT const& tags, std::size_t idx) {
+        std::set<AmrIndex> out;
+        auto const off = amrOffset(layout, tags.elemStatus[idx]);
+        for (auto const& elem : tags.getDegradedElemsFromCentering(MeshDataT::idxToCentering(idx)))
+        {
+            AmrIndex amr{};
+            for (std::size_t d = 0; d < dim; ++d)
+                amr[d] = static_cast<int>(elem.index[d]) + off[d];
+            out.insert(amr);
+        }
+        return out;
+    };
+
+    auto const bigBuffers = classify(big);
+    auto const& bigTags   = bigBuffers->tags;
+
+    for (auto const& sub : subs)
+    {
+        auto const subBuffers        = classify(sub);
+        auto const& subTags          = subBuffers->tags;
+        std::size_t statusMismatches = 0, cellMismatches = 0, degradedMismatches = 0;
+
+        for (std::size_t idx = 0; idx < MeshDataT::num_elem_types; ++idx)
+        {
+            auto const& subField = subTags.elemStatus[idx];
+            auto const& bigField = bigTags.elemStatus[idx];
+            auto const subOff    = amrOffset(sub, subField);
+            auto const bigOff    = amrOffset(big, bigField);
+            auto const centering = MeshDataT::idxToCentering(idx);
+
+            forEachIndex<dim>(subField.shape(), [&](auto const& local) {
+                std::array<std::uint32_t, dim> bigLocal{};
+                for (std::size_t d = 0; d < dim; ++d)
+                    bigLocal[d] = static_cast<std::uint32_t>(static_cast<int>(local[d]) + subOff[d]
+                                                             - bigOff[d]);
+                if (subField(local) != bigField(bigLocal))
+                {
+                    ++statusMismatches;
+                    if (idx + 1 == MeshDataT::num_elem_types)
+                        ++cellMismatches;
+                }
+            });
+
+            auto const subSet = degradedSet(sub, subTags, idx);
+            auto const bigSet = degradedSet(big, bigTags, idx);
+            auto const nPrimal
+                = std::count(centering.begin(), centering.end(), PHARE::core::QtyCentering::primal);
+
+            forEachIndex<dim>(subField.shape(), [&](auto const& local) {
+                std::size_t outside     = 0;
+                bool outsideAlongPrimal = false;
+                for (std::size_t d = 0; d < dim; ++d)
+                {
+                    auto const dir   = static_cast<PHARE::core::Direction>(d);
+                    auto const start = static_cast<int>(sub.physicalStartIndex(subField, dir));
+                    auto const end   = static_cast<int>(sub.physicalEndIndex(subField, dir));
+                    auto const l     = static_cast<int>(local[d]);
+                    if (l >= start and l <= end)
+                        continue;
+                    if (l < start - 1 or l > end + 1)
+                        return;
+                    ++outside;
+                    outsideAlongPrimal
+                        = outsideAlongPrimal or centering[d] == PHARE::core::QtyCentering::primal;
+                }
+                bool const consumed
+                    = outside == 0 or (nPrimal == 1 and outside == 1 and !outsideAlongPrimal);
+                if (!consumed)
+                    return;
+                AmrIndex amr{};
+                for (std::size_t d = 0; d < dim; ++d)
+                    amr[d] = static_cast<int>(local[d]) + subOff[d];
+                if (subSet.contains(amr) != bigSet.contains(amr))
+                    ++degradedMismatches;
+            });
+        }
+
+        EXPECT_EQ(cellMismatches, 0u) << "cell status, sub lower " << sub.AMRBox().lower;
+        EXPECT_EQ(statusMismatches, 0u) << "element status, sub lower " << sub.AMRBox().lower;
+        EXPECT_EQ(degradedMismatches, 0u) << "degraded lists, sub lower " << sub.AMRBox().lower;
+    }
 }
 } // namespace
 
@@ -743,6 +925,37 @@ TEST(InnerBoundaryMeshClassifier, secondOrderBandFacesRespectStencilMargin3D)
         }
         EXPECT_TRUE(inGhostRegion) << "axis " << axis;
     }
+}
+
+TEST(InnerBoundaryMeshClassifier, decompositionInvariantSecondOrder3D)
+{
+    for (double const dx : {1.0, 0.5})
+    {
+        PHARE::core::SphereInnerBoundary<3> sphere{
+            "sphere", {0.3 * dx, 0.7 * dx, 0.2 * dx}, 9.7 * dx};
+        auto const big = boxLayout<GridLayout3D>(-32, 64u, dx);
+        ASSERT_EQ(Mapper3D::withDefaults(sphere, big).params().scheme,
+                  PHARE::core::NearBodyScheme::SecondOrder);
+        expectSameClassification<Mapper3D>(sphere, big, tiling<GridLayout3D>(-16, 15, 8u, dx));
+    }
+}
+
+TEST(InnerBoundaryMeshClassifier, decompositionInvariantUnderResolved3D)
+{
+    PHARE::core::SphereInnerBoundary<3> sphere{"sphere", {0.3, 0.7, 0.2}, 3.2};
+    auto const big = boxLayout<GridLayout3D>(-32, 64u, 1.0);
+    ASSERT_EQ(Mapper3D::withDefaults(sphere, big).params().scheme,
+              PHARE::core::NearBodyScheme::FirstOrder);
+    expectSameClassification<Mapper3D>(sphere, big, tiling<GridLayout3D>(-16, 15, 8u, 1.0));
+}
+
+TEST(InnerBoundaryMeshClassifier, decompositionInvariant2D)
+{
+    PHARE::core::SphereInnerBoundary<2> sphere{"sphere", {0.3, 0.7}, 9.7};
+    auto const big = boxLayout<GridLayout>(-32, 64u, 1.0);
+    ASSERT_EQ(Mapper::withDefaults(sphere, big).params().scheme,
+              PHARE::core::NearBodyScheme::SecondOrder);
+    expectSameClassification<Mapper>(sphere, big, tiling<GridLayout>(-16, 15, 8u, 1.0));
 }
 
 int main(int argc, char** argv)

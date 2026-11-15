@@ -52,8 +52,8 @@ public:
                                                     GridLayoutT const& layout,
                                                     Overrides const& overrides = {})
     {
-        auto const& dx     = layout.meshSize();
-        auto const dx_min  = *std::min_element(dx.begin(), dx.end());
+        auto const& dx        = layout.meshSize();
+        auto const dx_min     = *std::min_element(dx.begin(), dx.end());
         auto const full_reach = [&]() -> std::uint32_t {
             if constexpr (requires { GridLayoutT::options.field_options.reconstruction_nghosts; })
                 return GridLayoutT::options.field_options.reconstruction_nghosts + 1;
@@ -104,48 +104,64 @@ public:
         validateCenterings_(meshData.signedDistanceAtNodes, meshData);
         fillNodePhi_(layout, meshData.signedDistanceAtNodes);
 
-        auto& cell_status = meshData.cellStatusField();
-        classifyCutInactiveAndFluidCells_(layout, meshData.signedDistanceAtNodes, cell_status);
-        classifyGhostCells_(layout, cell_status);
-        classifyNonCellElems_(layout, meshData.signedDistanceAtNodes, cell_status, meshData);
+        auto const padded = classifyCellsPadded_(layout, meshData.signedDistanceAtNodes,
+                                                 meshData.cellStatusField());
+        classifyNonCellElems_(layout, meshData.signedDistanceAtNodes, padded, meshData);
         populateGhostLists_(layout, meshData);
-        populateDegradedLists_(layout, meshData);
+        populateDegradedLists_(layout, meshData, padded);
     }
 
 private:
     InnerBoundaryGeometry<dim> const& boundary_;
     Params params_;
 
+    struct PaddedCells
+    {
+        std::array<std::size_t, dim> shape{};
+        int pad = 0;
+        std::vector<double> status;
+
+        std::size_t flat(std::array<int, dim> const& q) const
+        {
+            std::size_t f = 0;
+            for (std::size_t d = 0; d < dim; ++d)
+                f = f * shape[d] + static_cast<std::size_t>(q[d]);
+            return f;
+        }
+
+        std::array<int, dim> unflat(std::size_t f) const
+        {
+            std::array<int, dim> q{};
+            for (std::size_t d = dim; d-- > 0;)
+            {
+                q[d] = static_cast<int>(f % shape[d]);
+                f /= shape[d];
+            }
+            return q;
+        }
+
+        std::size_t flatLocal(signed_local_index_type const& local) const
+        {
+            std::array<int, dim> q{};
+            for (std::size_t d = 0; d < dim; ++d)
+                q[d] = local[d] + pad;
+            return flat(q);
+        }
+
+        bool inBounds(std::array<int, dim> const& q) const
+        {
+            for (std::size_t d = 0; d < dim; ++d)
+                if (q[d] < 0 || q[d] >= static_cast<int>(shape[d]))
+                    return false;
+            return true;
+        }
+    };
+
     static bool isCut_(double phi_min, double phi_max, double cut_eps)
     {
         if (phi_min < -cut_eps && phi_max > cut_eps)
             return true;
         return phi_min <= cut_eps && phi_max >= -cut_eps;
-    }
-
-    static bool inBounds_(signed_local_index_type const& idx,
-                          std::array<std::uint32_t, dim> const& shape)
-    {
-        for (std::size_t i = 0; i < dim; ++i)
-            if (idx[i] < 0 || idx[i] >= static_cast<int>(shape[i]))
-                return false;
-        return true;
-    }
-
-    static signed_local_index_type asSigned_(local_index_type const& idx)
-    {
-        signed_local_index_type signed_idx{};
-        for (std::size_t i = 0; i < dim; ++i)
-            signed_idx[i] = static_cast<int>(idx[i]);
-        return signed_idx;
-    }
-
-    static local_index_type asLocal_(signed_local_index_type const& idx)
-    {
-        local_index_type local_idx{};
-        for (std::size_t i = 0; i < dim; ++i)
-            local_idx[i] = static_cast<std::uint32_t>(idx[i]);
-        return local_idx;
     }
 
     template<typename FieldT>
@@ -225,15 +241,14 @@ private:
 
     bool elemSurroundsFluidOrCutCell_(local_index_type const& elem,
                                       std::array<QtyCentering, dim> const& centering,
-                                      field_type const& cell_status) const
+                                      PaddedCells const& padded) const
     {
-        bool found            = false;
-        auto const cell_shape = cell_status.shape();
+        bool found = false;
         signed_local_index_type cell{};
         forEachAdjacentCell_<0>(elem, centering, cell, [&](auto const& adjacent_cell) {
-            if (found || !inBounds_(adjacent_cell, cell_shape))
+            if (found)
                 return;
-            auto const s = cell_status(asLocal_(adjacent_cell));
+            auto const s = padded.status[padded.flatLocal(adjacent_cell)];
             if (s == toDouble(ElemStatus::Fluid) || s == toDouble(ElemStatus::Cut))
                 found = true;
         });
@@ -242,15 +257,13 @@ private:
 
     bool elemSurroundsGhostCell_(local_index_type const& elem,
                                  std::array<QtyCentering, dim> const& centering,
-                                 field_type const& cell_status) const
+                                 PaddedCells const& padded) const
     {
-        bool has_ghost        = false;
-        auto const cell_shape = cell_status.shape();
+        bool has_ghost = false;
         signed_local_index_type cell{};
         forEachAdjacentCell_<0>(elem, centering, cell, [&](auto const& adjacent_cell) {
-            if (has_ghost || !inBounds_(adjacent_cell, cell_shape))
-                return;
-            if (cell_status(asLocal_(adjacent_cell)) == toDouble(ElemStatus::Ghost))
+            if (!has_ghost
+                && padded.status[padded.flatLocal(adjacent_cell)] == toDouble(ElemStatus::Ghost))
                 has_ghost = true;
         });
         return has_ghost;
@@ -266,87 +279,124 @@ private:
         });
     }
 
-    void classifyGhostCells_(GridLayoutT const& layout, field_type& cell_status) const
+    PaddedCells classifyCellsPadded_(GridLayoutT const& layout,
+                                     field_type const& signed_distance_at_nodes,
+                                     field_type& cell_status) const
     {
-        if (params_.nghosts == 0)
-            return;
+        PaddedCells padded;
+        padded.pad = static_cast<int>(params_.nghosts + params_.full_reach + 1);
 
         auto const cell_shape = cell_status.shape();
-        std::vector<signed_local_index_type> frontier;
-
-        layout.evalOnGhostBox(cell_status, [&](auto... idx) {
-            auto const cell = local_index_type{static_cast<std::uint32_t>(idx)...};
-            if (cell_status(cell) == toDouble(ElemStatus::Cut))
-                frontier.push_back(asSigned_(cell));
-        });
-
-        for (std::size_t layer = 0; layer < params_.nghosts && !frontier.empty(); ++layer)
+        std::array<std::size_t, dim> node_shape{};
+        std::array<int, dim> cell_offset{}, node_offset{};
+        std::size_t n_cells = 1, n_nodes = 1;
+        for (std::size_t d = 0; d < dim; ++d)
         {
-            std::vector<signed_local_index_type> next_frontier;
-            next_frontier.reserve(frontier.size() * 2 * dim);
-
-            for (auto const& source : frontier)
-            {
-                for (std::size_t d = 0; d < dim; ++d)
-                {
-                    for (int sgn : {-1, 1})
-                    {
-                        auto neigh = source;
-                        neigh[d] += sgn;
-
-                        if (!inBounds_(neigh, cell_shape))
-                            continue;
-
-                        auto const local_neigh = asLocal_(neigh);
-
-                        if (cell_status(local_neigh) != toDouble(ElemStatus::Inactive))
-                            continue;
-
-                        cell_status(local_neigh) = toDouble(ElemStatus::Ghost);
-                        next_frontier.push_back(neigh);
-                    }
-                }
-            }
-
-            frontier = std::move(next_frontier);
+            auto const dir  = static_cast<Direction>(d);
+            padded.shape[d] = cell_shape[d] + 2 * static_cast<std::size_t>(padded.pad);
+            node_shape[d]   = padded.shape[d] + 1;
+            cell_offset[d]  = layout.AMRBox().lower[d]
+                             - static_cast<int>(layout.physicalStartIndex(cell_status, dir))
+                             - padded.pad;
+            node_offset[d]
+                = layout.AMRBox().lower[d]
+                  - static_cast<int>(layout.physicalStartIndex(signed_distance_at_nodes, dir))
+                  - padded.pad;
+            n_cells *= padded.shape[d];
+            n_nodes *= node_shape[d];
         }
-    }
 
-    void classifyCutInactiveAndFluidCells_(GridLayoutT const& layout,
-                                           field_type const& signed_distance_at_nodes,
-                                           field_type& cell_status) const
-    {
-        auto const centering = cellCentering_();
-        layout.evalOnGhostBox(cell_status, [&](auto... idx) {
-            auto const local_cell = local_index_type{static_cast<std::uint32_t>(idx)...};
-            auto const amr_cell   = fieldAMRIndex_(layout, cell_status, local_cell);
+        auto node_flat = [&](std::array<int, dim> const& q) {
+            std::size_t f = 0;
+            for (std::size_t d = 0; d < dim; ++d)
+                f = f * node_shape[d] + static_cast<std::size_t>(q[d]);
+            return f;
+        };
 
+        std::vector<double> phi(n_nodes);
+        for (std::size_t f = 0; f < n_nodes; ++f)
+        {
+            signed_local_index_type amr{};
+            auto rest = f;
+            for (std::size_t d = dim; d-- > 0;)
+            {
+                amr[d] = static_cast<int>(rest % node_shape[d]) + node_offset[d];
+                rest /= node_shape[d];
+            }
+            phi[f] = boundary_.signedDistance(
+                layout.fieldNodeCoordinates(signed_distance_at_nodes, amr));
+        }
+
+        padded.status.assign(n_cells, toDouble(ElemStatus::Fluid));
+        std::vector<std::size_t> frontier;
+        for (std::size_t f = 0; f < n_cells; ++f)
+        {
+            auto const q   = padded.unflat(f);
             double phi_min = std::numeric_limits<double>::max();
             double phi_max = std::numeric_limits<double>::lowest();
-            local_index_type node_idx{};
-            forEachSupportNode_<0>(local_cell, centering, node_idx, [&](auto const& node) {
-                auto const phi = signed_distance_at_nodes(node);
-                phi_min        = std::min(phi_min, phi);
-                phi_max        = std::max(phi_max, phi);
-            });
+            for (std::size_t corner = 0; corner < (std::size_t{1} << dim); ++corner)
+            {
+                auto node = q;
+                for (std::size_t d = 0; d < dim; ++d)
+                    node[d] += static_cast<int>((corner >> d) & 1u);
+                auto const v = phi[node_flat(node)];
+                phi_min      = std::min(phi_min, v);
+                phi_max      = std::max(phi_max, v);
+            }
 
             if (isCut_(phi_min, phi_max, params_.cut_eps))
             {
-                cell_status(local_cell) = toDouble(ElemStatus::Cut);
-                return;
+                padded.status[f] = toDouble(ElemStatus::Cut);
+                frontier.push_back(f);
+                continue;
             }
 
-            auto const phi_center
-                = boundary_.signedDistance(layout.cellCenteredCoordinates(amr_cell));
-            cell_status(local_cell) = (phi_center < -params_.inactive_eps)
-                                          ? toDouble(ElemStatus::Inactive)
-                                          : toDouble(ElemStatus::Fluid);
+            signed_local_index_type amr{};
+            for (std::size_t d = 0; d < dim; ++d)
+                amr[d] = q[d] + cell_offset[d];
+            auto const phi_center = boundary_.signedDistance(layout.cellCenteredCoordinates(amr));
+            padded.status[f] = (phi_center < -params_.inactive_eps) ? toDouble(ElemStatus::Inactive)
+                                                                    : toDouble(ElemStatus::Fluid);
+        }
+
+        for (std::size_t layer = 0; layer < params_.nghosts && !frontier.empty(); ++layer)
+        {
+            std::vector<std::size_t> next_frontier;
+            next_frontier.reserve(frontier.size() * 2 * dim);
+            for (auto const f : frontier)
+            {
+                auto const q = padded.unflat(f);
+                for (std::size_t d = 0; d < dim; ++d)
+                    for (int sgn : {-1, 1})
+                    {
+                        auto neigh = q;
+                        neigh[d] += sgn;
+                        if (!padded.inBounds(neigh))
+                            continue;
+                        auto const g = padded.flat(neigh);
+                        if (padded.status[g] != toDouble(ElemStatus::Inactive))
+                            continue;
+                        padded.status[g] = toDouble(ElemStatus::Ghost);
+                        next_frontier.push_back(g);
+                    }
+            }
+            frontier = std::move(next_frontier);
+        }
+
+        layout.evalOnGhostBox(cell_status, [&](auto... idx) {
+            auto const local = local_index_type{static_cast<std::uint32_t>(idx)...};
+            signed_local_index_type signed_local{};
+            for (std::size_t d = 0; d < dim; ++d)
+                signed_local[d] = static_cast<int>(local[d]);
+            cell_status(local) = padded.status[padded.flatLocal(signed_local)];
         });
+
+        return padded;
     }
 
     void classifyNonCellElems_(GridLayoutT const& layout,
                                field_type const& signed_distance_at_nodes,
-                               field_type const& cell_status, mesh_data_type& meshData) const
+                               PaddedCells const& padded, mesh_data_type& meshData) const
     {
         for (std::size_t idx = 0; idx < mesh_data_type::num_elem_types; ++idx)
         {
@@ -379,13 +429,13 @@ private:
                     return;
                 }
 
-                if (elemSurroundsFluidOrCutCell_(local_elem, centering, cell_status))
+                if (elemSurroundsFluidOrCutCell_(local_elem, centering, padded))
                 {
                     elem_field(local_elem) = toDouble(ElemStatus::Fluid);
                     return;
                 }
 
-                if (elemSurroundsGhostCell_(local_elem, centering, cell_status))
+                if (elemSurroundsGhostCell_(local_elem, centering, padded))
                 {
                     elem_field(local_elem) = toDouble(ElemStatus::Ghost);
                     return;
@@ -426,7 +476,8 @@ private:
         }
     }
 
-    void populateDegradedLists_(GridLayoutT const& layout, mesh_data_type& meshData) const
+    void populateDegradedLists_(GridLayoutT const& layout, mesh_data_type& meshData,
+                                PaddedCells const& padded) const
     {
         for (auto& vec : meshData.degradedElemsData)
             vec.clear();
@@ -436,52 +487,42 @@ private:
 
         bool const secondOrder     = params_.scheme == NearBodyScheme::SecondOrder;
         std::uint32_t const margin = secondOrder ? 2u : 1u;
-        auto const& cell_status = meshData.cellStatusField();
-        auto const cell_shape   = cell_status.shape();
 
-        std::size_t total = 1;
-        for (std::size_t d = 0; d < dim; ++d)
-            total *= cell_shape[d];
-
-        auto flatten = [&](signed_local_index_type const& c) {
-            std::size_t flat = 0;
-            for (std::size_t d = 0; d < dim; ++d)
-                flat = flat * cell_shape[d] + static_cast<std::size_t>(c[d]);
-            return flat;
-        };
-
-        std::vector<char> nearBody(total, 0);
-        std::vector<signed_local_index_type> frontier;
-        layout.evalOnGhostBox(cell_status, [&](auto... idx) {
-            auto const cell = local_index_type{static_cast<std::uint32_t>(idx)...};
-            auto const s    = cell_status(cell);
+        std::vector<char> nearBody(padded.status.size(), 0);
+        std::vector<std::size_t> frontier;
+        for (std::size_t f = 0; f < padded.status.size(); ++f)
+        {
+            auto const s = padded.status[f];
             if (s == toDouble(ElemStatus::Cut) || s == toDouble(ElemStatus::Ghost))
             {
-                auto const signed_cell         = asSigned_(cell);
-                nearBody[flatten(signed_cell)] = 1;
-                frontier.push_back(signed_cell);
+                nearBody[f] = 1;
+                frontier.push_back(f);
             }
-        });
+        }
 
         if (secondOrder)
-            dilateChebyshev_(nearBody, cell_shape, params_.band_radius);
+            dilateChebyshev_(nearBody, padded.shape, params_.band_radius);
 
         for (std::size_t layer = 0; !secondOrder && layer < params_.full_reach && !frontier.empty();
              ++layer)
         {
-            std::vector<signed_local_index_type> next_frontier;
-            for (auto const& source : frontier)
+            std::vector<std::size_t> next_frontier;
+            for (auto const f : frontier)
             {
+                auto const q = padded.unflat(f);
                 for (std::size_t d = 0; d < dim; ++d)
                 {
                     for (int sgn : {-1, 1})
                     {
-                        auto neigh = source;
+                        auto neigh = q;
                         neigh[d] += sgn;
-                        if (!inBounds_(neigh, cell_shape) || nearBody[flatten(neigh)])
+                        if (!padded.inBounds(neigh))
                             continue;
-                        nearBody[flatten(neigh)] = 1;
-                        next_frontier.push_back(neigh);
+                        auto const g = padded.flat(neigh);
+                        if (nearBody[g])
+                            continue;
+                        nearBody[g] = 1;
+                        next_frontier.push_back(g);
                     }
                 }
             }
@@ -504,13 +545,11 @@ private:
 
                 bool degraded = false;
                 signed_local_index_type cell{};
-                forEachAdjacentCell_<0>(local_elem, centering, cell,
-                                        [&](auto const& adjacent_cell) {
-                                            if (degraded || !inBounds_(adjacent_cell, cell_shape))
-                                                return;
-                                            if (nearBody[flatten(adjacent_cell)])
-                                                degraded = true;
-                                        });
+                forEachAdjacentCell_<0>(
+                    local_elem, centering, cell, [&](auto const& adjacent_cell) {
+                        if (!degraded && nearBody[padded.flatLocal(adjacent_cell)])
+                            degraded = true;
+                    });
 
                 if (degraded)
                     degraded_list.push_back({local_elem, {}, {}, false});
