@@ -13,7 +13,6 @@
 #include "core/numerics/reconstructions/weno3.hpp"
 #include "core/numerics/reconstructions/wenoz.hpp"
 #include "core/numerics/riemann_solvers/hll.hpp"
-#include "core/numerics/riemann_solvers/hlld.hpp"
 #include "core/numerics/riemann_solvers/rusanov.hpp"
 #include "core/numerics/slope_limiters/min_mod.hpp"
 #include "core/numerics/slope_limiters/van_leer.hpp"
@@ -121,11 +120,6 @@ struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLL>
     using type = core::HLL;
 };
 
-template<>
-struct RiemannSolverSelector<MHDOpts::RiemannSolverType::HLLD>
-{
-    using type = core::HLLD;
-};
 
 
 template<auto opts, typename MHDModel>
@@ -137,6 +131,9 @@ struct MHDResolver
 
     using SlopeLimiter
         = SlopeLimiterSelector<opts.reconstruction_type, opts.slope_limiter_type>::type;
+
+    static_assert(opts.riemann_solver_type != MHDOpts::RiemannSolverType::HLLD,
+                  "HLLD is not supported with the CT Poynting energy flux");
 
     using RiemannSolver = RiemannSolverSelector<opts.riemann_solver_type>::type;
 

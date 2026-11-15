@@ -33,6 +33,8 @@ class ComputeFluxes
     using ConstrainedTransport_t     = Dispatchers_t::template ConstrainedTransport_t<Rec>;
     using ConstrainedTransportInfo_t = ConstrainedTransport_t::info_type;
 
+    using PoyntingCorrection_t = Dispatchers_t::template PoyntingCorrection_t<Rec>;
+
     using NonIdealElectricField_t = Dispatchers_t::template NonIdealElectricField_t<Hall>;
 
     using ToPrimitiveConverter_t    = Dispatchers_t::ToPrimitiveConverter_t;
@@ -76,7 +78,7 @@ public:
         if (isNonIdeal_)
             NonIdealElectricField_t{level, model, fVMethodInfo_}(non_ideal_electric_state_, state);
 
-        FVMethod_t{level, model, fVMethodInfo_}(ct_, non_ideal_electric_state_, state, fluxes);
+        FVMethod_t{level, model, fVMethodInfo_}(ct_, state, fluxes);
         TimeSetter{level, model, newTime}(state.rho, state.V, state.P, state.J);
 
         // unecessary if we decide to store both primitive and conservative variables
@@ -87,6 +89,8 @@ public:
                                constrainedTransportInfo_}(ct_, non_ideal_electric_state_, state);
 
         bc.fillElectricGhosts(state.E, level, newTime);
+
+        PoyntingCorrection_t{level, model}(ct_, state, fluxes);
     }
 
     void registerResources(MHDModel& model)

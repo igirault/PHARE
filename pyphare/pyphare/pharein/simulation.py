@@ -657,6 +657,11 @@ def check_mhd_parameters(**kwargs):
     riemann = kwargs.get("riemann", "")
     mhd_timestepper = kwargs.get("mhd_timestepper", "")
 
+    if riemann == "HLLD":
+        raise ValueError(
+            "Error: riemann='HLLD' is not supported with the CT Poynting energy flux"
+        )
+
     return reconstruction, limiter, riemann, mhd_timestepper
 
 
@@ -1156,7 +1161,9 @@ class Simulation:
         * **hall** (``bool``), default=False, whether the Hall term is included in the MHD Ohm's law.
         * **reconstruction** (``str``), spatial reconstruction scheme used by the MHD finite-volume solver (e.g. "WENOZ").
         * **limiter** (``str``), slope limiter used with the reconstruction scheme (e.g. "None").
-        * **riemann** (``str``), Riemann solver used at cell interfaces (e.g. "Rusanov").
+        * **riemann** (``str``), Riemann solver used at cell interfaces, "Rusanov" or "HLL".
+          The magnetic energy is carried by the Poynting flux of the constrained-transport
+          electric field, which "HLLD" does not support yet.
         * **mhd_timestepper** (``str``), mandatory for an MHD simulation, time integration scheme for the MHD solver (e.g. "TVDRK3").
 
         `reconstruction`, `limiter`, `riemann` and `hall` select which pre-compiled MHD module is

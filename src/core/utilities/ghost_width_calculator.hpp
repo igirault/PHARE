@@ -58,8 +58,8 @@ constexpr std::uint32_t nbrGhostsFromInterpOrder()
  *   MagneticRefinePatchStrategy::reconstructionRegion)
  *
  * There is no hyper-resistivity layer: the non-ideal electric field takes its Laplacian on J at
- * its native edge location, and the flux contributions project it to the face, so they stay within
- * the reconstruction reach. See NonIdealElectricField and Godunov::transverse_on_face_.
+ * its native edge location, and the Poynting energy flux averages edge products to the face, so
+ * they stay within the reconstruction reach. See NonIdealElectricField and PoyntingCorrection.
  */
 template<std::uint32_t reconstruction_nghosts>
 constexpr std::uint32_t nbrGhostsFromReconstruction()

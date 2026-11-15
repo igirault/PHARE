@@ -63,7 +63,6 @@
 # --- coverage-only: gaps not hit by any test ---
 1,Linear,MinMod,Rusanov,false
 1,Constant,None,HLL,false
-1,Constant,None,HLLD,false
 # --- coupled build (dim,interp,nbRefinedPart,reconstruction,limiter,riemann,hall) ---
 # proven by a one-timestep gate: mhd_harris/harris.py's config with interp_order/
 # refined_particle_nbr forced explicit (its own default is 5-field MHD-only)
