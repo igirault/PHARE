@@ -113,10 +113,7 @@ class MHDInnerBoundarySphere3DDecompositionTest(SimulatorTest):
                 for key in keys:
                     a = self._level0(os.path.join(one, h5), key)
                     b = self._level0(os.path.join(many, h5), key)
-                    scale = np.abs(a).max()
-                    np.testing.assert_allclose(
-                        b, a, rtol=1e-6, atol=1e-6 * scale, err_msg=key
-                    )
+                    np.testing.assert_array_equal(b, a, err_msg=key)
         return self
 
     def _level0(self, h5, key):
