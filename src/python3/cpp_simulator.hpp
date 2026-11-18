@@ -2,10 +2,6 @@
 #define PHARE_PYTHON_CPP_SIMULATOR_HPP
 
 
-#ifndef PHARE_SIM_STR
-#define PHARE_SIM_STR 1, 1, 2 // mostly for clangformat - errors in cpp file if define is missing
-#endif
-
 #include "phare_mpi.hpp" // IWYU pragma: keep
 
 #include "amr/samrai.hpp" // IWYU pragma: keep
@@ -13,6 +9,7 @@
 
 #include "simulator/simulator.hpp" // IWYU pragma: keep
 
+#include "python3/cpp_simulator_options.hpp"
 #include "python3/pybind_def.hpp" // IWYU pragma: keep
 #include "pybind11/stl.h"         // IWYU pragma: keep
 #include "pybind11/numpy.h"       // IWYU pragma: keep
@@ -29,13 +26,6 @@ namespace py = pybind11;
 
 namespace PHARE::pydata
 {
-
-
-auto static constexpr resolve_simulator_options()
-{
-    using namespace PHARE::MHDOpts;
-    return SimOpts{PHARE_SIM_STR};
-}
 
 
 template<typename Simulator, typename PyClass>

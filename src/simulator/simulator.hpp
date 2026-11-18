@@ -25,6 +25,7 @@
 
 #include "restarts/restarts.hpp"
 #include "simulator/simulator_def.hpp"
+#include "simulator/solver_mhd_factory.hpp"
 
 #include <stdexcept>
 #include <vector>
@@ -351,8 +352,7 @@ void Simulator<opts>::hybrid_init(initializer::PHAREDict const& dict)
 template<auto opts>
 void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
 {
-    using MHDModel  = PHARETypes::MHD::Model_t;
-    using SolverMHD = PHARETypes::MHD::Solver_t;
+    using MHDModel = PHARETypes::MHD::Model_t;
 
     mhd_.model_ = std::make_shared<MHDModel>(dict["simulation"], mhd_.resman_);
     mhd_.resman_->registerResources(mhd_.model_->state);
@@ -361,8 +361,8 @@ void Simulator<opts>::mhd_init(initializer::PHAREDict const& dict)
     // since for now it is the only model available, same for the solver
     multiphysInteg_->registerModel(0, maxMHDLevel_ - 1, mhd_.model_);
 
-    multiphysInteg_->registerAndInitSolver(0, maxMHDLevel_ - 1,
-                                           std::make_unique<SolverMHD>(dict["simulation"]["algo"]));
+    multiphysInteg_->registerAndInitSolver(
+        0, maxMHDLevel_ - 1, solver::make_mhd_solver<opts>(dict["simulation"]["algo"]));
 
     multiphysInteg_->registerAndSetupMessengers(messengerFactory_);
 
