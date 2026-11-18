@@ -5,6 +5,7 @@
 #include "simulator/simulator_def.hpp"
 
 #include "simulator/simulator.hpp"
+#include "simulator/solver_mhd_factory_impl.hpp"
 #include "initializer/python_data_provider.hpp"
 
 #include "gtest/gtest.h"

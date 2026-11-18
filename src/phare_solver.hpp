@@ -5,7 +5,6 @@
 #include "phare_mpi.hpp" // IWYU pragma: keep
 #include "phare_amr.hpp"
 
-#include "amr/solvers/solver_mhd.hpp"
 #include "amr/solvers/solver_ppc.hpp"
 #include "amr/multiphysics_integrator.hpp"
 #include "amr/physical_models/mhd_model.hpp"
@@ -20,7 +19,6 @@
 #include "amr/level_initializer/level_initializer_factory.hpp"
 #include "amr/level_initializer/hybrid_level_initializer.hpp"
 #include "amr/level_initializer/mhd_level_initializer.hpp"
-#include "amr/solvers/mhd_resolver.hpp"
 
 #include <memory>
 
@@ -85,10 +83,6 @@ struct MHDStack<opts, CoreTypes, true>
     using GridLayout_t = CoreTypes::MHD::GridLayout_t;
     using Model_t = MHDModel<GridLayout_t, typename CoreTypes::MHD::VecField_t, amr::SAMRAI_Types,
                              typename CoreTypes::MHD::Grid_t>;
-    using Solver_t
-        = PHARE::solver::SolverMHD<Model_t, PHARE::amr::SAMRAI_Types,
-                                   typename MHDResolver<opts, Model_t>::MHDTimeStepper_t>;
-
     using LevelInitializer_t = MHDLevelInitializer<Model_t>;
 };
 

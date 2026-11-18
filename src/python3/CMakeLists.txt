@@ -29,6 +29,14 @@ while(THIS_FILE)
         message(FATAL_ERROR "PHARE permutation line has unsupported arity (${LINE_LENGTH}): ${LINE}")
     endif()
 
+    set(_HAS_MHD FALSE)
+    if(LINE_LENGTH EQUAL 7)
+        list(GET LINE_LIST 3 _RECONSTRUCTION)
+        if(NOT "${_RECONSTRUCTION}" STREQUAL "MHDOff")
+            set(_HAS_MHD TRUE)
+        endif()
+    endif()
+
     SET(_OFFSET 3)
     SET(_PREFIXES "ReconstructionType;SlopeLimiterType;RiemannSolverType")
     foreach(PREFIX IN LISTS _PREFIXES)
@@ -43,6 +51,9 @@ while(THIS_FILE)
     list(JOIN LINE_LIST "," LINE) # semicolon separated list to csv
 
     pybind11_add_module(${MOD_STR} cpp_simulator.cpp)
+    if(_HAS_MHD)
+        target_sources(${MOD_STR} PRIVATE cpp_mhd_solver.cpp)
+    endif()
     target_link_libraries(${MOD_STR} PUBLIC phare_simulator)
     target_compile_options(${MOD_STR} PRIVATE
         ${PHARE_WERROR_FLAGS}

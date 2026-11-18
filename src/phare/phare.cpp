@@ -8,6 +8,7 @@
 
 #include "simulator/simulator.hpp"
 #include "simulator/simulator_runtime.hpp"
+#include "simulator/solver_mhd_factory_impl.hpp"
 
 #include <atomic>
 #include <csignal>

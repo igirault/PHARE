@@ -3,6 +3,8 @@ project(phare_simulator)
 
 set( SOURCES_INC
     simulator.hpp
+    solver_mhd_factory.hpp
+    solver_mhd_factory_impl.hpp
     phare_types.hpp
    )
 

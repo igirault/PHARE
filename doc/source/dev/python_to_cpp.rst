@@ -84,6 +84,16 @@ module (:src:`src/python3/cpp_simulator.hpp#L34-L38`). A line has 3 fields
 for a hybrid build (``dim,interp,refined_particle_nbr``), 5 for an MHD build
 (``dim,reconstruction,limiter,riemann,hall``), 7 when it carries both.
 
+A module with MHD fields is built from two source files. ``cpp_simulator.cpp``
+holds the simulator and the Python bindings. ``cpp_mhd_solver.cpp`` holds the
+MHD solver alone, so an edit in the MHD numerics recompiles only that file.
+``Simulator`` reaches the solver through ``make_mhd_solver<opts>``, declared
+without a definition in ``src/simulator/solver_mhd_factory.hpp``. Any other
+C++ code that builds a ``Simulator`` with MHD options must include
+``simulator/solver_mhd_factory_impl.hpp``, which holds the definition (the
+test fixture ``tests/simulator/per_test.hpp`` does). Without it the link fails
+with an undefined reference to ``make_mhd_solver``.
+
 **What you see when it is missing.** If the run needs a combination that was
 not built, ``cpp_lib`` raises ``ModuleNotFoundError`` with the exact line to
 add to ``res/sim/all.txt`` and the list of modules that exist
